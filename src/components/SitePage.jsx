@@ -20,7 +20,7 @@ const SitePage = () => {
   const [checklists, setChecklists] = useState([]);
   const [completed, setCompleted] = useState([]);
   const [tempChecks, setTempChecks] = useState([]);
-  const [cleaningRecords, setCleaningRecords] = useState([]); // ✅ NEW state
+  const [cleaningRecords, setCleaningRecords] = useState([]); // ✅ Firebase-enabled state
   const user = "Chris";
 
   const resetSite = () => {
@@ -77,7 +77,7 @@ const SitePage = () => {
         goBack={() => setActiveSection(null)}
         site={selectedSite}
         user={user} // ✅ Pass user
-        cleaningRecords={cleaningRecords} // ✅ Pass cleaning records
+        cleaningRecords={cleaningRecords} // ✅ Pass records
         setCleaningRecords={setCleaningRecords} // ✅ Pass setter
       />
     );

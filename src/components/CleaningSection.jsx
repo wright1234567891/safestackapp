@@ -1,4 +1,6 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
+import { db } from "./firebase";
+import { collection, addDoc, getDocs, query, orderBy } from "firebase/firestore";
 
 const defaultTasks = [
   "Griddle cleaned",
@@ -12,22 +14,45 @@ const defaultTasks = [
 const CleaningSection = ({ goBack, site, user, cleaningRecords, setCleaningRecords }) => {
   const [selectedTask, setSelectedTask] = useState("");
 
-  const generateId = () => "_" + Math.random().toString(36).substr(2, 9);
+  // Reference to Firestore collection
+  const cleaningCollectionRef = collection(db, "cleaningRecords");
 
-  const addRecord = () => {
+  // Fetch records from Firestore on mount
+  useEffect(() => {
+    const fetchRecords = async () => {
+      try {
+        const q = query(cleaningCollectionRef, orderBy("date", "desc"), orderBy("time", "desc"));
+        const querySnapshot = await getDocs(q);
+        const records = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        setCleaningRecords(records);
+      } catch (error) {
+        console.error("Error fetching cleaning records: ", error);
+      }
+    };
+
+    fetchRecords();
+  }, [site]); // re-fetch if site changes
+
+  // Add a new record to Firestore
+  const addRecord = async () => {
     if (!selectedTask) return;
 
     const now = new Date();
     const record = {
-      id: generateId(),
       task: selectedTask,
       date: now.toLocaleDateString(),
       time: now.toLocaleTimeString(),
-      person: user || "Unknown"
+      person: user || "Unknown",
+      site
     };
 
-    setCleaningRecords(prev => [record, ...prev]);
-    setSelectedTask("");
+    try {
+      const docRef = await addDoc(cleaningCollectionRef, record);
+      setCleaningRecords(prev => [{ id: docRef.id, ...record }, ...prev]);
+      setSelectedTask("");
+    } catch (error) {
+      console.error("Error adding cleaning record: ", error);
+    }
   };
 
   return (
