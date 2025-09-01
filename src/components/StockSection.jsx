@@ -33,7 +33,6 @@ const StockSection = ({ site, goBack, user }) => {
   const [movementQty, setMovementQty] = useState(0);
   const [newSupplierName, setNewSupplierName] = useState("");
 
-  // Local buffer for edits to prevent losing text on back/return
   const [editBuffer, setEditBuffer] = useState({});
 
   const selectStyles = {
@@ -171,7 +170,7 @@ const StockSection = ({ site, goBack, user }) => {
         });
       });
       setEditBuffer({});
-    }, 500); // 0.5s debounce
+    }, 500);
 
     return () => clearTimeout(timeout);
   }, [editBuffer]);
@@ -306,12 +305,12 @@ const StockSection = ({ site, goBack, user }) => {
               </select>
               <input
                 type="date"
-                value={editBuffer[item.id]?.expiryDate ?? item.expiryDate || ""}
+                value={(editBuffer[item.id]?.expiryDate ?? item.expiryDate) || ""}
                 onChange={(e) => handleEdit(item.id, "expiryDate", e.target.value)}
                 className="border p-1 rounded w-32"
               />
               <select
-                value={editBuffer[item.id]?.supplier ?? item.supplier || ""}
+                value={(editBuffer[item.id]?.supplier ?? item.supplier) || ""}
                 onChange={(e) => handleEdit(item.id, "supplier", e.target.value)}
                 className="border p-1 rounded w-32"
               >
