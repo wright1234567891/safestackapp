@@ -19,6 +19,8 @@ const Reports = ({ site, goBack, user }) => {
   const [newReportType, setNewReportType] = useState("HACCP");
   const [selectedStockItems, setSelectedStockItems] = useState([]);
 
+  const reportTypes = ["HACCP", "Cleaning", "Stock", "Temperature"];
+
   // Fetch existing reports
   useEffect(() => {
     if (!site) return;
@@ -56,7 +58,7 @@ const Reports = ({ site, goBack, user }) => {
       name: newReportName,
       type: newReportType,
       site,
-      stockItems: selectedStockItems, // store selected stock items
+      stockItems: selectedStockItems,
       createdAt: serverTimestamp(),
       createdBy: user?.uid || null,
     });
@@ -82,24 +84,30 @@ const Reports = ({ site, goBack, user }) => {
           onChange={(e) => setNewReportType(e.target.value)}
           className="border p-2 rounded"
         >
-          <option value="HACCP">HACCP</option>
-        </select>
-
-        {/* Multi-select for stock items */}
-        <select
-          multiple
-          value={selectedStockItems}
-          onChange={(e) =>
-            setSelectedStockItems(Array.from(e.target.selectedOptions, (o) => o.value))
-          }
-          className="border p-2 rounded flex-1"
-        >
-          {stockItems.map((item) => (
-            <option key={item.id} value={item.id}>
-              {item.name} ({item.quantity} {item.measurement})
+          {reportTypes.map((type) => (
+            <option key={type} value={type}>
+              {type}
             </option>
           ))}
         </select>
+
+        {/* Multi-select stock items only for HACCP or Stock reports */}
+        {(newReportType === "HACCP" || newReportType === "Stock") && (
+          <select
+            multiple
+            value={selectedStockItems}
+            onChange={(e) =>
+              setSelectedStockItems(Array.from(e.target.selectedOptions, (o) => o.value))
+            }
+            className="border p-2 rounded flex-1"
+          >
+            {stockItems.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.name} ({item.quantity} {item.measurement})
+              </option>
+            ))}
+          </select>
+        )}
 
         <button
           onClick={addReport}
@@ -110,38 +118,62 @@ const Reports = ({ site, goBack, user }) => {
       </div>
 
       {/* List reports */}
-      <ul className="space-y-4">
-        {reports.map((report) => (
-          <li
-            key={report.id}
-            className="border p-3 rounded bg-gray-50 flex flex-col gap-2"
-          >
-            <strong>{report.name}</strong> — Type: {report.type}
-            <div className="ml-2">
-              <h4 className="font-semibold">Stock Items linked to report:</h4>
-              <ul className="list-disc ml-4">
+      {reports.map((report) => (
+        <div
+          key={report.id}
+          className="border p-3 rounded bg-gray-50 mb-4"
+        >
+          <strong>{report.name}</strong> — Type: {report.type}
+
+          {/* HACCP or Stock report table */}
+          {(report.type === "HACCP" || report.type === "Stock") && report.stockItems?.length > 0 && (
+            <table className="w-full mt-2 border-collapse border">
+              <thead>
+                <tr className="bg-gray-200">
+                  <th className="border px-2 py-1 text-left">Item</th>
+                  <th className="border px-2 py-1 text-left">Quantity</th>
+                  <th className="border px-2 py-1 text-left">Measurement</th>
+                  {report.type === "HACCP" && (
+                    <th className="border px-2 py-1 text-left">Linked CCPs</th>
+                  )}
+                </tr>
+              </thead>
+              <tbody>
                 {stockItems
-                  .filter((item) => report.stockItems?.includes(item.id))
+                  .filter((item) => report.stockItems.includes(item.id))
                   .map((item) => {
-                    const linkedHACCP = item.haccpPoints?.length
-                      ? item.haccpPoints
-                          .map((id) => {
-                            const h = haccpPoints.find((hp) => hp.id === id);
-                            return h ? h.name : id;
-                          })
-                          .join(", ")
-                      : "N/A";
+                    const linkedHACCP =
+                      item.haccpPoints?.length > 0
+                        ? item.haccpPoints
+                            .map((id) => {
+                              const h = haccpPoints.find((hp) => hp.id === id);
+                              return h ? h.name : id;
+                            })
+                            .join(", ")
+                        : "N/A";
                     return (
-                      <li key={item.id}>
-                        {item.name} ({item.quantity} {item.measurement}) — HACCP: {linkedHACCP}
-                      </li>
+                      <tr key={item.id}>
+                        <td className="border px-2 py-1">{item.name}</td>
+                        <td className="border px-2 py-1">{item.quantity}</td>
+                        <td className="border px-2 py-1">{item.measurement}</td>
+                        {report.type === "HACCP" && (
+                          <td className="border px-2 py-1">{linkedHACCP}</td>
+                        )}
+                      </tr>
                     );
                   })}
-              </ul>
+              </tbody>
+            </table>
+          )}
+
+          {/* Placeholder for other report types */}
+          {report.type !== "HACCP" && report.type !== "Stock" && (
+            <div className="mt-2 text-gray-600 italic">
+              {report.type} report data not yet implemented.
             </div>
-          </li>
-        ))}
-      </ul>
+          )}
+        </div>
+      ))}
 
       {/* Back button */}
       <button
