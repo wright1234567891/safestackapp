@@ -123,10 +123,12 @@ const Reports = ({ site, goBack, user }) => {
                 {stockItems
                   .filter((item) => report.stockItems?.includes(item.id))
                   .map((item) => {
-                    const linkedHACCP = item.haccpPoints
-                      ? haccpPoints
-                          .filter((h) => item.haccpPoints.includes(h.id))
-                          .map((h) => h.name)
+                    const linkedHACCP = item.haccpPoints?.length
+                      ? item.haccpPoints
+                          .map((id) => {
+                            const h = haccpPoints.find((hp) => hp.id === id);
+                            return h ? h.name : id;
+                          })
                           .join(", ")
                       : "N/A";
                     return (

@@ -13,6 +13,7 @@ import {
   query,
   where,
 } from "firebase/firestore";
+import Select from "react-select"; // npm install react-select
 
 const StockSection = ({ site, goBack, user }) => {
   const [stockItems, setStockItems] = useState([]);
@@ -30,10 +31,9 @@ const StockSection = ({ site, goBack, user }) => {
 
   const [selectedItem, setSelectedItem] = useState(null);
   const [movementQty, setMovementQty] = useState(0);
-
   const [newSupplierName, setNewSupplierName] = useState("");
 
-  // Stock updates
+  // Fetch stock items
   useEffect(() => {
     if (!site) return;
     const q = query(collection(db, "stockItems"), where("site", "==", site));
@@ -43,7 +43,7 @@ const StockSection = ({ site, goBack, user }) => {
     return () => unsub();
   }, [site]);
 
-  // Equipment updates
+  // Fetch equipment
   useEffect(() => {
     if (!site) return;
     const q = query(collection(db, "equipment"), where("site", "==", site));
@@ -60,7 +60,7 @@ const StockSection = ({ site, goBack, user }) => {
     return () => unsub();
   }, [site]);
 
-  // Suppliers updates
+  // Fetch suppliers
   useEffect(() => {
     if (!site) return;
     const q = query(collection(db, "suppliers"), where("site", "==", site));
@@ -70,7 +70,7 @@ const StockSection = ({ site, goBack, user }) => {
     return () => unsub();
   }, [site]);
 
-  // HACCP points updates
+  // Fetch HACCP points
   useEffect(() => {
     if (!site) return;
     const q = query(collection(db, "haccpPoints"), where("site", "==", site));
@@ -90,7 +90,7 @@ const StockSection = ({ site, goBack, user }) => {
       location: newLocation,
       expiryDate: newExpiry || null,
       supplier: newSupplier,
-      haccpPoints: newHACCP,
+      haccpPoints: newHACCP, // store array of CCP IDs
       site,
       createdAt: serverTimestamp(),
       createdBy: user?.uid || null,
@@ -116,7 +116,7 @@ const StockSection = ({ site, goBack, user }) => {
     setNewSupplierName("");
   };
 
-  // Record stock delivery
+  // Record delivery
   const recordDelivery = async (itemId, qty, expiry = null) => {
     if (qty <= 0) return;
     const ref = doc(db, "stockItems", itemId);
@@ -140,15 +140,6 @@ const StockSection = ({ site, goBack, user }) => {
   // Delete stock
   const deleteStockItem = async (itemId) => {
     await deleteDoc(doc(db, "stockItems", itemId));
-  };
-
-  // Handle HACCP multi-select
-  const toggleHACCPSelection = (id) => {
-    if (newHACCP.includes(id)) {
-      setNewHACCP(newHACCP.filter((hid) => hid !== id));
-    } else {
-      setNewHACCP([...newHACCP, id]);
-    }
   };
 
   return (
@@ -210,18 +201,17 @@ const StockSection = ({ site, goBack, user }) => {
           ))}
         </select>
 
-        {/* HACCP multi-select */}
-        <div className="border p-2 rounded max-h-32 overflow-y-auto">
-          {haccpPoints.map((h) => (
-            <label key={h.id} className="flex items-center gap-1">
-              <input
-                type="checkbox"
-                checked={newHACCP.includes(h.id)}
-                onChange={() => toggleHACCPSelection(h.id)}
-              />
-              <span className="text-sm">{h.name}</span>
-            </label>
-          ))}
+        {/* HACCP multi-select dropdown */}
+        <div className="col-span-1 md:col-span-8">
+          <Select
+            isMulti
+            options={haccpPoints.map((ccp) => ({ value: ccp.id, label: ccp.name }))}
+            value={haccpPoints
+              .filter((ccp) => newHACCP.includes(ccp.id))
+              .map((ccp) => ({ value: ccp.id, label: ccp.name }))}
+            onChange={(selected) => setNewHACCP(selected.map((s) => s.value))}
+            placeholder="Select HACCP points..."
+          />
         </div>
 
         <button
@@ -247,10 +237,12 @@ const StockSection = ({ site, goBack, user }) => {
                 {item.expiryDate ? item.expiryDate : "N/A"} | Supplier:{" "}
                 {item.supplier || "N/A"} | HACCP Points:{" "}
                 {item.haccpPoints?.length > 0
-                  ? item.haccpPoints.map((id) => {
-                      const h = haccpPoints.find((hp) => hp.id === id);
-                      return h ? h.name : id;
-                    }).join(", ")
+                  ? item.haccpPoints
+                      .map((id) => {
+                        const h = haccpPoints.find((hp) => hp.id === id);
+                        return h ? h.name : id;
+                      })
+                      .join(", ")
                   : "N/A"}
               </span>
             </span>
@@ -336,7 +328,3 @@ const StockSection = ({ site, goBack, user }) => {
         Back
       </button>
     </div>
-  );
-};
-
-export default StockSection;
