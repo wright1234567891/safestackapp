@@ -45,7 +45,7 @@ const StockSection = ({ site, goBack, user }) => {
     multiValue: (provided) => ({ ...provided, backgroundColor: "#4ade80" }),
   };
 
-  // Fetch stock items
+  // --- Fetch Firestore collections ---
   useEffect(() => {
     if (!site) return;
     const q = query(collection(db, "stockItems"), where("site", "==", site));
@@ -55,7 +55,6 @@ const StockSection = ({ site, goBack, user }) => {
     return () => unsub();
   }, [site]);
 
-  // Fetch equipment
   useEffect(() => {
     if (!site) return;
     const q = query(collection(db, "equipment"), where("site", "==", site));
@@ -72,7 +71,6 @@ const StockSection = ({ site, goBack, user }) => {
     return () => unsub();
   }, [site]);
 
-  // Fetch suppliers
   useEffect(() => {
     if (!site) return;
     const q = query(collection(db, "suppliers"), where("site", "==", site));
@@ -82,7 +80,6 @@ const StockSection = ({ site, goBack, user }) => {
     return () => unsub();
   }, [site]);
 
-  // Fetch HACCP points
   useEffect(() => {
     if (!site) return;
     const q = query(collection(db, "haccpPoints"), where("site", "==", site));
@@ -92,7 +89,7 @@ const StockSection = ({ site, goBack, user }) => {
     return () => unsub();
   }, [site]);
 
-  // Add stock item
+  // --- Add / Update / Delete functions ---
   const addStockItem = async () => {
     if (!newItemName || newItemQty <= 0 || !newSupplier) {
       alert("Please fill in all required fields");
@@ -111,7 +108,6 @@ const StockSection = ({ site, goBack, user }) => {
         createdAt: serverTimestamp(),
         createdBy: user?.uid || null,
       });
-      // Reset fields
       setNewItemName("");
       setNewItemQty(0);
       setNewMeasurement("unit");
@@ -124,7 +120,6 @@ const StockSection = ({ site, goBack, user }) => {
     }
   };
 
-  // Add supplier
   const addSupplier = async () => {
     if (!newSupplierName) return;
     try {
@@ -140,7 +135,6 @@ const StockSection = ({ site, goBack, user }) => {
     }
   };
 
-  // Record delivery
   const recordDelivery = async (itemId, qty, expiry = null) => {
     if (qty <= 0) return;
     const ref = doc(db, "stockItems", itemId);
@@ -152,7 +146,6 @@ const StockSection = ({ site, goBack, user }) => {
     setSelectedItem(null);
   };
 
-  // Record usage
   const useStock = async (itemId, qty) => {
     if (qty <= 0) return;
     const ref = doc(db, "stockItems", itemId);
@@ -161,14 +154,22 @@ const StockSection = ({ site, goBack, user }) => {
     setSelectedItem(null);
   };
 
-  // Delete stock
   const deleteStockItem = async (itemId) => {
     await deleteDoc(doc(db, "stockItems", itemId));
   };
 
-  // HACCP points (always show all)
+  const updateStockField = async (itemId, field, value) => {
+    try {
+      const ref = doc(db, "stockItems", itemId);
+      await updateDoc(ref, { [field]: value });
+    } catch (error) {
+      console.error("Error updating stock field:", error);
+    }
+  };
+
   const filteredHACCP = haccpPoints.map((ccp) => ({ value: ccp.id, label: ccp.name }));
 
+  // --- JSX ---
   return (
     <div className="p-4 bg-white shadow rounded-xl">
       <h2 className="text-xl font-bold mb-3">Stock Management — {site}</h2>
@@ -227,8 +228,6 @@ const StockSection = ({ site, goBack, user }) => {
             </option>
           ))}
         </select>
-
-        {/* HACCP points */}
         <div className="md:col-span-2">
           <Select
             styles={selectStyles}
@@ -241,7 +240,6 @@ const StockSection = ({ site, goBack, user }) => {
             placeholder="HACCP points"
           />
         </div>
-
         <button
           onClick={addStockItem}
           className="bg-green-600 text-white px-4 py-2 rounded md:col-span-12 mt-2"
@@ -250,30 +248,72 @@ const StockSection = ({ site, goBack, user }) => {
         </button>
       </div>
 
-      {/* Stock list */}
+      {/* Stock list with editable fields */}
       <ul>
         {stockItems.map((item) => (
           <li
             key={item.id}
-            className="flex flex-col md:flex-row md:justify-between md:items-center border-b py-2"
+            className="flex flex-col md:flex-row md:justify-between md:items-center border-b py-2 gap-2"
           >
-            <span>
-              <strong>{item.name}</strong> — {item.quantity} {item.measurement}{" "}
-              <br />
-              <span className="text-sm text-gray-600">
-                Location: {item.location} | Expiry:{" "}
-                {item.expiryDate ? item.expiryDate : "N/A"} | Supplier:{" "}
-                {item.supplier || "N/A"} | HACCP Points:{" "}
-                {item.haccpPoints?.length > 0
-                  ? item.haccpPoints
-                      .map((id) => {
-                        const h = haccpPoints.find((hp) => hp.id === id);
-                        return h ? h.name : id;
-                      })
-                      .join(", ")
-                  : "N/A"}
-              </span>
-            </span>
+            <div className="flex flex-col md:flex-row md:items-center gap-2">
+              <input
+                type="text"
+                value={item.name}
+                onChange={(e) => updateStockField(item.id, "name", e.target.value)}
+                className="border p-1 rounded w-32"
+              />
+              <input
+                type="number"
+                value={item.quantity}
+                onChange={(e) =>
+                  updateStockField(item.id, "quantity", Number(e.target.value))
+                }
+                className="border p-1 rounded w-20"
+              />
+              <select
+                value={item.measurement}
+                onChange={(e) =>
+                  updateStockField(item.id, "measurement", e.target.value)
+                }
+                className="border p-1 rounded w-24"
+              >
+                <option value="unit">Units</option>
+                <option value="kg">Kilograms</option>
+              </select>
+              <select
+                value={item.location}
+                onChange={(e) => updateStockField(item.id, "location", e.target.value)}
+                className="border p-1 rounded w-32"
+              >
+                <option value="Ambient">Ambient</option>
+                {equipment.map((eq) => (
+                  <option key={eq.id} value={eq.name || eq.id}>
+                    {eq.name || eq.type}
+                  </option>
+                ))}
+              </select>
+              <input
+                type="date"
+                value={item.expiryDate || ""}
+                onChange={(e) =>
+                  updateStockField(item.id, "expiryDate", e.target.value)
+                }
+                className="border p-1 rounded w-32"
+              />
+              <select
+                value={item.supplier || ""}
+                onChange={(e) => updateStockField(item.id, "supplier", e.target.value)}
+                className="border p-1 rounded w-32"
+              >
+                <option value="">Select supplier</option>
+                {suppliers.map((sup) => (
+                  <option key={sup.id} value={sup.name}>
+                    {sup.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
             <div className="flex gap-2 mt-2 md:mt-0">
               <button
                 onClick={() => setSelectedItem(item)}
