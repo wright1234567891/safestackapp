@@ -12,23 +12,21 @@ const sites = [
   "Pop up Locations",
 ];
 
-const SitePage = () => {
+const SitePage = ({ user, onLogout }) => { // receive user and logout callback
   const [selectedSite, setSelectedSite] = useState(null);
   const [activeSection, setActiveSection] = useState(null);
 
-  // State for all sections
   const [checklists, setChecklists] = useState([]);
   const [completed, setCompleted] = useState([]);
   const [tempChecks, setTempChecks] = useState([]);
-  const [cleaningRecords, setCleaningRecords] = useState([]); // ✅ Firebase-enabled state
-  const user = "Chris";
+  const [cleaningRecords, setCleaningRecords] = useState([]);
 
   const resetSite = () => {
     setSelectedSite(null);
     setActiveSection(null);
   };
 
-  // Render sections
+  // Section rendering
   if (selectedSite && activeSection === "equipment") {
     return (
       <EquipmentManager
@@ -76,9 +74,9 @@ const SitePage = () => {
       <CleaningSection
         goBack={() => setActiveSection(null)}
         site={selectedSite}
-        user={user} // ✅ Pass user
-        cleaningRecords={cleaningRecords} // ✅ Pass records
-        setCleaningRecords={setCleaningRecords} // ✅ Pass setter
+        user={user}
+        cleaningRecords={cleaningRecords}
+        setCleaningRecords={setCleaningRecords}
       />
     );
   }
@@ -133,6 +131,21 @@ const SitePage = () => {
             </button>
           ))}
         </div>
+
+        {/* Logout button */}
+        <button
+          onClick={onLogout}
+          style={{
+            marginTop: "30px",
+            padding: "10px 20px",
+            borderRadius: "8px",
+            cursor: "pointer",
+            backgroundColor: "#ffb3b3",
+            fontSize: "16px",
+          }}
+        >
+          Logout
+        </button>
       </div>
     );
   }
@@ -175,11 +188,27 @@ const SitePage = () => {
           Add Equipment
         </button>
       </div>
+
       <button
         onClick={resetSite}
         style={{ marginTop: "30px", padding: "10px 20px", borderRadius: "8px", cursor: "pointer" }}
       >
         Back
+      </button>
+
+      {/* Logout button for inside site dashboard */}
+      <button
+        onClick={onLogout}
+        style={{
+          marginTop: "15px",
+          padding: "10px 20px",
+          borderRadius: "8px",
+          cursor: "pointer",
+          backgroundColor: "#ffb3b3",
+          fontSize: "16px",
+        }}
+      >
+        Logout
       </button>
     </div>
   );
