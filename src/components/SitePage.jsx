@@ -1,6 +1,5 @@
 // src/components/SitePage.jsx
 import React, { useState } from "react";
-import { FaClipboardList, FaThermometerHalf, FaBroom, FaFire, FaBoxOpen, FaChartLine, FaShieldAlt, FaTools } from "react-icons/fa";
 import EquipmentManager from "./EquipmentManager";
 import ChecklistSection from "./ChecklistSection";
 import TempSection from "./TempSection";
@@ -8,24 +7,13 @@ import CleaningSection from "./CleaningSection";
 import CookingSection from "./CookingSection";
 import StockSection from "./StockSection";
 import Reports from "./Reports";
-import CCPSection from "./CCPSection";
+import CCPSection from "./CCPSection"; 
 
 const sites = [
   "Thorganby Site",
   "Street Food Trailer",
   "Newsholme Site",
   "Pop up Locations",
-];
-
-const sections = [
-  { key: "checklists", label: "Checklists", icon: <FaClipboardList />, color: "#3b82f6" },
-  { key: "temp", label: "Temp Checks", icon: <FaThermometerHalf />, color: "#06b6d4" },
-  { key: "cleaning", label: "Cleaning", icon: <FaBroom />, color: "#22c55e" },
-  { key: "cooking", label: "Cooking & Cooling", icon: <FaFire />, color: "#f97316" },
-  { key: "stock", label: "Stock", icon: <FaBoxOpen />, color: "#8b5cf6" },
-  { key: "reports", label: "Reports", icon: <FaChartLine />, color: "#64748b" },
-  { key: "ccp", label: "CCPs", icon: <FaShieldAlt />, color: "#ef4444" },
-  { key: "equipment", label: "Add Equipment", icon: <FaTools />, color: "#14b8a6" },
 ];
 
 const SitePage = ({ user, onLogout }) => {
@@ -146,29 +134,48 @@ const SitePage = ({ user, onLogout }) => {
   // Site selection screen
   if (!selectedSite) {
     return (
-      <div className="container">
-        <h1 style={{ marginBottom: "30px" }}>Select Site</h1>
-        <div className="grid" style={{ display: "flex", gap: "20px", flexWrap: "wrap", justifyContent: "center" }}>
+      <div style={{ textAlign: "center", padding: "50px" }}>
+        <h1 style={{ marginBottom: "30px", fontSize: "32px", color: "#333" }}>Select Site</h1>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "center",
+            gap: "20px",
+            flexWrap: "wrap",
+            maxWidth: "700px",
+            margin: "0 auto",
+          }}
+        >
           {sites.map((site) => (
-            <div
+            <button
               key={site}
               onClick={() => setSelectedSite(site)}
               style={{
-                backgroundColor: "#f0f4f8",
-                padding: "25px 35px",
-                minWidth: "220px",
-                borderRadius: "12px",
+                padding: "20px 35px",
+                fontSize: "18px",
+                margin: "10px",
                 cursor: "pointer",
+                borderRadius: "12px",
+                border: "2px solid #ccc",
+                backgroundColor: "#f9f9f9",
+                minWidth: "220px",
                 fontWeight: 600,
-                textAlign: "center",
-                boxShadow: "0 2px 6px rgba(0,0,0,0.1)",
-                transition: "all 0.2s",
+                boxShadow: "0 4px 10px rgba(0,0,0,0.1)",
+                transition: "all 0.2s ease",
               }}
-              onMouseEnter={(e) => e.currentTarget.style.transform = "translateY(-3px)"}
-              onMouseLeave={(e) => e.currentTarget.style.transform = "translateY(0)"}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.transform = "translateY(-3px)";
+                e.currentTarget.style.boxShadow = "0 6px 15px rgba(0,0,0,0.15)";
+                e.currentTarget.style.backgroundColor = "#eef6ff";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = "translateY(0)";
+                e.currentTarget.style.boxShadow = "0 4px 10px rgba(0,0,0,0.1)";
+                e.currentTarget.style.backgroundColor = "#f9f9f9";
+              }}
             >
               {site}
-            </div>
+            </button>
           ))}
         </div>
 
@@ -179,10 +186,15 @@ const SitePage = ({ user, onLogout }) => {
             padding: "12px 24px",
             borderRadius: "10px",
             cursor: "pointer",
-            backgroundColor: "#ffb3b3",
+            backgroundColor: "#ff6b6b",
             fontSize: "16px",
+            color: "#fff",
             border: "none",
+            fontWeight: 600,
+            transition: "all 0.2s",
           }}
+          onMouseEnter={(e) => e.currentTarget.style.backgroundColor = "#ff4b4b"}
+          onMouseLeave={(e) => e.currentTarget.style.backgroundColor = "#ff6b6b"}
         >
           Logout
         </button>
@@ -190,64 +202,89 @@ const SitePage = ({ user, onLogout }) => {
     );
   }
 
-  // Selected site dashboard
+  const buttonStyle = {
+    padding: "12px 22px",
+    borderRadius: "8px",
+    cursor: "pointer",
+    minWidth: "160px",
+    fontWeight: 600,
+    transition: "all 0.2s",
+  };
+
   return (
-    <div className="container">
-      <h1 style={{ marginBottom: "30px" }}>{selectedSite}</h1>
-      <div className="grid" style={{ display: "flex", flexWrap: "wrap", gap: "20px", justifyContent: "center" }}>
-        {sections.map((sec) => (
-          <div
-            key={sec.key}
-            onClick={() => setActiveSection(sec.key)}
-            style={{
-              backgroundColor: sec.color,
-              color: "#fff",
-              minWidth: "180px",
-              padding: "20px",
-              borderRadius: "12px",
-              cursor: "pointer",
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              justifyContent: "center",
-              boxShadow: "0 3px 8px rgba(0,0,0,0.15)",
-              fontWeight: 600,
-              transition: "all 0.2s",
-            }}
-            onMouseEnter={(e) => e.currentTarget.style.transform = "translateY(-3px)"}
-            onMouseLeave={(e) => e.currentTarget.style.transform = "translateY(0)"}
-          >
-            <div style={{ fontSize: "24px", marginBottom: "10px" }}>{sec.icon}</div>
-            {sec.label}
-          </div>
-        ))}
+    <div style={{ textAlign: "center", padding: "50px" }}>
+      <h1 style={{ fontSize: "28px", marginBottom: "30px", color: "#333" }}>{selectedSite}</h1>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "center",
+          gap: "18px",
+          flexWrap: "wrap",
+          marginTop: "30px",
+        }}
+      >
+        <button
+          style={{ ...buttonStyle, backgroundColor: "#3b82f6", color: "#fff" }}
+          onClick={() => setActiveSection("checklists")}
+        >
+          Checklists
+        </button>
+        <button
+          style={{ ...buttonStyle, backgroundColor: "#06b6d4", color: "#fff" }}
+          onClick={() => setActiveSection("temp")}
+        >
+          Temp Checks
+        </button>
+        <button
+          style={{ ...buttonStyle, backgroundColor: "#22c55e", color: "#fff" }}
+          onClick={() => setActiveSection("cleaning")}
+        >
+          Cleaning
+        </button>
+        <button
+          style={{ ...buttonStyle, backgroundColor: "#f97316", color: "#fff" }}
+          onClick={() => setActiveSection("cooking")}
+        >
+          Cooking & Cooling
+        </button>
+        <button
+          style={{ ...buttonStyle, backgroundColor: "#8b5cf6", color: "#fff" }}
+          onClick={() => setActiveSection("stock")}
+        >
+          Stock
+        </button>
+        <button
+          style={{ ...buttonStyle, backgroundColor: "#64748b", color: "#fff" }}
+          onClick={() => setActiveSection("reports")}
+        >
+          Reports
+        </button>
+        <button
+          style={{ ...buttonStyle, backgroundColor: "#ef4444", color: "#fff" }}
+          onClick={() => setActiveSection("ccp")}
+        >
+          CCPs
+        </button>
+        <button
+          style={{ ...buttonStyle, backgroundColor: "#14b8a6", color: "#fff" }}
+          onClick={() => setActiveSection("equipment")}
+        >
+          Add Equipment
+        </button>
       </div>
 
       <div style={{ marginTop: "40px", display: "flex", gap: "15px", justifyContent: "center", flexWrap: "wrap" }}>
         <button
           onClick={resetSite}
-          style={{
-            padding: "10px 20px",
-            borderRadius: "8px",
-            cursor: "pointer",
-            backgroundColor: "#e5e7eb",
-            border: "none",
-            fontWeight: 600,
-          }}
+          style={{ ...buttonStyle, backgroundColor: "#e5e7eb", border: "none" }}
         >
           Back
         </button>
-
         <button
           onClick={onLogout}
-          style={{
-            padding: "10px 20px",
-            borderRadius: "8px",
-            cursor: "pointer",
-            backgroundColor: "#ffb3b3",
-            border: "none",
-            fontWeight: 600,
-          }}
+          style={{ ...buttonStyle, backgroundColor: "#ff6b6b", color: "#fff", border: "none" }}
+          onMouseEnter={(e) => e.currentTarget.style.backgroundColor = "#ff4b4b"}
+          onMouseLeave={(e) => e.currentTarget.style.backgroundColor = "#ff6b6b"}
         >
           Logout
         </button>
