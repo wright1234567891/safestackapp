@@ -28,7 +28,6 @@ const StockSection = ({ site, goBack, user }) => {
   const [newExpiry, setNewExpiry] = useState("");
   const [newSupplier, setNewSupplier] = useState("");
   const [newHACCP, setNewHACCP] = useState([]);
-  const [newItemCategory, setNewItemCategory] = useState("");
 
   const [selectedItem, setSelectedItem] = useState(null);
   const [movementQty, setMovementQty] = useState(0);
@@ -95,7 +94,7 @@ const StockSection = ({ site, goBack, user }) => {
 
   // Add stock item
   const addStockItem = async () => {
-    if (!newItemName || newItemQty <= 0 || !newSupplier || !newItemCategory) {
+    if (!newItemName || newItemQty <= 0 || !newSupplier) {
       alert("Please fill in all required fields");
       return;
     }
@@ -108,7 +107,6 @@ const StockSection = ({ site, goBack, user }) => {
         expiryDate: newExpiry || null,
         supplier: newSupplier,
         haccpPoints: newHACCP || [],
-        category: newItemCategory,
         site,
         createdAt: serverTimestamp(),
         createdBy: user?.uid || null,
@@ -121,7 +119,6 @@ const StockSection = ({ site, goBack, user }) => {
       setNewExpiry("");
       setNewSupplier("");
       setNewHACCP([]);
-      setNewItemCategory("");
     } catch (error) {
       console.error("Error adding stock item:", error);
     }
@@ -169,12 +166,8 @@ const StockSection = ({ site, goBack, user }) => {
     await deleteDoc(doc(db, "stockItems", itemId));
   };
 
-  // Filter HACCP points by category; if no category selected, show all
-  const filteredHACCP = newItemCategory
-    ? haccpPoints
-        .filter((ccp) => ccp.categories?.includes(newItemCategory))
-        .map((ccp) => ({ value: ccp.id, label: ccp.name }))
-    : haccpPoints.map((ccp) => ({ value: ccp.id, label: ccp.name }));
+  // HACCP points (always show all)
+  const filteredHACCP = haccpPoints.map((ccp) => ({ value: ccp.id, label: ccp.name }));
 
   return (
     <div className="p-4 bg-white shadow rounded-xl">
@@ -233,19 +226,6 @@ const StockSection = ({ site, goBack, user }) => {
               {sup.name}
             </option>
           ))}
-        </select>
-
-        {/* Category selector */}
-        <select
-          value={newItemCategory}
-          onChange={(e) => setNewItemCategory(e.target.value)}
-          className="border p-2 rounded md:col-span-2"
-        >
-          <option value="">Select category</option>
-          <option value="Meat">Meat</option>
-          <option value="Vegetables">Vegetables</option>
-          <option value="Dairy">Dairy</option>
-          <option value="Ambient">Ambient</option>
         </select>
 
         {/* HACCP points */}
