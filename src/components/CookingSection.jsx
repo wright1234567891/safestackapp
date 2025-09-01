@@ -2,35 +2,27 @@ import React, { useState, useEffect } from "react";
 import { collection, getDocs, updateDoc, doc } from "firebase/firestore";
 import { db } from "../firebase";
 
-const CookingSection = ({ tempChecks, setTempChecks, site, user, goBack }) => {
+const CookingSection = ({ site, user, goBack }) => {
+  const [equipmentList, setEquipmentList] = useState([]);
   const [selectedEquipment, setSelectedEquipment] = useState(null);
   const [newTemp, setNewTemp] = useState("");
   const [viewingRecord, setViewingRecord] = useState(null);
 
-  // Fetch cooking equipment from Firestore on mount
+  // Fetch cooking equipment on mount
   useEffect(() => {
-    const fetchCookingEquipment = async () => {
+    const fetchEquipment = async () => {
       try {
         const snapshot = await getDocs(collection(db, "equipment"));
-        const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        const cooking = data.filter(e => e.site === site && e.type === "Cooking");
-
-        setTempChecks(prev => {
-          // avoid duplicates
-          const existingIds = new Set(prev.map(e => e.id));
-          const newCooking = cooking.filter(e => !existingIds.has(e.id));
-          return [...prev, ...newCooking];
-        });
+        const data = snapshot.docs
+          .map(doc => ({ id: doc.id, ...doc.data() }))
+          .filter(eq => eq.site === site && eq.type === "Cooking");
+        setEquipmentList(data);
       } catch (error) {
         console.error("Error fetching cooking equipment:", error);
       }
     };
-
-    fetchCookingEquipment();
-  }, [site, setTempChecks]);
-
-  // Only show cooking equipment for this site
-  const cookingEquipment = tempChecks.filter(eq => eq.site === site && eq.type === "Cooking");
+    fetchEquipment();
+  }, [site]);
 
   const generateId = () => "_" + Math.random().toString(36).substr(2, 9);
 
@@ -46,38 +38,34 @@ const CookingSection = ({ tempChecks, setTempChecks, site, user, goBack }) => {
       person: typeof user === "string" ? user : user?.name || "Unknown",
     };
 
-    // Update tempChecks array locally
-    const updated = tempChecks.map(eq =>
-      eq.id === selectedEquipment.id
-        ? { ...eq, records: [...(eq.records || []), record] }
-        : eq
-    );
-    setTempChecks(updated);
-    setNewTemp("");
-
-    // Update Firestore
     try {
       const eqRef = doc(db, "equipment", selectedEquipment.id);
-      await updateDoc(eqRef, {
-        records: [...(selectedEquipment.records || []), record]
-      });
+      const updatedRecords = [...(selectedEquipment.records || []), record];
+      await updateDoc(eqRef, { records: updatedRecords });
+
+      // Update local state
+      setEquipmentList(equipmentList.map(eq =>
+        eq.id === selectedEquipment.id ? { ...eq, records: updatedRecords } : eq
+      ));
+      setSelectedEquipment({ ...selectedEquipment, records: updatedRecords });
+      setNewTemp("");
     } catch (error) {
-      console.error("Error updating Firestore record:", error);
+      console.error("Error updating record:", error);
     }
   };
 
   const viewRecord = (eq, rec) => setViewingRecord({ equipment: eq, record: rec });
   const resetView = () => { setSelectedEquipment(null); setViewingRecord(null); setNewTemp(""); };
 
+  const cookingEquipment = equipmentList;
+
   return (
     <div style={{ padding: "30px", textAlign: "center" }}>
       <h1>{site} - Cooking & Cooling</h1>
 
-      {/* Main list */}
       {!selectedEquipment && !viewingRecord && (
         <>
           {cookingEquipment.length === 0 && <p>No cooking equipment yet</p>}
-
           {cookingEquipment.map(eq => (
             <div
               key={eq.id}
@@ -88,12 +76,10 @@ const CookingSection = ({ tempChecks, setTempChecks, site, user, goBack }) => {
               <p>{(eq.records || []).length} records</p>
             </div>
           ))}
-
           <button onClick={goBack} style={{ marginTop: "20px", padding: "10px 20px" }}>Back</button>
         </>
       )}
 
-      {/* Selected equipment */}
       {selectedEquipment && !viewingRecord && (
         <>
           <h2>{selectedEquipment.name}</h2>
@@ -111,12 +97,10 @@ const CookingSection = ({ tempChecks, setTempChecks, site, user, goBack }) => {
               <p>{rec.temp} | {rec.date} {rec.time} | {rec.person}</p>
             </div>
           ))}
-
           <button onClick={resetView} style={{ marginTop: "15px", padding: "10px 20px" }}>Back</button>
         </>
       )}
 
-      {/* Single record view */}
       {viewingRecord && (
         <>
           <h2>{viewingRecord.equipment.name} - Record</h2>

@@ -16,9 +16,8 @@ const EquipmentManager = ({ site, user, tempChecks, setTempChecks, goBack }) => 
         const siteData = data.filter(e => e.site === site);
         setEquipmentList(siteData);
 
-        // Also update tempChecks with fridge/freezer for TempSection
-        const fridgesFreezers = siteData.filter(e => e.type === "Fridge" || e.type === "Freezer");
-        setTempChecks(fridgesFreezers);
+        // Add all existing equipment to tempChecks (for TempSection and CookingSection)
+        setTempChecks(siteData);
       } catch (error) {
         console.error("Error fetching equipment:", error);
       }
@@ -41,12 +40,12 @@ const EquipmentManager = ({ site, user, tempChecks, setTempChecks, goBack }) => 
     try {
       const docRef = await addDoc(collection(db, "equipment"), newEquipment);
       const equipmentWithId = { id: docRef.id, ...newEquipment };
+
+      // Update local list
       setEquipmentList([...equipmentList, equipmentWithId]);
 
-      // If fridge or freezer, add immediately to tempChecks
-      if (equipmentType === "Fridge" || equipmentType === "Freezer") {
-        setTempChecks([...tempChecks, equipmentWithId]);
-      }
+      // Add all new equipment to tempChecks
+      setTempChecks([...tempChecks, equipmentWithId]);
 
       setEquipmentName("");
       setEquipmentType("Other");
