@@ -16,16 +16,20 @@ import {
 
 const StockSection = ({ site, goBack, user }) => {
   const [stockItems, setStockItems] = useState([]);
-  const [equipment, setEquipment] = useState([]); // equipment list for dropdown
+  const [equipment, setEquipment] = useState([]); 
+  const [suppliers, setSuppliers] = useState([]); 
 
   const [newItemName, setNewItemName] = useState("");
   const [newItemQty, setNewItemQty] = useState(0);
   const [newLocation, setNewLocation] = useState("Ambient");
   const [newExpiry, setNewExpiry] = useState("");
+  const [newSupplier, setNewSupplier] = useState("");
   const [selectedItem, setSelectedItem] = useState(null);
   const [movementQty, setMovementQty] = useState(0);
 
-  // Real-time stock updates (filtered by site)
+  const [newSupplierName, setNewSupplierName] = useState(""); 
+
+  // Stock updates
   useEffect(() => {
     if (!site) return;
     const q = query(collection(db, "stockItems"), where("site", "==", site));
@@ -35,13 +39,12 @@ const StockSection = ({ site, goBack, user }) => {
     return () => unsub();
   }, [site]);
 
-  // Real-time equipment updates (filtered by site)
+  // Equipment updates
   useEffect(() => {
     if (!site) return;
     const q = query(collection(db, "equipment"), where("site", "==", site));
     const unsub = onSnapshot(q, (snapshot) => {
       const eq = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
-      // Filter only fridge/freezer type equipment
       setEquipment(
         eq.filter(
           (e) =>
@@ -53,14 +56,25 @@ const StockSection = ({ site, goBack, user }) => {
     return () => unsub();
   }, [site]);
 
-  // Add new stock item
+  // Suppliers updates
+  useEffect(() => {
+    if (!site) return;
+    const q = query(collection(db, "suppliers"), where("site", "==", site));
+    const unsub = onSnapshot(q, (snapshot) => {
+      setSuppliers(snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })));
+    });
+    return () => unsub();
+  }, [site]);
+
+  // Add stock item
   const addStockItem = async () => {
-    if (!newItemName || newItemQty <= 0) return;
+    if (!newItemName || newItemQty <= 0 || !newSupplier) return;
     await addDoc(collection(db, "stockItems"), {
       name: newItemName,
       quantity: Number(newItemQty),
       location: newLocation,
       expiryDate: newExpiry || null,
+      supplier: newSupplier,
       site,
       createdAt: serverTimestamp(),
       createdBy: user?.uid || null,
@@ -69,6 +83,19 @@ const StockSection = ({ site, goBack, user }) => {
     setNewItemQty(0);
     setNewLocation("Ambient");
     setNewExpiry("");
+    setNewSupplier("");
+  };
+
+  // Add supplier
+  const addSupplier = async () => {
+    if (!newSupplierName) return;
+    await addDoc(collection(db, "suppliers"), {
+      name: newSupplierName,
+      site,
+      createdAt: serverTimestamp(),
+      createdBy: user?.uid || null,
+    });
+    setNewSupplierName("");
   };
 
   // Record stock delivery
@@ -83,7 +110,7 @@ const StockSection = ({ site, goBack, user }) => {
     setSelectedItem(null);
   };
 
-  // Record stock usage
+  // Record usage
   const useStock = async (itemId, qty) => {
     if (qty <= 0) return;
     const ref = doc(db, "stockItems", itemId);
@@ -92,7 +119,7 @@ const StockSection = ({ site, goBack, user }) => {
     setSelectedItem(null);
   };
 
-  // Delete stock item
+  // Delete stock
   const deleteStockItem = async (itemId) => {
     await deleteDoc(doc(db, "stockItems", itemId));
   };
@@ -101,8 +128,8 @@ const StockSection = ({ site, goBack, user }) => {
     <div className="p-4 bg-white shadow rounded-xl">
       <h2 className="text-xl font-bold mb-3">Stock Management — {site}</h2>
 
-      {/* Add new item */}
-      <div className="mb-4 grid grid-cols-1 md:grid-cols-5 gap-2">
+      {/* Add stock item */}
+      <div className="mb-4 grid grid-cols-1 md:grid-cols-6 gap-2">
         <input
           type="text"
           placeholder="Item name"
@@ -135,9 +162,21 @@ const StockSection = ({ site, goBack, user }) => {
           onChange={(e) => setNewExpiry(e.target.value)}
           className="border p-2 rounded"
         />
+        <select
+          value={newSupplier}
+          onChange={(e) => setNewSupplier(e.target.value)}
+          className="border p-2 rounded"
+        >
+          <option value="">Select supplier</option>
+          {suppliers.map((sup) => (
+            <option key={sup.id} value={sup.name}>
+              {sup.name}
+            </option>
+          ))}
+        </select>
         <button
           onClick={addStockItem}
-          className="bg-green-600 text-white px-4 py-2 rounded col-span-1 md:col-span-5"
+          className="bg-green-600 text-white px-4 py-2 rounded col-span-1 md:col-span-6"
         >
           Add Item
         </button>
@@ -153,8 +192,9 @@ const StockSection = ({ site, goBack, user }) => {
             <span>
               <strong>{item.name}</strong> — {item.quantity} units <br />
               <span className="text-sm text-gray-600">
-                Location: {item.location} |{" "}
-                Expiry: {item.expiryDate ? item.expiryDate : "N/A"}
+                Location: {item.location} | Expiry:{" "}
+                {item.expiryDate ? item.expiryDate : "N/A"} | Supplier:{" "}
+                {item.supplier || "N/A"}
               </span>
             </span>
             <div className="flex gap-2 mt-2 md:mt-0">
@@ -209,6 +249,26 @@ const StockSection = ({ site, goBack, user }) => {
           </button>
         </div>
       )}
+
+      {/* Add supplier */}
+      <div className="mt-6 p-3 border rounded bg-gray-50">
+        <h3 className="font-semibold mb-2">Add Supplier</h3>
+        <div className="flex gap-2">
+          <input
+            type="text"
+            placeholder="Supplier name"
+            value={newSupplierName}
+            onChange={(e) => setNewSupplierName(e.target.value)}
+            className="border p-2 rounded flex-1"
+          />
+          <button
+            onClick={addSupplier}
+            className="bg-purple-600 text-white px-4 py-2 rounded"
+          >
+            Add
+          </button>
+        </div>
+      </div>
 
       {/* Back button */}
       <button
