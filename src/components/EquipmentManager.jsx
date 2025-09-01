@@ -1,28 +1,47 @@
 import React, { useState } from "react";
+import { collection, addDoc, getDocs } from "firebase/firestore";
+import { db } from "../firebase"; // make sure Firebase is initialized
 
-const EquipmentManager = ({ site, tempChecks, setTempChecks, goBack }) => {
+const EquipmentManager = ({ site, user, goBack }) => {
   const [equipmentName, setEquipmentName] = useState("");
   const [equipmentType, setEquipmentType] = useState("Other");
+  const [equipmentList, setEquipmentList] = useState([]);
 
-  const generateId = () => "_" + Math.random().toString(36).substr(2, 9);
+  // Fetch existing equipment on mount
+  React.useEffect(() => {
+    const fetchEquipment = async () => {
+      try {
+        const snapshot = await getDocs(collection(db, "equipment"));
+        const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        setEquipmentList(data.filter(e => e.site === site));
+      } catch (error) {
+        console.error("Error fetching equipment:", error);
+      }
+    };
+    fetchEquipment();
+  }, [site]);
 
-  const addEquipment = () => {
+  const addEquipment = async () => {
     if (!equipmentName.trim()) return;
 
     const newEquipment = {
-      id: generateId(),
       site,
       name: equipmentName,
       type: equipmentType, // "Fridge", "Freezer", "Cooking", "Other"
-      records: [], // Always initialize records
+      records: [], // always initialize
+      addedBy: user || "Unknown",
+      createdAt: new Date(),
     };
 
-    // Add to main tempChecks array for all types
-    setTempChecks([...tempChecks, newEquipment]);
-
-    setEquipmentName("");
-    setEquipmentType("Other");
-    goBack(); // Return to site dashboard
+    try {
+      const docRef = await addDoc(collection(db, "equipment"), newEquipment);
+      setEquipmentList([...equipmentList, { id: docRef.id, ...newEquipment }]);
+      setEquipmentName("");
+      setEquipmentType("Other");
+      goBack(); // return to site dashboard
+    } catch (error) {
+      console.error("Error adding equipment:", error);
+    }
   };
 
   return (
@@ -64,6 +83,19 @@ const EquipmentManager = ({ site, tempChecks, setTempChecks, goBack }) => {
       >
         Back
       </button>
+
+      {equipmentList.length > 0 && (
+        <>
+          <h2 style={{ marginTop: "30px" }}>Existing Equipment</h2>
+          <div style={{ maxWidth: "500px", margin: "0 auto", textAlign: "left" }}>
+            {equipmentList.map((eq) => (
+              <div key={eq.id} style={{ borderBottom: "1px solid #ccc", padding: "5px 0" }}>
+                <strong>{eq.name}</strong> | Type: {eq.type} | Added by: {eq.addedBy}
+              </div>
+            ))}
+          </div>
+        </>
+      )}
     </div>
   );
 };
