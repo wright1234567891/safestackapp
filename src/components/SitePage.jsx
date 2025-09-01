@@ -4,6 +4,7 @@ import ChecklistSection from "./ChecklistSection";
 import TempSection from "./TempSection";
 import CleaningSection from "./CleaningSection";
 import CookingSection from "./CookingSection";
+import StockSection from "./StockSection";
 
 const sites = [
   "Thorganby Site",
@@ -97,6 +98,16 @@ const SitePage = ({ user, onLogout }) => { // receive user and logout callback
     );
   }
 
+  if (selectedSite && activeSection === "stock") {
+    return (
+      <StockSection
+        goBack={() => setActiveSection(null)}
+        site={selectedSite}
+        user={user}
+      />
+    );
+  }
+
   // Site selection screen
   if (!selectedSite) {
     return (
@@ -180,6 +191,9 @@ const SitePage = ({ user, onLogout }) => { // receive user and logout callback
         </button>
         <button style={buttonStyle} onClick={() => setActiveSection("cooking")}>
           Cooking & Cooling
+        </button>
+        <button style={buttonStyle} onClick={() => setActiveSection("stock")}>
+          Stock
         </button>
         <button
           style={{ ...buttonStyle, backgroundColor: "#d4f1f4" }}
