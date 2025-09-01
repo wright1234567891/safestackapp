@@ -170,9 +170,11 @@ const StockSection = ({ site, goBack, user }) => {
   };
 
   // Filter HACCP points by category; if no category selected, show all
-  const filteredHACCP = haccpPoints
-    .filter((ccp) => !newItemCategory || ccp.categories?.includes(newItemCategory))
-    .map((ccp) => ({ value: ccp.id, label: ccp.name }));
+  const filteredHACCP = newItemCategory
+    ? haccpPoints
+        .filter((ccp) => ccp.categories?.includes(newItemCategory))
+        .map((ccp) => ({ value: ccp.id, label: ccp.name }))
+    : haccpPoints.map((ccp) => ({ value: ccp.id, label: ccp.name }));
 
   return (
     <div className="p-4 bg-white shadow rounded-xl">
