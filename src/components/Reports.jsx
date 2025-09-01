@@ -148,9 +148,9 @@ const Reports = ({ site, goBack, user }) => {
           </h3>
 
           {report.type === "HACCP" ? (
-            <table className="min-w-full border border-gray-600 border-collapse text-sm">
+            <table className="min-w-full border border-white border-collapse text-sm">
               <thead>
-                <tr className="bg-gray-200">
+                <tr className="bg-gray-800 text-white">
                   {[
                     "Process Step",
                     "Food Safety Hazard",
@@ -164,7 +164,7 @@ const Reports = ({ site, goBack, user }) => {
                   ].map((header) => (
                     <th
                       key={header}
-                      className="border border-gray-600 px-2 py-1 text-left"
+                      className="border border-white px-2 py-1 text-left"
                     >
                       {header}
                     </th>
@@ -177,7 +177,7 @@ const Reports = ({ site, goBack, user }) => {
                     {Object.entries(row).map(([key, val]) => (
                       <td
                         key={key}
-                        className="border border-gray-600 px-2 py-1 align-top"
+                        className="border border-white px-2 py-1 align-top"
                         contentEditable={
                           key !== "Process Step" && key !== "Food Safety Hazard"
                         }
@@ -191,24 +191,28 @@ const Reports = ({ site, goBack, user }) => {
               </tbody>
             </table>
           ) : report.type === "Cleaning" ? (
-            <table className="min-w-full border border-gray-600 border-collapse text-sm">
+            <table className="min-w-full border border-white border-collapse text-sm">
               <thead>
-                <tr className="bg-gray-200">
-                  <th className="border border-gray-600 px-2 py-1">Task</th>
-                  <th className="border border-gray-600 px-2 py-1">Frequency</th>
-                  <th className="border border-gray-600 px-2 py-1">Status</th>
+                <tr className="bg-gray-800 text-white">
+                  <th className="border border-white px-2 py-1">Task</th>
+                  <th className="border border-white px-2 py-1">Frequency</th>
+                  <th className="border border-white px-2 py-1">Status</th>
                 </tr>
               </thead>
               <tbody>
                 <tr>
-                  <td className="border px-2 py-1">Sanitize surfaces</td>
-                  <td className="border px-2 py-1">Daily</td>
-                  <td className="border px-2 py-1">Pending</td>
+                  <td className="border border-white px-2 py-1">
+                    Sanitize surfaces
+                  </td>
+                  <td className="border border-white px-2 py-1">Daily</td>
+                  <td className="border border-white px-2 py-1">Pending</td>
                 </tr>
                 <tr>
-                  <td className="border px-2 py-1">Deep clean fridge</td>
-                  <td className="border px-2 py-1">Weekly</td>
-                  <td className="border px-2 py-1">Completed</td>
+                  <td className="border border-white px-2 py-1">
+                    Deep clean fridge
+                  </td>
+                  <td className="border border-white px-2 py-1">Weekly</td>
+                  <td className="border border-white px-2 py-1">Completed</td>
                 </tr>
               </tbody>
             </table>
