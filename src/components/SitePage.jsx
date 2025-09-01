@@ -5,7 +5,8 @@ import TempSection from "./TempSection";
 import CleaningSection from "./CleaningSection";
 import CookingSection from "./CookingSection";
 import StockSection from "./StockSection";
-import Reports from "./Reports"; // <-- import Reports
+import Reports from "./Reports";
+import CCPSection from "./CCPSection"; // <-- import CCPSection
 
 const sites = [
   "Thorganby Site",
@@ -119,6 +120,16 @@ const SitePage = ({ user, onLogout }) => {
     );
   }
 
+  if (selectedSite && activeSection === "ccp") {
+    return (
+      <CCPSection
+        goBack={() => setActiveSection(null)}
+        site={selectedSite}
+        user={user}
+      />
+    );
+  }
+
   // Site selection screen
   if (!selectedSite) {
     return (
@@ -207,6 +218,9 @@ const SitePage = ({ user, onLogout }) => {
         </button>
         <button style={buttonStyle} onClick={() => setActiveSection("reports")}>
           Reports
+        </button>
+        <button style={buttonStyle} onClick={() => setActiveSection("ccp")}>
+          CCPs
         </button>
         <button
           style={{ ...buttonStyle, backgroundColor: "#d4f1f4" }}
