@@ -17,9 +17,37 @@ const Reports = ({ site, goBack, user }) => {
 
   const [newReportName, setNewReportName] = useState("");
   const [newReportType, setNewReportType] = useState("HACCP");
-  const [selectedStockItems, setSelectedStockItems] = useState([]);
 
-  // Fetch existing reports
+  // --- table schemas per report type ---
+  const reportSchemas = {
+    HACCP: {
+      headers: ["Item", "Quantity", "Measurement", "Linked CCPs"],
+      buildData: (items) =>
+        items.map((item) => ({
+          Item: item.name,
+          Quantity: item.quantity,
+          Measurement: item.measurement,
+          "Linked CCPs": item.haccpPoints?.length
+            ? item.haccpPoints
+                .map((id) => haccpPoints.find((hp) => hp.id === id)?.name)
+                .join(", ")
+            : "N/A",
+        })),
+    },
+    Cleaning: {
+      headers: ["Task", "Frequency", "Status"],
+      buildData: () => [
+        { Task: "Sanitize surfaces", Frequency: "Daily", Status: "Pending" },
+        { Task: "Deep clean fridge", Frequency: "Weekly", Status: "Completed" },
+      ],
+    },
+    Other: {
+      headers: ["Note"],
+      buildData: () => [{ Note: "Generic report type, no structure yet." }],
+    },
+  };
+
+  // --- fetch reports ---
   useEffect(() => {
     if (!site) return;
     const q = query(collection(db, "reports"), where("site", "==", site));
@@ -29,7 +57,7 @@ const Reports = ({ site, goBack, user }) => {
     return () => unsub();
   }, [site]);
 
-  // Fetch stock items
+  // --- fetch stock items ---
   useEffect(() => {
     if (!site) return;
     const q = query(collection(db, "stockItems"), where("site", "==", site));
@@ -39,7 +67,7 @@ const Reports = ({ site, goBack, user }) => {
     return () => unsub();
   }, [site]);
 
-  // Fetch HACCP points
+  // --- fetch HACCP points ---
   useEffect(() => {
     if (!site) return;
     const q = query(collection(db, "haccpPoints"), where("site", "==", site));
@@ -49,26 +77,38 @@ const Reports = ({ site, goBack, user }) => {
     return () => unsub();
   }, [site]);
 
-  // Add new report
+  // --- add report ---
   const addReport = async () => {
     if (!newReportName) return;
+
+    let stockData = [];
+    if (newReportType === "HACCP") {
+      stockData = stockItems.map((item) => ({
+        id: item.id,
+        name: item.name,
+        quantity: item.quantity,
+        measurement: item.measurement,
+        haccpPoints: item.haccpPoints || [],
+      }));
+    }
+
     await addDoc(collection(db, "reports"), {
       name: newReportName,
       type: newReportType,
       site,
-      stockItems: selectedStockItems, // store selected stock items
+      stockItems: stockData,
       createdAt: serverTimestamp(),
       createdBy: user?.uid || null,
     });
+
     setNewReportName("");
-    setSelectedStockItems([]);
   };
 
   return (
     <div className="p-4 bg-white shadow rounded-xl">
       <h2 className="text-xl font-bold mb-4">Reports — {site}</h2>
 
-      {/* Add report */}
+      {/* --- add report form --- */}
       <div className="mb-4 flex flex-col md:flex-row gap-2 items-center">
         <input
           type="text"
@@ -84,25 +124,8 @@ const Reports = ({ site, goBack, user }) => {
         >
           <option value="HACCP">HACCP</option>
           <option value="Cleaning">Cleaning</option>
-          <option value="Temperature">Temperature</option>
+          <option value="Other">Other</option>
         </select>
-
-        {/* Multi-select for stock items */}
-        <select
-          multiple
-          value={selectedStockItems}
-          onChange={(e) =>
-            setSelectedStockItems(Array.from(e.target.selectedOptions, (o) => o.value))
-          }
-          className="border p-2 rounded flex-1"
-        >
-          {stockItems.map((item) => (
-            <option key={item.id} value={item.id}>
-              {item.name} ({item.quantity} {item.measurement})
-            </option>
-          ))}
-        </select>
-
         <button
           onClick={addReport}
           className="bg-green-600 text-white px-4 py-2 rounded"
@@ -111,63 +134,46 @@ const Reports = ({ site, goBack, user }) => {
         </button>
       </div>
 
-      {/* List reports */}
+      {/* --- list reports --- */}
       {reports.map((report) => {
-        const filteredItems = stockItems.filter((item) =>
-          report.stockItems?.includes(item.id)
-        );
+        const schema = reportSchemas[report.type];
+        if (!schema) return null;
+
+        const data = schema.buildData(report.stockItems || []);
 
         return (
-          <div
-            key={report.id}
-            className="border p-3 rounded bg-gray-50 mb-4"
-          >
-            <strong>{report.name}</strong> — Type: {report.type}
+          <div key={report.id} className="mb-6">
+            <h3 className="font-semibold text-lg mb-2">
+              {report.name} — Type: {report.type}
+            </h3>
 
-            {filteredItems.length > 0 ? (
-              <div className="overflow-x-auto mt-2">
-                <table className="min-w-full border-collapse border border-gray-300">
-                  <thead>
-                    <tr className="bg-gray-200">
-                      <th className="border px-2 py-1 text-left">Item</th>
-                      <th className="border px-2 py-1 text-left">Quantity</th>
-                      <th className="border px-2 py-1 text-left">Measurement</th>
-                      {report.type === "HACCP" && (
-                        <th className="border px-2 py-1 text-left">Linked CCPs</th>
-                      )}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredItems.map((item) => (
-                      <tr key={item.id}>
-                        <td className="border px-2 py-1">{item.name}</td>
-                        <td className="border px-2 py-1">{item.quantity}</td>
-                        <td className="border px-2 py-1">{item.measurement}</td>
-                        {report.type === "HACCP" && (
-                          <td className="border px-2 py-1">
-                            {item.haccpPoints?.length
-                              ? item.haccpPoints
-                                  .map((id) => {
-                                    const h = haccpPoints.find((hp) => hp.id === id);
-                                    return h ? h.name : id;
-                                  })
-                                  .join(", ")
-                              : "N/A"}
-                          </td>
-                        )}
-                      </tr>
+            <table className="min-w-full border border-gray-300">
+              <thead>
+                <tr className="bg-gray-200">
+                  {schema.headers.map((header) => (
+                    <th key={header} className="border px-4 py-2 text-left">
+                      {header}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {data.map((row, i) => (
+                  <tr key={i}>
+                    {schema.headers.map((header) => (
+                      <td key={header} className="border px-4 py-2">
+                        {row[header]}
+                      </td>
                     ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <p className="mt-2 text-gray-600">No items linked to this report.</p>
-            )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         );
       })}
 
-      {/* Back button */}
+      {/* --- back button --- */}
       <button
         onClick={goBack}
         className="mt-6 bg-gray-300 px-4 py-2 rounded hover:bg-gray-400"
