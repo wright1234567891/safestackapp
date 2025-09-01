@@ -1,13 +1,40 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
+import { collection, getDocs, updateDoc, doc } from "firebase/firestore";
+import { db } from "../firebase";
 
-const CookingSection = ({ cookingEquipment = [], setTempChecks, site, user, goBack }) => {
+const CookingSection = ({ tempChecks, setTempChecks, site, user, goBack }) => {
   const [selectedEquipment, setSelectedEquipment] = useState(null);
   const [newTemp, setNewTemp] = useState("");
   const [viewingRecord, setViewingRecord] = useState(null);
 
-  const generateId = () => '_' + Math.random().toString(36).substr(2, 9);
+  // Fetch cooking equipment from Firestore on mount
+  useEffect(() => {
+    const fetchCookingEquipment = async () => {
+      try {
+        const snapshot = await getDocs(collection(db, "equipment"));
+        const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        const cooking = data.filter(e => e.site === site && e.type === "Cooking");
 
-  const addRecord = () => {
+        setTempChecks(prev => {
+          // avoid duplicates
+          const existingIds = new Set(prev.map(e => e.id));
+          const newCooking = cooking.filter(e => !existingIds.has(e.id));
+          return [...prev, ...newCooking];
+        });
+      } catch (error) {
+        console.error("Error fetching cooking equipment:", error);
+      }
+    };
+
+    fetchCookingEquipment();
+  }, [site, setTempChecks]);
+
+  // Only show cooking equipment for this site
+  const cookingEquipment = tempChecks.filter(eq => eq.site === site && eq.type === "Cooking");
+
+  const generateId = () => "_" + Math.random().toString(36).substr(2, 9);
+
+  const addRecord = async () => {
     if (!newTemp.trim() || !selectedEquipment) return;
 
     const now = new Date();
@@ -19,27 +46,28 @@ const CookingSection = ({ cookingEquipment = [], setTempChecks, site, user, goBa
       person: typeof user === "string" ? user : user?.name || "Unknown",
     };
 
-    // Update the main tempChecks array
-    const updated = setTempChecks(prev =>
-      prev.map(eq =>
-        eq.id === selectedEquipment.id
-          ? { ...eq, records: [...(eq.records || []), record] }
-          : eq
-      )
+    // Update tempChecks array locally
+    const updated = tempChecks.map(eq =>
+      eq.id === selectedEquipment.id
+        ? { ...eq, records: [...(eq.records || []), record] }
+        : eq
     );
-
+    setTempChecks(updated);
     setNewTemp("");
+
+    // Update Firestore
+    try {
+      const eqRef = doc(db, "equipment", selectedEquipment.id);
+      await updateDoc(eqRef, {
+        records: [...(selectedEquipment.records || []), record]
+      });
+    } catch (error) {
+      console.error("Error updating Firestore record:", error);
+    }
   };
 
-  const viewRecord = (eq, rec) => {
-    setViewingRecord({ equipment: eq, record: rec });
-  };
-
-  const resetView = () => {
-    setSelectedEquipment(null);
-    setViewingRecord(null);
-    setNewTemp("");
-  };
+  const viewRecord = (eq, rec) => setViewingRecord({ equipment: eq, record: rec });
+  const resetView = () => { setSelectedEquipment(null); setViewingRecord(null); setNewTemp(""); };
 
   return (
     <div style={{ padding: "30px", textAlign: "center" }}>
@@ -60,6 +88,8 @@ const CookingSection = ({ cookingEquipment = [], setTempChecks, site, user, goBa
               <p>{(eq.records || []).length} records</p>
             </div>
           ))}
+
+          <button onClick={goBack} style={{ marginTop: "20px", padding: "10px 20px" }}>Back</button>
         </>
       )}
 
@@ -96,13 +126,6 @@ const CookingSection = ({ cookingEquipment = [], setTempChecks, site, user, goBa
           <p>Recorded by: {viewingRecord.record.person}</p>
           <button onClick={resetView} style={{ marginTop: "15px", padding: "10px 20px" }}>Back</button>
         </>
-      )}
-
-      {/* Main back button */}
-      {!selectedEquipment && !viewingRecord && (
-        <button onClick={goBack} style={{ marginTop: "20px", padding: "10px 20px" }}>
-          Back
-        </button>
       )}
     </div>
   );
