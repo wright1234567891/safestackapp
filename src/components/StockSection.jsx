@@ -335,4 +335,8 @@ const StockSection = ({ site, goBack, user }) => {
       >
         Back
       </button>
-    </div
+    </div>
+  );
+};
+
+export default StockSection;
