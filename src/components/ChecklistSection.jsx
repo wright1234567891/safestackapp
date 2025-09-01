@@ -4,6 +4,11 @@ import { db } from "../firebase";
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
 
+const formatTimestamp = (ts) => {
+  if (!ts?.toDate) return "";
+  return ts.toDate().toLocaleString();
+};
+
 const ChecklistSection = ({ goBack, site, user }) => {
   const [checklists, setChecklists] = useState([]);
   const [completed, setCompleted] = useState([]);
@@ -180,7 +185,7 @@ const ChecklistSection = ({ goBack, site, user }) => {
       </div>
     ));
 
-  const exportChecklistToPDF = async (title, questions) => {
+  const exportChecklistToPDF = async (title, questions, completedBy = user, ts = Timestamp.now()) => {
     const element = document.createElement("div");
     element.style.padding = "20px";
     element.style.backgroundColor = "#fff";
@@ -190,6 +195,10 @@ const ChecklistSection = ({ goBack, site, user }) => {
     const titleEl = document.createElement("h2");
     titleEl.innerText = title;
     element.appendChild(titleEl);
+
+    const subTitleEl = document.createElement("p");
+    subTitleEl.innerText = `Completed by: ${completedBy} - ${formatTimestamp(ts)}`;
+    element.appendChild(subTitleEl);
 
     questions.forEach((q, idx) => {
       const qEl = document.createElement("p");
@@ -229,7 +238,7 @@ const ChecklistSection = ({ goBack, site, user }) => {
 
     completed.forEach((c, cIdx) => {
       const subTitle = document.createElement("h3");
-      subTitle.innerText = `${cIdx + 1}. ${c.title} (Completed by ${c.person})`;
+      subTitle.innerText = `${cIdx + 1}. ${c.title} (Completed by ${c.person} at ${formatTimestamp(c.createdAt)})`;
       element.appendChild(subTitle);
 
       c.questions.forEach((q, idx) => {
@@ -298,6 +307,7 @@ const ChecklistSection = ({ goBack, site, user }) => {
                 <div key={idx} style={{ position: "relative", cursor: "pointer", backgroundColor: "#f0f0f0", color: "#000", padding: "10px", margin: "10px auto", maxWidth: "600px", borderRadius: "8px" }} onClick={() => viewCompleted(c)}>
                   <p><strong>{c.title}</strong></p>
                   <p>Person: {c.person}</p>
+                  <p>Completed at: {formatTimestamp(c.createdAt)}</p>
                   {isManager && (
                     <button onClick={(e) => { e.stopPropagation(); deleteCompleted(c); }} style={{ position: "absolute", top: "10px", right: "10px", backgroundColor: "#ff4d4d", color: "#fff", border: "none", padding: "5px 10px", borderRadius: "5px", cursor: "pointer" }}>
                       Delete
@@ -315,80 +325,4 @@ const ChecklistSection = ({ goBack, site, user }) => {
         <>
           <input type="text" value={checklistTitle} onChange={(e) => setChecklistTitle(e.target.value)} placeholder="Enter checklist title e.g. Opening Checks" style={{ padding: "10px", fontSize: "16px", width: "300px", borderRadius: "5px" }} />
           <br />
-          <button onClick={() => checklistTitle.trim() !== "" && setTitleSet(true)} style={{ marginTop: "20px", padding: "10px 20px", fontSize: "16px", borderRadius: "5px", cursor: "pointer" }}>
-            Start Adding Questions
-          </button>
-          <br />
-          <button onClick={() => setAdding(false)} style={{ marginTop: "15px", padding: "10px 20px", fontSize: "14px", borderRadius: "5px", cursor: "pointer" }}>
-            Cancel
-          </button>
-        </>
-      )}
-
-      {/* ADDING QUESTIONS VIEW */}
-      {adding && titleSet && (
-        <>
-          <h2>{checklistTitle}</h2>
-
-          <div style={{ margin: "20px 0" }}>
-            <input
-              type="text"
-              value={newItem}
-              onChange={(e) => setNewItem(e.target.value)}
-              placeholder="Enter a new question"
-              style={{ padding: "10px", fontSize: "16px", width: "300px", borderRadius: "5px" }}
-            />
-            <button
-              onClick={addItem}
-              style={{ padding: "10px 20px", fontSize: "16px", marginLeft: "10px", borderRadius: "5px", cursor: "pointer" }}
-            >
-              Add
-            </button>
-          </div>
-
-          <div style={{ maxWidth: "600px", margin: "0 auto", textAlign: "left" }}>
-            {renderChecklistItems(true)}
-          </div>
-
-          <button
-            onClick={saveChecklist}
-            style={{ marginTop: "30px", padding: "10px 20px", borderRadius: "8px", cursor: "pointer" }}
-          >
-            Save Checklist
-          </button>
-          <button
-            onClick={() => setAdding(false)}
-            style={{ marginTop: "10px", padding: "10px 20px", borderRadius: "8px", cursor: "pointer" }}
-          >
-            Cancel
-          </button>
-        </>
-      )}
-
-      {/* VIEW SELECTED CHECKLIST */}
-      {selectedChecklist && (
-        <>
-          <h2>{selectedChecklist.title}</h2>
-          <div style={{ maxWidth: "600px", margin: "0 auto", textAlign: "left" }}>
-            {renderChecklistItems(true)}
-          </div>
-          <button onClick={saveAnswers} style={{ marginTop: "20px", padding: "10px 20px", borderRadius: "8px", cursor: "pointer" }}>Save Answers</button>
-          <button onClick={resetView} style={{ marginTop: "10px", padding: "10px 20px", borderRadius: "8px", cursor: "pointer" }}>Back</button>
-        </>
-      )}
-
-      {/* VIEW COMPLETED CHECKLIST */}
-      {viewingCompleted && (
-        <>
-          <h2>{viewingCompleted.title}</h2>
-          <div style={{ maxWidth: "600px", margin: "0 auto", textAlign: "left" }}>
-            {renderChecklistItems(false)}
-          </div>
-          <button onClick={resetView} style={{ marginTop: "20px", padding: "10px 20px", borderRadius: "8px", cursor: "pointer" }}>Back</button>
-        </>
-      )}
-    </div>
-  );
-};
-
-export default ChecklistSection;
+          <button onClick={() => checklistTitle.trim() !== "" && setTitleSet(true)} style={{ marginTop: "20px", padding:
