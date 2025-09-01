@@ -13,7 +13,7 @@ import {
   query,
   where,
 } from "firebase/firestore";
-import Select from "react-select"; // npm install react-select
+import Select from "react-select";
 
 const StockSection = ({ site, goBack, user }) => {
   const [stockItems, setStockItems] = useState([]);
@@ -28,12 +28,13 @@ const StockSection = ({ site, goBack, user }) => {
   const [newExpiry, setNewExpiry] = useState("");
   const [newSupplier, setNewSupplier] = useState("");
   const [newHACCP, setNewHACCP] = useState([]);
+  const [newItemCategory, setNewItemCategory] = useState("");
 
   const [selectedItem, setSelectedItem] = useState(null);
   const [movementQty, setMovementQty] = useState(0);
   const [newSupplierName, setNewSupplierName] = useState("");
 
-  // Custom styles for react-select
+  // React Select styles
   const selectStyles = {
     control: (provided) => ({ ...provided, minHeight: "40px", fontSize: "14px" }),
     menu: (provided) => ({ ...provided, fontSize: "14px", color: "#333" }),
@@ -95,7 +96,7 @@ const StockSection = ({ site, goBack, user }) => {
 
   // Add stock item
   const addStockItem = async () => {
-    if (!newItemName || newItemQty <= 0 || !newSupplier) {
+    if (!newItemName || newItemQty <= 0 || !newSupplier || !newItemCategory) {
       alert("Please fill in all required fields");
       return;
     }
@@ -108,10 +109,12 @@ const StockSection = ({ site, goBack, user }) => {
         expiryDate: newExpiry || null,
         supplier: newSupplier,
         haccpPoints: newHACCP || [],
+        category: newItemCategory,
         site,
         createdAt: serverTimestamp(),
         createdBy: user?.uid || null,
       });
+      // Reset fields
       setNewItemName("");
       setNewItemQty(0);
       setNewMeasurement("unit");
@@ -119,6 +122,7 @@ const StockSection = ({ site, goBack, user }) => {
       setNewExpiry("");
       setNewSupplier("");
       setNewHACCP([]);
+      setNewItemCategory("");
     } catch (error) {
       console.error("Error adding stock item:", error);
     }
@@ -165,6 +169,11 @@ const StockSection = ({ site, goBack, user }) => {
   const deleteStockItem = async (itemId) => {
     await deleteDoc(doc(db, "stockItems", itemId));
   };
+
+  // Filter HACCP points by category
+  const filteredHACCP = haccpPoints
+    .filter((ccp) => ccp.categories?.includes(newItemCategory))
+    .map((ccp) => ({ value: ccp.id, label: ccp.name }));
 
   return (
     <div className="p-4 bg-white shadow rounded-xl">
@@ -224,20 +233,34 @@ const StockSection = ({ site, goBack, user }) => {
             </option>
           ))}
         </select>
+
+        {/* Category selector */}
+        <select
+          value={newItemCategory}
+          onChange={(e) => setNewItemCategory(e.target.value)}
+          className="border p-2 rounded md:col-span-2"
+        >
+          <option value="">Select category</option>
+          <option value="Meat">Meat</option>
+          <option value="Vegetables">Vegetables</option>
+          <option value="Dairy">Dairy</option>
+          <option value="Ambient">Ambient</option>
+        </select>
+
+        {/* HACCP points */}
         <div className="md:col-span-2">
           <Select
             styles={selectStyles}
             isMulti
-            options={haccpPoints.map((ccp) => ({ value: ccp.id, label: ccp.name }))}
-            value={haccpPoints
-              .filter((ccp) => newHACCP.includes(ccp.id))
-              .map((ccp) => ({ value: ccp.id, label: ccp.name }))}
+            options={filteredHACCP}
+            value={filteredHACCP.filter((ccp) => newHACCP.includes(ccp.value))}
             onChange={(selected) =>
               setNewHACCP(selected ? selected.map((s) => s.value) : [])
             }
             placeholder="HACCP points"
           />
         </div>
+
         <button
           onClick={addStockItem}
           className="bg-green-600 text-white px-4 py-2 rounded md:col-span-12 mt-2"
