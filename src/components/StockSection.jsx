@@ -18,13 +18,16 @@ const StockSection = ({ site, goBack, user }) => {
   const [stockItems, setStockItems] = useState([]);
   const [equipment, setEquipment] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
+  const [haccpPoints, setHaccpPoints] = useState([]);
 
   const [newItemName, setNewItemName] = useState("");
   const [newItemQty, setNewItemQty] = useState(0);
-  const [newMeasurement, setNewMeasurement] = useState("unit"); // unit or kg
+  const [newMeasurement, setNewMeasurement] = useState("unit");
   const [newLocation, setNewLocation] = useState("Ambient");
   const [newExpiry, setNewExpiry] = useState("");
   const [newSupplier, setNewSupplier] = useState("");
+  const [newHACCP, setNewHACCP] = useState([]); // array of HACCP point IDs
+
   const [selectedItem, setSelectedItem] = useState(null);
   const [movementQty, setMovementQty] = useState(0);
 
@@ -67,16 +70,27 @@ const StockSection = ({ site, goBack, user }) => {
     return () => unsub();
   }, [site]);
 
+  // HACCP points updates
+  useEffect(() => {
+    if (!site) return;
+    const q = query(collection(db, "haccpPoints"), where("site", "==", site));
+    const unsub = onSnapshot(q, (snapshot) => {
+      setHaccpPoints(snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })));
+    });
+    return () => unsub();
+  }, [site]);
+
   // Add stock item
   const addStockItem = async () => {
     if (!newItemName || newItemQty <= 0 || !newSupplier) return;
     await addDoc(collection(db, "stockItems"), {
       name: newItemName,
       quantity: Number(newItemQty),
-      measurement: newMeasurement, // store whether it's unit or kg
+      measurement: newMeasurement,
       location: newLocation,
       expiryDate: newExpiry || null,
       supplier: newSupplier,
+      haccpPoints: newHACCP, // store HACCP point IDs
       site,
       createdAt: serverTimestamp(),
       createdBy: user?.uid || null,
@@ -87,6 +101,7 @@ const StockSection = ({ site, goBack, user }) => {
     setNewLocation("Ambient");
     setNewExpiry("");
     setNewSupplier("");
+    setNewHACCP([]);
   };
 
   // Add supplier
@@ -127,12 +142,21 @@ const StockSection = ({ site, goBack, user }) => {
     await deleteDoc(doc(db, "stockItems", itemId));
   };
 
+  // Handle HACCP multi-select change
+  const toggleHACCPSelection = (id) => {
+    if (newHACCP.includes(id)) {
+      setNewHACCP(newHACCP.filter((hid) => hid !== id));
+    } else {
+      setNewHACCP([...newHACCP, id]);
+    }
+  };
+
   return (
     <div className="p-4 bg-white shadow rounded-xl">
       <h2 className="text-xl font-bold mb-3">Stock Management — {site}</h2>
 
       {/* Add stock item */}
-      <div className="mb-4 grid grid-cols-1 md:grid-cols-7 gap-2">
+      <div className="mb-4 grid grid-cols-1 md:grid-cols-8 gap-2">
         <input
           type="text"
           placeholder="Item name"
@@ -185,9 +209,24 @@ const StockSection = ({ site, goBack, user }) => {
             </option>
           ))}
         </select>
+
+        {/* HACCP multi-select */}
+        <div className="border p-2 rounded max-h-32 overflow-y-auto">
+          {haccpPoints.map((h) => (
+            <label key={h.id} className="flex items-center gap-1">
+              <input
+                type="checkbox"
+                checked={newHACCP.includes(h.id)}
+                onChange={() => toggleHACCPSelection(h.id)}
+              />
+              <span className="text-sm">{h.name}</span>
+            </label>
+          ))}
+        </div>
+
         <button
           onClick={addStockItem}
-          className="bg-green-600 text-white px-4 py-2 rounded col-span-1 md:col-span-7"
+          className="bg-green-600 text-white px-4 py-2 rounded col-span-1 md:col-span-8"
         >
           Add Item
         </button>
@@ -206,7 +245,13 @@ const StockSection = ({ site, goBack, user }) => {
               <span className="text-sm text-gray-600">
                 Location: {item.location} | Expiry:{" "}
                 {item.expiryDate ? item.expiryDate : "N/A"} | Supplier:{" "}
-                {item.supplier || "N/A"}
+                {item.supplier || "N/A"} | HACCP Points:{" "}
+                {item.haccpPoints?.length > 0
+                  ? item.haccpPoints.map((id) => {
+                      const h = haccpPoints.find((hp) => hp.id === id);
+                      return h ? h.name : id;
+                    }).join(", ")
+                  : "N/A"}
               </span>
             </span>
             <div className="flex gap-2 mt-2 md:mt-0">
@@ -276,22 +321,4 @@ const StockSection = ({ site, goBack, user }) => {
           />
           <button
             onClick={addSupplier}
-            className="bg-purple-600 text-white px-4 py-2 rounded"
-          >
-            Add
-          </button>
-        </div>
-      </div>
-
-      {/* Back button */}
-      <button
-        onClick={goBack}
-        className="mt-6 bg-gray-300 px-4 py-2 rounded hover:bg-gray-400"
-      >
-        Back
-      </button>
-    </div>
-  );
-};
-
-export default StockSection;
+            className="bg-purple

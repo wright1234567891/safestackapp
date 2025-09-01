@@ -5,6 +5,7 @@ import TempSection from "./TempSection";
 import CleaningSection from "./CleaningSection";
 import CookingSection from "./CookingSection";
 import StockSection from "./StockSection";
+import Reports from "./Reports"; // <-- import Reports
 
 const sites = [
   "Thorganby Site",
@@ -13,7 +14,7 @@ const sites = [
   "Pop up Locations",
 ];
 
-const SitePage = ({ user, onLogout }) => { // receive user and logout callback
+const SitePage = ({ user, onLogout }) => {
   const [selectedSite, setSelectedSite] = useState(null);
   const [activeSection, setActiveSection] = useState(null);
 
@@ -108,6 +109,16 @@ const SitePage = ({ user, onLogout }) => { // receive user and logout callback
     );
   }
 
+  if (selectedSite && activeSection === "reports") {
+    return (
+      <Reports
+        goBack={() => setActiveSection(null)}
+        site={selectedSite}
+        user={user}
+      />
+    );
+  }
+
   // Site selection screen
   if (!selectedSite) {
     return (
@@ -143,7 +154,6 @@ const SitePage = ({ user, onLogout }) => { // receive user and logout callback
           ))}
         </div>
 
-        {/* Logout button */}
         <button
           onClick={onLogout}
           style={{
@@ -195,6 +205,9 @@ const SitePage = ({ user, onLogout }) => { // receive user and logout callback
         <button style={buttonStyle} onClick={() => setActiveSection("stock")}>
           Stock
         </button>
+        <button style={buttonStyle} onClick={() => setActiveSection("reports")}>
+          Reports
+        </button>
         <button
           style={{ ...buttonStyle, backgroundColor: "#d4f1f4" }}
           onClick={() => setActiveSection("equipment")}
@@ -210,7 +223,6 @@ const SitePage = ({ user, onLogout }) => { // receive user and logout callback
         Back
       </button>
 
-      {/* Logout button for inside site dashboard */}
       <button
         onClick={onLogout}
         style={{
