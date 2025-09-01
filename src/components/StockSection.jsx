@@ -35,29 +35,15 @@ const StockSection = ({ site, goBack, user }) => {
 
   // Custom styles for react-select
   const selectStyles = {
-    control: (provided) => ({
-      ...provided,
-      minHeight: "40px",
-      fontSize: "14px",
-    }),
-    menu: (provided) => ({
-      ...provided,
-      fontSize: "14px",
-      color: "#333",
-    }),
+    control: (provided) => ({ ...provided, minHeight: "40px", fontSize: "14px" }),
+    menu: (provided) => ({ ...provided, fontSize: "14px", color: "#333" }),
     option: (provided, state) => ({
       ...provided,
       color: "#333",
       backgroundColor: state.isFocused ? "#e2e8f0" : "#fff",
     }),
-    multiValueLabel: (provided) => ({
-      ...provided,
-      color: "#fff",
-    }),
-    multiValue: (provided) => ({
-      ...provided,
-      backgroundColor: "#4ade80",
-    }),
+    multiValueLabel: (provided) => ({ ...provided, color: "#fff" }),
+    multiValue: (provided) => ({ ...provided, backgroundColor: "#4ade80" }),
   };
 
   // Fetch stock items
@@ -109,38 +95,49 @@ const StockSection = ({ site, goBack, user }) => {
 
   // Add stock item
   const addStockItem = async () => {
-    if (!newItemName || newItemQty <= 0 || !newSupplier) return;
-    await addDoc(collection(db, "stockItems"), {
-      name: newItemName,
-      quantity: Number(newItemQty),
-      measurement: newMeasurement,
-      location: newLocation,
-      expiryDate: newExpiry || null,
-      supplier: newSupplier,
-      haccpPoints: newHACCP, // store array of CCP IDs
-      site,
-      createdAt: serverTimestamp(),
-      createdBy: user?.uid || null,
-    });
-    setNewItemName("");
-    setNewItemQty(0);
-    setNewMeasurement("unit");
-    setNewLocation("Ambient");
-    setNewExpiry("");
-    setNewSupplier("");
-    setNewHACCP([]);
+    if (!newItemName || newItemQty <= 0 || !newSupplier) {
+      alert("Please fill in all required fields");
+      return;
+    }
+    try {
+      await addDoc(collection(db, "stockItems"), {
+        name: newItemName,
+        quantity: Number(newItemQty),
+        measurement: newMeasurement,
+        location: newLocation,
+        expiryDate: newExpiry || null,
+        supplier: newSupplier,
+        haccpPoints: newHACCP || [],
+        site,
+        createdAt: serverTimestamp(),
+        createdBy: user?.uid || null,
+      });
+      setNewItemName("");
+      setNewItemQty(0);
+      setNewMeasurement("unit");
+      setNewLocation("Ambient");
+      setNewExpiry("");
+      setNewSupplier("");
+      setNewHACCP([]);
+    } catch (error) {
+      console.error("Error adding stock item:", error);
+    }
   };
 
   // Add supplier
   const addSupplier = async () => {
     if (!newSupplierName) return;
-    await addDoc(collection(db, "suppliers"), {
-      name: newSupplierName,
-      site,
-      createdAt: serverTimestamp(),
-      createdBy: user?.uid || null,
-    });
-    setNewSupplierName("");
+    try {
+      await addDoc(collection(db, "suppliers"), {
+        name: newSupplierName,
+        site,
+        createdAt: serverTimestamp(),
+        createdBy: user?.uid || null,
+      });
+      setNewSupplierName("");
+    } catch (error) {
+      console.error("Error adding supplier:", error);
+    }
   };
 
   // Record delivery
@@ -174,25 +171,25 @@ const StockSection = ({ site, goBack, user }) => {
       <h2 className="text-xl font-bold mb-3">Stock Management — {site}</h2>
 
       {/* Add stock item */}
-      <div className="mb-4 grid grid-cols-1 md:grid-cols-8 gap-2">
+      <div className="mb-4 grid grid-cols-1 md:grid-cols-12 gap-2 items-end">
         <input
           type="text"
           placeholder="Item name"
           value={newItemName}
           onChange={(e) => setNewItemName(e.target.value)}
-          className="border p-2 rounded"
+          className="border p-2 rounded md:col-span-2"
         />
         <input
           type="number"
           placeholder="Qty"
           value={newItemQty}
           onChange={(e) => setNewItemQty(e.target.value)}
-          className="border p-2 rounded"
+          className="border p-2 rounded md:col-span-1"
         />
         <select
           value={newMeasurement}
           onChange={(e) => setNewMeasurement(e.target.value)}
-          className="border p-2 rounded"
+          className="border p-2 rounded md:col-span-1"
         >
           <option value="unit">Units</option>
           <option value="kg">Kilograms</option>
@@ -200,7 +197,7 @@ const StockSection = ({ site, goBack, user }) => {
         <select
           value={newLocation}
           onChange={(e) => setNewLocation(e.target.value)}
-          className="border p-2 rounded"
+          className="border p-2 rounded md:col-span-2"
         >
           <option value="Ambient">Ambient</option>
           {equipment.map((eq) => (
@@ -213,12 +210,12 @@ const StockSection = ({ site, goBack, user }) => {
           type="date"
           value={newExpiry}
           onChange={(e) => setNewExpiry(e.target.value)}
-          className="border p-2 rounded"
+          className="border p-2 rounded md:col-span-2"
         />
         <select
           value={newSupplier}
           onChange={(e) => setNewSupplier(e.target.value)}
-          className="border p-2 rounded"
+          className="border p-2 rounded md:col-span-2"
         >
           <option value="">Select supplier</option>
           {suppliers.map((sup) => (
@@ -227,9 +224,7 @@ const StockSection = ({ site, goBack, user }) => {
             </option>
           ))}
         </select>
-
-        {/* HACCP multi-select dropdown */}
-        <div className="col-span-1 md:col-span-8">
+        <div className="md:col-span-2">
           <Select
             styles={selectStyles}
             isMulti
@@ -237,14 +232,15 @@ const StockSection = ({ site, goBack, user }) => {
             value={haccpPoints
               .filter((ccp) => newHACCP.includes(ccp.id))
               .map((ccp) => ({ value: ccp.id, label: ccp.name }))}
-            onChange={(selected) => setNewHACCP(selected.map((s) => s.value))}
-            placeholder="Select HACCP points..."
+            onChange={(selected) =>
+              setNewHACCP(selected ? selected.map((s) => s.value) : [])
+            }
+            placeholder="HACCP points"
           />
         </div>
-
         <button
           onClick={addStockItem}
-          className="bg-green-600 text-white px-4 py-2 rounded col-span-1 md:col-span-8"
+          className="bg-green-600 text-white px-4 py-2 rounded md:col-span-12 mt-2"
         >
           Add Item
         </button>
