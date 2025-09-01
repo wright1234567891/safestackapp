@@ -33,6 +33,33 @@ const StockSection = ({ site, goBack, user }) => {
   const [movementQty, setMovementQty] = useState(0);
   const [newSupplierName, setNewSupplierName] = useState("");
 
+  // Custom styles for react-select
+  const selectStyles = {
+    control: (provided) => ({
+      ...provided,
+      minHeight: "40px",
+      fontSize: "14px",
+    }),
+    menu: (provided) => ({
+      ...provided,
+      fontSize: "14px",
+      color: "#333",
+    }),
+    option: (provided, state) => ({
+      ...provided,
+      color: "#333",
+      backgroundColor: state.isFocused ? "#e2e8f0" : "#fff",
+    }),
+    multiValueLabel: (provided) => ({
+      ...provided,
+      color: "#fff",
+    }),
+    multiValue: (provided) => ({
+      ...provided,
+      backgroundColor: "#4ade80",
+    }),
+  };
+
   // Fetch stock items
   useEffect(() => {
     if (!site) return;
@@ -204,6 +231,7 @@ const StockSection = ({ site, goBack, user }) => {
         {/* HACCP multi-select dropdown */}
         <div className="col-span-1 md:col-span-8">
           <Select
+            styles={selectStyles}
             isMulti
             options={haccpPoints.map((ccp) => ({ value: ccp.id, label: ccp.name }))}
             value={haccpPoints
@@ -327,7 +355,7 @@ const StockSection = ({ site, goBack, user }) => {
       >
         Back
       </button>
-    </div>  // <-- closes the main container
+    </div>
   );
 };
 
