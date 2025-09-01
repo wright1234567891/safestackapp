@@ -323,6 +323,77 @@ const ChecklistSection = ({ goBack, site, user }) => {
       {/* ADD CHECKLIST VIEW */}
       {adding && !titleSet && (
         <>
-          <input type="text" value={checklistTitle} onChange={(e) => setChecklistTitle(e.target.value)} placeholder="Enter checklist title e.g. Opening Checks" style={{ padding: "10px", fontSize: "16px", width: "300px", borderRadius: "5px" }} />
+          <input
+            type="text"
+            value={checklistTitle}
+            onChange={(e) => setChecklistTitle(e.target.value)}
+            placeholder="Enter checklist title e.g. Opening Checks"
+            style={{ padding: "10px", fontSize: "16px", width: "300px", borderRadius: "5px" }}
+          />
           <br />
-          <button onClick={() => checklistTitle.trim() !== "" && setTitleSet(true)} style={{ marginTop: "20px", padding:
+          <button
+            onClick={() => checklistTitle.trim() !== "" && setTitleSet(true)}
+            style={{ marginTop: "20px", padding: "10px 20px", fontSize: "16px", borderRadius: "5px", cursor: "pointer" }}
+          >
+            Start Adding Questions
+          </button>
+        </>
+      )}
+
+      {/* ADD QUESTIONS VIEW */}
+      {adding && titleSet && (
+        <>
+          <h2>{checklistTitle}</h2>
+          {renderChecklistItems()}
+          <input
+            type="text"
+            value={newItem}
+            onChange={(e) => setNewItem(e.target.value)}
+            placeholder="New question"
+            style={{ padding: "10px", fontSize: "16px", width: "300px", borderRadius: "5px", marginTop: "10px" }}
+          />
+          <button onClick={addItem} style={{ marginLeft: "10px", padding: "10px 15px", borderRadius: "5px", cursor: "pointer" }}>
+            Add Question
+          </button>
+          <br />
+          <button onClick={saveChecklist} style={{ marginTop: "20px", padding: "10px 20px", fontSize: "16px", borderRadius: "5px", cursor: "pointer" }}>
+            Save Checklist
+          </button>
+          <button onClick={() => { setAdding(false); setTitleSet(false); setItems([]); setChecklistTitle(""); }} style={{ marginTop: "20px", marginLeft: "10px", padding: "10px 20px", fontSize: "16px", borderRadius: "5px", cursor: "pointer" }}>
+            Cancel
+          </button>
+        </>
+      )}
+
+      {/* VIEWING SELECTED CHECKLIST */}
+      {selectedChecklist && (
+        <>
+          <h2>{selectedChecklist.title}</h2>
+          {renderChecklistItems()}
+          <button onClick={saveAnswers} style={{ marginTop: "20px", padding: "10px 20px", fontSize: "16px", borderRadius: "5px", cursor: "pointer" }}>
+            Submit Answers
+          </button>
+          <button onClick={resetView} style={{ marginTop: "20px", marginLeft: "10px", padding: "10px 20px", fontSize: "16px", borderRadius: "5px", cursor: "pointer" }}>
+            Back
+          </button>
+        </>
+      )}
+
+      {/* VIEWING COMPLETED CHECKLIST */}
+      {viewingCompleted && (
+        <>
+          <h2>{viewingCompleted.title} (Completed by {viewingCompleted.person})</h2>
+          {renderChecklistItems(false)}
+          <button onClick={resetView} style={{ marginTop: "20px", padding: "10px 20px", fontSize: "16px", borderRadius: "5px", cursor: "pointer" }}>
+            Back
+          </button>
+          <button onClick={() => exportChecklistToPDF(viewingCompleted.title, viewingCompleted.questions, viewingCompleted.person, viewingCompleted.createdAt)} style={{ marginTop: "20px", marginLeft: "10px", padding: "10px 20px", fontSize: "16px", borderRadius: "5px", cursor: "pointer" }}>
+            Export PDF
+          </button>
+        </>
+      )}
+    </div>
+  );
+};
+
+export default ChecklistSection;
