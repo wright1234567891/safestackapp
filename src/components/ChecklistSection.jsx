@@ -211,7 +211,6 @@ const ChecklistSection = ({ goBack, site, user }) => {
     document.body.removeChild(element);
   };
 
-  // --- NEW FUNCTION: Export ALL completed checklists ---
   const exportAllCompletedToPDF = async () => {
     if (completed.length === 0) {
       alert("No completed checklists to export");
@@ -239,7 +238,7 @@ const ChecklistSection = ({ goBack, site, user }) => {
         element.appendChild(qEl);
       });
 
-      element.appendChild(document.createElement("hr")); // separator
+      element.appendChild(document.createElement("hr"));
     });
 
     document.body.appendChild(element);
@@ -292,10 +291,7 @@ const ChecklistSection = ({ goBack, site, user }) => {
           {completed.length > 0 && (
             <>
               <h2 style={{ marginTop: "40px" }}>Completed Checklists</h2>
-              <button
-                onClick={exportAllCompletedToPDF}
-                style={{ marginBottom: "20px", padding: "10px 20px", borderRadius: "8px", cursor: "pointer" }}
-              >
+              <button onClick={exportAllCompletedToPDF} style={{ marginBottom: "20px", padding: "10px 20px", borderRadius: "8px", cursor: "pointer" }}>
                 Export All Completed Checklists
               </button>
               {completed.map((c, idx) => (
@@ -329,7 +325,70 @@ const ChecklistSection = ({ goBack, site, user }) => {
         </>
       )}
 
+      {/* ADDING QUESTIONS VIEW */}
       {adding && titleSet && (
         <>
           <h2>{checklistTitle}</h2>
-          <div style
+
+          <div style={{ margin: "20px 0" }}>
+            <input
+              type="text"
+              value={newItem}
+              onChange={(e) => setNewItem(e.target.value)}
+              placeholder="Enter a new question"
+              style={{ padding: "10px", fontSize: "16px", width: "300px", borderRadius: "5px" }}
+            />
+            <button
+              onClick={addItem}
+              style={{ padding: "10px 20px", fontSize: "16px", marginLeft: "10px", borderRadius: "5px", cursor: "pointer" }}
+            >
+              Add
+            </button>
+          </div>
+
+          <div style={{ maxWidth: "600px", margin: "0 auto", textAlign: "left" }}>
+            {renderChecklistItems(true)}
+          </div>
+
+          <button
+            onClick={saveChecklist}
+            style={{ marginTop: "30px", padding: "10px 20px", borderRadius: "8px", cursor: "pointer" }}
+          >
+            Save Checklist
+          </button>
+          <button
+            onClick={() => setAdding(false)}
+            style={{ marginTop: "10px", padding: "10px 20px", borderRadius: "8px", cursor: "pointer" }}
+          >
+            Cancel
+          </button>
+        </>
+      )}
+
+      {/* VIEW SELECTED CHECKLIST */}
+      {selectedChecklist && (
+        <>
+          <h2>{selectedChecklist.title}</h2>
+          <div style={{ maxWidth: "600px", margin: "0 auto", textAlign: "left" }}>
+            {renderChecklistItems(true)}
+          </div>
+          <button onClick={saveAnswers} style={{ marginTop: "20px", padding: "10px 20px", borderRadius: "8px", cursor: "pointer" }}>Save Answers</button>
+          <button onClick={resetView} style={{ marginTop: "10px", padding: "10px 20px", borderRadius: "8px", cursor: "pointer" }}>Back</button>
+        </>
+      )}
+
+      {/* VIEW COMPLETED CHECKLIST */}
+      {viewingCompleted && (
+        <>
+          <h2>{viewingCompleted.title}</h2>
+          <div style={{ maxWidth: "600px", margin: "0 auto", textAlign: "left" }}>
+            {renderChecklistItems(false)}
+          </div>
+          <button onClick={resetView} style={{ marginTop: "20px", padding: "10px 20px", borderRadius: "8px", cursor: "pointer" }}>Back</button>
+        </>
+      )}
+    </div>
+  );
+};
+
+export default ChecklistSection;
