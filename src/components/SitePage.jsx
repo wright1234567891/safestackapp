@@ -1,4 +1,6 @@
+// src/components/SitePage.jsx
 import React, { useState } from "react";
+import { FaClipboardList, FaThermometerHalf, FaBroom, FaFire, FaBoxOpen, FaChartLine, FaShieldAlt, FaTools } from "react-icons/fa";
 import EquipmentManager from "./EquipmentManager";
 import ChecklistSection from "./ChecklistSection";
 import TempSection from "./TempSection";
@@ -6,13 +8,24 @@ import CleaningSection from "./CleaningSection";
 import CookingSection from "./CookingSection";
 import StockSection from "./StockSection";
 import Reports from "./Reports";
-import CCPSection from "./CCPSection"; // <-- import CCPSection
+import CCPSection from "./CCPSection";
 
 const sites = [
   "Thorganby Site",
   "Street Food Trailer",
   "Newsholme Site",
   "Pop up Locations",
+];
+
+const sections = [
+  { key: "checklists", label: "Checklists", icon: <FaClipboardList />, color: "#3b82f6" },
+  { key: "temp", label: "Temp Checks", icon: <FaThermometerHalf />, color: "#06b6d4" },
+  { key: "cleaning", label: "Cleaning", icon: <FaBroom />, color: "#22c55e" },
+  { key: "cooking", label: "Cooking & Cooling", icon: <FaFire />, color: "#f97316" },
+  { key: "stock", label: "Stock", icon: <FaBoxOpen />, color: "#8b5cf6" },
+  { key: "reports", label: "Reports", icon: <FaChartLine />, color: "#64748b" },
+  { key: "ccp", label: "CCPs", icon: <FaShieldAlt />, color: "#ef4444" },
+  { key: "equipment", label: "Add Equipment", icon: <FaTools />, color: "#14b8a6" },
 ];
 
 const SitePage = ({ user, onLogout }) => {
@@ -133,47 +146,42 @@ const SitePage = ({ user, onLogout }) => {
   // Site selection screen
   if (!selectedSite) {
     return (
-      <div style={{ textAlign: "center", padding: "50px" }}>
-        <h1>Select Site</h1>
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "center",
-            gap: "20px",
-            flexWrap: "wrap",
-            maxWidth: "600px",
-            margin: "0 auto",
-          }}
-        >
+      <div className="container">
+        <h1 style={{ marginBottom: "30px" }}>Select Site</h1>
+        <div className="grid" style={{ display: "flex", gap: "20px", flexWrap: "wrap", justifyContent: "center" }}>
           {sites.map((site) => (
-            <button
+            <div
               key={site}
               onClick={() => setSelectedSite(site)}
               style={{
-                padding: "15px 30px",
-                fontSize: "18px",
-                margin: "10px",
-                cursor: "pointer",
-                borderRadius: "8px",
-                border: "2px solid #333",
-                backgroundColor: "#f9f9f9",
+                backgroundColor: "#f0f4f8",
+                padding: "25px 35px",
                 minWidth: "220px",
+                borderRadius: "12px",
+                cursor: "pointer",
+                fontWeight: 600,
+                textAlign: "center",
+                boxShadow: "0 2px 6px rgba(0,0,0,0.1)",
+                transition: "all 0.2s",
               }}
+              onMouseEnter={(e) => e.currentTarget.style.transform = "translateY(-3px)"}
+              onMouseLeave={(e) => e.currentTarget.style.transform = "translateY(0)"}
             >
               {site}
-            </button>
+            </div>
           ))}
         </div>
 
         <button
           onClick={onLogout}
           style={{
-            marginTop: "30px",
-            padding: "10px 20px",
-            borderRadius: "8px",
+            marginTop: "40px",
+            padding: "12px 24px",
+            borderRadius: "10px",
             cursor: "pointer",
             backgroundColor: "#ffb3b3",
             fontSize: "16px",
+            border: "none",
           }}
         >
           Logout
@@ -182,74 +190,68 @@ const SitePage = ({ user, onLogout }) => {
     );
   }
 
-  const buttonStyle = {
-    padding: "10px 20px",
-    borderRadius: "8px",
-    cursor: "pointer",
-    minWidth: "160px",
-  };
-
+  // Selected site dashboard
   return (
-    <div style={{ textAlign: "center", padding: "50px" }}>
-      <h1>{selectedSite}</h1>
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "center",
-          gap: "15px",
-          flexWrap: "wrap",
-          marginTop: "30px",
-        }}
-      >
-        <button style={buttonStyle} onClick={() => setActiveSection("checklists")}>
-          Checklists
-        </button>
-        <button style={buttonStyle} onClick={() => setActiveSection("temp")}>
-          Temp Checks
-        </button>
-        <button style={buttonStyle} onClick={() => setActiveSection("cleaning")}>
-          Cleaning
-        </button>
-        <button style={buttonStyle} onClick={() => setActiveSection("cooking")}>
-          Cooking & Cooling
-        </button>
-        <button style={buttonStyle} onClick={() => setActiveSection("stock")}>
-          Stock
-        </button>
-        <button style={buttonStyle} onClick={() => setActiveSection("reports")}>
-          Reports
-        </button>
-        <button style={buttonStyle} onClick={() => setActiveSection("ccp")}>
-          CCPs
-        </button>
-        <button
-          style={{ ...buttonStyle, backgroundColor: "#d4f1f4" }}
-          onClick={() => setActiveSection("equipment")}
-        >
-          Add Equipment
-        </button>
+    <div className="container">
+      <h1 style={{ marginBottom: "30px" }}>{selectedSite}</h1>
+      <div className="grid" style={{ display: "flex", flexWrap: "wrap", gap: "20px", justifyContent: "center" }}>
+        {sections.map((sec) => (
+          <div
+            key={sec.key}
+            onClick={() => setActiveSection(sec.key)}
+            style={{
+              backgroundColor: sec.color,
+              color: "#fff",
+              minWidth: "180px",
+              padding: "20px",
+              borderRadius: "12px",
+              cursor: "pointer",
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              justifyContent: "center",
+              boxShadow: "0 3px 8px rgba(0,0,0,0.15)",
+              fontWeight: 600,
+              transition: "all 0.2s",
+            }}
+            onMouseEnter={(e) => e.currentTarget.style.transform = "translateY(-3px)"}
+            onMouseLeave={(e) => e.currentTarget.style.transform = "translateY(0)"}
+          >
+            <div style={{ fontSize: "24px", marginBottom: "10px" }}>{sec.icon}</div>
+            {sec.label}
+          </div>
+        ))}
       </div>
 
-      <button
-        onClick={resetSite}
-        style={{ marginTop: "30px", padding: "10px 20px", borderRadius: "8px", cursor: "pointer" }}
-      >
-        Back
-      </button>
+      <div style={{ marginTop: "40px", display: "flex", gap: "15px", justifyContent: "center", flexWrap: "wrap" }}>
+        <button
+          onClick={resetSite}
+          style={{
+            padding: "10px 20px",
+            borderRadius: "8px",
+            cursor: "pointer",
+            backgroundColor: "#e5e7eb",
+            border: "none",
+            fontWeight: 600,
+          }}
+        >
+          Back
+        </button>
 
-      <button
-        onClick={onLogout}
-        style={{
-          marginTop: "15px",
-          padding: "10px 20px",
-          borderRadius: "8px",
-          cursor: "pointer",
-          backgroundColor: "#ffb3b3",
-          fontSize: "16px",
-        }}
-      >
-        Logout
-      </button>
+        <button
+          onClick={onLogout}
+          style={{
+            padding: "10px 20px",
+            borderRadius: "8px",
+            cursor: "pointer",
+            backgroundColor: "#ffb3b3",
+            border: "none",
+            fontWeight: 600,
+          }}
+        >
+          Logout
+        </button>
+      </div>
     </div>
   );
 };
