@@ -33,6 +33,9 @@ const StockSection = ({ site, goBack, user }) => {
   const [movementQty, setMovementQty] = useState(0);
   const [newSupplierName, setNewSupplierName] = useState("");
 
+  // Local buffer for edits to prevent losing text on back/return
+  const [editBuffer, setEditBuffer] = useState({});
+
   const selectStyles = {
     control: (provided) => ({ ...provided, minHeight: "40px", fontSize: "14px" }),
     menu: (provided) => ({ ...provided, fontSize: "14px", color: "#333" }),
@@ -158,13 +161,26 @@ const StockSection = ({ site, goBack, user }) => {
     await deleteDoc(doc(db, "stockItems", itemId));
   };
 
-  const updateStockField = async (itemId, field, value) => {
-    try {
-      const ref = doc(db, "stockItems", itemId);
-      await updateDoc(ref, { [field]: value });
-    } catch (error) {
-      console.error("Error updating stock field:", error);
-    }
+  // Update Firestore with debounce
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      Object.entries(editBuffer).forEach(([id, fields]) => {
+        Object.entries(fields).forEach(([field, value]) => {
+          const ref = doc(db, "stockItems", id);
+          updateDoc(ref, { [field]: value }).catch(console.error);
+        });
+      });
+      setEditBuffer({});
+    }, 500); // 0.5s debounce
+
+    return () => clearTimeout(timeout);
+  }, [editBuffer]);
+
+  const handleEdit = (itemId, field, value) => {
+    setEditBuffer((prev) => ({
+      ...prev,
+      [itemId]: { ...prev[itemId], [field]: value },
+    }));
   };
 
   const filteredHACCP = haccpPoints.map((ccp) => ({ value: ccp.id, label: ccp.name }));
@@ -258,31 +274,27 @@ const StockSection = ({ site, goBack, user }) => {
             <div className="flex flex-col md:flex-row md:items-center gap-2">
               <input
                 type="text"
-                value={item.name}
-                onChange={(e) => updateStockField(item.id, "name", e.target.value)}
+                value={editBuffer[item.id]?.name ?? item.name}
+                onChange={(e) => handleEdit(item.id, "name", e.target.value)}
                 className="border p-1 rounded w-32"
               />
               <input
                 type="number"
-                value={item.quantity}
-                onChange={(e) =>
-                  updateStockField(item.id, "quantity", Number(e.target.value))
-                }
+                value={editBuffer[item.id]?.quantity ?? item.quantity}
+                onChange={(e) => handleEdit(item.id, "quantity", Number(e.target.value))}
                 className="border p-1 rounded w-20"
               />
               <select
-                value={item.measurement}
-                onChange={(e) =>
-                  updateStockField(item.id, "measurement", e.target.value)
-                }
+                value={editBuffer[item.id]?.measurement ?? item.measurement}
+                onChange={(e) => handleEdit(item.id, "measurement", e.target.value)}
                 className="border p-1 rounded w-24"
               >
                 <option value="unit">Units</option>
                 <option value="kg">Kilograms</option>
               </select>
               <select
-                value={item.location}
-                onChange={(e) => updateStockField(item.id, "location", e.target.value)}
+                value={editBuffer[item.id]?.location ?? item.location}
+                onChange={(e) => handleEdit(item.id, "location", e.target.value)}
                 className="border p-1 rounded w-32"
               >
                 <option value="Ambient">Ambient</option>
@@ -294,15 +306,13 @@ const StockSection = ({ site, goBack, user }) => {
               </select>
               <input
                 type="date"
-                value={item.expiryDate || ""}
-                onChange={(e) =>
-                  updateStockField(item.id, "expiryDate", e.target.value)
-                }
+                value={editBuffer[item.id]?.expiryDate ?? item.expiryDate || ""}
+                onChange={(e) => handleEdit(item.id, "expiryDate", e.target.value)}
                 className="border p-1 rounded w-32"
               />
               <select
-                value={item.supplier || ""}
-                onChange={(e) => updateStockField(item.id, "supplier", e.target.value)}
+                value={editBuffer[item.id]?.supplier ?? item.supplier || ""}
+                onChange={(e) => handleEdit(item.id, "supplier", e.target.value)}
                 className="border p-1 rounded w-32"
               >
                 <option value="">Select supplier</option>
