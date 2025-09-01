@@ -34,7 +34,6 @@ const StockSection = ({ site, goBack, user }) => {
   const [movementQty, setMovementQty] = useState(0);
   const [newSupplierName, setNewSupplierName] = useState("");
 
-  // React Select styles
   const selectStyles = {
     control: (provided) => ({ ...provided, minHeight: "40px", fontSize: "14px" }),
     menu: (provided) => ({ ...provided, fontSize: "14px", color: "#333" }),
@@ -170,9 +169,9 @@ const StockSection = ({ site, goBack, user }) => {
     await deleteDoc(doc(db, "stockItems", itemId));
   };
 
-  // Filter HACCP points by category
+  // Filter HACCP points by category; if no category selected, show all
   const filteredHACCP = haccpPoints
-    .filter((ccp) => ccp.categories?.includes(newItemCategory))
+    .filter((ccp) => !newItemCategory || ccp.categories?.includes(newItemCategory))
     .map((ccp) => ({ value: ccp.id, label: ccp.name }));
 
   return (
