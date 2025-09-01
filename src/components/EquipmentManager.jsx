@@ -1,25 +1,30 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { collection, addDoc, getDocs } from "firebase/firestore";
-import { db } from "../firebase"; // make sure Firebase is initialized
+import { db } from "../firebase";
 
-const EquipmentManager = ({ site, user, goBack }) => {
+const EquipmentManager = ({ site, user, tempChecks, setTempChecks, goBack }) => {
   const [equipmentName, setEquipmentName] = useState("");
   const [equipmentType, setEquipmentType] = useState("Other");
   const [equipmentList, setEquipmentList] = useState([]);
 
-  // Fetch existing equipment on mount
-  React.useEffect(() => {
+  // Fetch all equipment for this site on mount
+  useEffect(() => {
     const fetchEquipment = async () => {
       try {
         const snapshot = await getDocs(collection(db, "equipment"));
         const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        setEquipmentList(data.filter(e => e.site === site));
+        const siteData = data.filter(e => e.site === site);
+        setEquipmentList(siteData);
+
+        // Also update tempChecks with fridge/freezer for TempSection
+        const fridgesFreezers = siteData.filter(e => e.type === "Fridge" || e.type === "Freezer");
+        setTempChecks(fridgesFreezers);
       } catch (error) {
         console.error("Error fetching equipment:", error);
       }
     };
     fetchEquipment();
-  }, [site]);
+  }, [site, setTempChecks]);
 
   const addEquipment = async () => {
     if (!equipmentName.trim()) return;
@@ -27,7 +32,7 @@ const EquipmentManager = ({ site, user, goBack }) => {
     const newEquipment = {
       site,
       name: equipmentName,
-      type: equipmentType, // "Fridge", "Freezer", "Cooking", "Other"
+      type: equipmentType,
       records: [], // always initialize
       addedBy: user || "Unknown",
       createdAt: new Date(),
@@ -35,7 +40,14 @@ const EquipmentManager = ({ site, user, goBack }) => {
 
     try {
       const docRef = await addDoc(collection(db, "equipment"), newEquipment);
-      setEquipmentList([...equipmentList, { id: docRef.id, ...newEquipment }]);
+      const equipmentWithId = { id: docRef.id, ...newEquipment };
+      setEquipmentList([...equipmentList, equipmentWithId]);
+
+      // If fridge or freezer, add immediately to tempChecks
+      if (equipmentType === "Fridge" || equipmentType === "Freezer") {
+        setTempChecks([...tempChecks, equipmentWithId]);
+      }
+
       setEquipmentName("");
       setEquipmentType("Other");
       goBack(); // return to site dashboard
