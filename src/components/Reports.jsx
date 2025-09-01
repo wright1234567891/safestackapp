@@ -173,7 +173,10 @@ const Reports = ({ site, goBack, user }) => {
               </thead>
               <tbody>
                 {buildHaccpRows(report.stockItems || []).map((row, i) => (
-                  <tr key={i}>
+                  <tr
+                    key={i}
+                    className={i % 2 === 0 ? "bg-gray-50" : "bg-white"}
+                  >
                     {Object.entries(row).map(([key, val]) => (
                       <td
                         key={key}
@@ -200,20 +203,20 @@ const Reports = ({ site, goBack, user }) => {
                 </tr>
               </thead>
               <tbody>
-                <tr>
-                  <td className="border border-white px-2 py-1">
-                    Sanitize surfaces
-                  </td>
-                  <td className="border border-white px-2 py-1">Daily</td>
-                  <td className="border border-white px-2 py-1">Pending</td>
-                </tr>
-                <tr>
-                  <td className="border border-white px-2 py-1">
-                    Deep clean fridge
-                  </td>
-                  <td className="border border-white px-2 py-1">Weekly</td>
-                  <td className="border border-white px-2 py-1">Completed</td>
-                </tr>
+                {["Sanitize surfaces", "Deep clean fridge"].map((task, i) => (
+                  <tr
+                    key={i}
+                    className={i % 2 === 0 ? "bg-gray-50" : "bg-white"}
+                  >
+                    <td className="border border-white px-2 py-1">{task}</td>
+                    <td className="border border-white px-2 py-1">
+                      {i === 0 ? "Daily" : "Weekly"}
+                    </td>
+                    <td className="border border-white px-2 py-1">
+                      {i === 0 ? "Pending" : "Completed"}
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           ) : (
