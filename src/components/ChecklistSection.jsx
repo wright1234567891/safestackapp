@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { collection, addDoc, getDocs, updateDoc, deleteDoc, doc, Timestamp, query, orderBy } from "firebase/firestore";
 import { db } from "../firebase";
+import jsPDF from "jspdf";
+import html2canvas from "html2canvas";
 
 const ChecklistSection = ({ goBack, site, user }) => {
   const [checklists, setChecklists] = useState([]);
@@ -15,23 +17,19 @@ const ChecklistSection = ({ goBack, site, user }) => {
 
   const isManager = ["Chris", "Chloe"].includes(user);
 
-  // Firestore collection references
   const checklistCollectionRef = collection(db, "checklists");
   const completedCollectionRef = collection(db, "completed");
 
-  // Fetch checklists and completed on mount
   useEffect(() => {
     const fetchData = async () => {
       try {
         const qChecklist = query(checklistCollectionRef, orderBy("createdAt", "desc"));
         const checklistSnapshot = await getDocs(qChecklist);
-        const checklistData = checklistSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        setChecklists(checklistData);
+        setChecklists(checklistSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
 
         const qCompleted = query(completedCollectionRef, orderBy("createdAt", "desc"));
         const completedSnapshot = await getDocs(qCompleted);
-        const completedData = completedSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        setCompleted(completedData);
+        setCompleted(completedSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
       } catch (error) {
         console.error("Error fetching checklists/completed:", error);
       }
@@ -60,7 +58,6 @@ const ChecklistSection = ({ goBack, site, user }) => {
     setItems(updated);
   };
 
-  // Save new checklist
   const saveChecklist = async () => {
     if (!checklistTitle || items.length === 0) {
       alert("Checklist must have a title and at least one question");
@@ -77,7 +74,6 @@ const ChecklistSection = ({ goBack, site, user }) => {
 
     try {
       const docRef = await addDoc(checklistCollectionRef, record);
-      console.log("Checklist saved:", record);
       setChecklists(prev => [{ id: docRef.id, ...record }, ...prev]);
       setChecklistTitle("");
       setItems([]);
@@ -108,7 +104,6 @@ const ChecklistSection = ({ goBack, site, user }) => {
     if (!selectedChecklist) return;
 
     try {
-      // Update original checklist with latest answers
       await updateDoc(doc(db, "checklists", selectedChecklist.id), { questions: items });
 
       const now = Timestamp.now();
@@ -121,7 +116,6 @@ const ChecklistSection = ({ goBack, site, user }) => {
       };
 
       const docRef = await addDoc(completedCollectionRef, completedEntry);
-      console.log("Completed checklist saved:", completedEntry);
       setCompleted(prev => [{ id: docRef.id, ...completedEntry }, ...prev]);
       setSelectedChecklist(null);
       setItems([]);
@@ -185,6 +179,37 @@ const ChecklistSection = ({ goBack, site, user }) => {
         )}
       </div>
     ));
+
+  const exportChecklistToPDF = async (title, questions) => {
+    const element = document.createElement("div");
+    element.style.padding = "20px";
+    element.style.backgroundColor = "#fff";
+    element.style.color = "#000";
+    element.style.width = "500px";
+
+    const titleEl = document.createElement("h2");
+    titleEl.innerText = title;
+    element.appendChild(titleEl);
+
+    questions.forEach((q, idx) => {
+      const qEl = document.createElement("p");
+      qEl.innerText = `${idx + 1}. ${q.text} - Answer: ${q.answer || "N/A"}${q.answer === "No" && q.corrective ? ` - Corrective: ${q.corrective}` : ""}`;
+      element.appendChild(qEl);
+    });
+
+    document.body.appendChild(element);
+
+    const canvas = await html2canvas(element, { scale: 2 });
+    const imgData = canvas.toDataURL("image/png");
+    const pdf = new jsPDF("p", "mm", "a4");
+    const imgProps = pdf.getImageProperties(imgData);
+    const pdfWidth = pdf.internal.pageSize.getWidth();
+    const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+    pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight);
+    pdf.save(`${title}.pdf`);
+
+    document.body.removeChild(element);
+  };
 
   return (
     <div style={{ padding: "30px", textAlign: "center" }}>
@@ -281,6 +306,9 @@ const ChecklistSection = ({ goBack, site, user }) => {
           <button onClick={saveAnswers} style={{ marginTop: "30px", padding: "10px 20px", borderRadius: "8px", cursor: "pointer" }}>
             Save Answers
           </button>
+          <button onClick={() => exportChecklistToPDF(selectedChecklist.title, items)} style={{ marginTop: "10px", marginLeft: "10px", padding: "10px 20px", borderRadius: "8px", cursor: "pointer" }}>
+            Export to PDF
+          </button>
           <button onClick={resetView} style={{ marginTop: "10px", padding: "10px 20px", borderRadius: "8px", cursor: "pointer" }}>
             Back to Checklists
           </button>
@@ -294,6 +322,9 @@ const ChecklistSection = ({ goBack, site, user }) => {
           <div style={{ maxWidth: "600px", margin: "0 auto", textAlign: "left" }}>
             {renderChecklistItems(false)}
           </div>
+          <button onClick={() => exportChecklistToPDF(viewingCompleted.title, items)} style={{ marginTop: "10px", marginLeft: "10px", padding: "10px 20px", borderRadius: "8px", cursor: "pointer" }}>
+            Export to PDF
+          </button>
           <button onClick={resetView} style={{ marginTop: "20px", padding: "10px 20px", borderRadius: "8px", cursor: "pointer" }}>
             Back to Checklists
           </button>
