@@ -26,7 +26,7 @@ const StockSection = ({ site, goBack, user }) => {
   const [newLocation, setNewLocation] = useState("Ambient");
   const [newExpiry, setNewExpiry] = useState("");
   const [newSupplier, setNewSupplier] = useState("");
-  const [newHACCP, setNewHACCP] = useState([]); // array of HACCP point IDs
+  const [newHACCP, setNewHACCP] = useState([]);
 
   const [selectedItem, setSelectedItem] = useState(null);
   const [movementQty, setMovementQty] = useState(0);
@@ -90,7 +90,7 @@ const StockSection = ({ site, goBack, user }) => {
       location: newLocation,
       expiryDate: newExpiry || null,
       supplier: newSupplier,
-      haccpPoints: newHACCP, // store HACCP point IDs
+      haccpPoints: newHACCP,
       site,
       createdAt: serverTimestamp(),
       createdBy: user?.uid || null,
@@ -142,7 +142,7 @@ const StockSection = ({ site, goBack, user }) => {
     await deleteDoc(doc(db, "stockItems", itemId));
   };
 
-  // Handle HACCP multi-select change
+  // Handle HACCP multi-select
   const toggleHACCPSelection = (id) => {
     if (newHACCP.includes(id)) {
       setNewHACCP(newHACCP.filter((hid) => hid !== id));
@@ -321,4 +321,18 @@ const StockSection = ({ site, goBack, user }) => {
           />
           <button
             onClick={addSupplier}
-            className="bg-purple
+            className="bg-purple-600 text-white px-4 py-2 rounded"
+          >
+            Add
+          </button>
+        </div>
+      </div>
+
+      {/* Back button */}
+      <button
+        onClick={goBack}
+        className="mt-6 bg-gray-300 px-4 py-2 rounded hover:bg-gray-400"
+      >
+        Back
+      </button>
+    </div
