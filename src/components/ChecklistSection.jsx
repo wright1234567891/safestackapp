@@ -211,6 +211,51 @@ const ChecklistSection = ({ goBack, site, user }) => {
     document.body.removeChild(element);
   };
 
+  // --- NEW FUNCTION: Export ALL completed checklists ---
+  const exportAllCompletedToPDF = async () => {
+    if (completed.length === 0) {
+      alert("No completed checklists to export");
+      return;
+    }
+
+    const element = document.createElement("div");
+    element.style.padding = "20px";
+    element.style.backgroundColor = "#fff";
+    element.style.color = "#000";
+    element.style.width = "500px";
+
+    const titleEl = document.createElement("h2");
+    titleEl.innerText = `${site} - All Completed Checklists`;
+    element.appendChild(titleEl);
+
+    completed.forEach((c, cIdx) => {
+      const subTitle = document.createElement("h3");
+      subTitle.innerText = `${cIdx + 1}. ${c.title} (Completed by ${c.person})`;
+      element.appendChild(subTitle);
+
+      c.questions.forEach((q, idx) => {
+        const qEl = document.createElement("p");
+        qEl.innerText = `${idx + 1}. ${q.text} - Answer: ${q.answer || "N/A"}${q.answer === "No" && q.corrective ? ` - Corrective: ${q.corrective}` : ""}`;
+        element.appendChild(qEl);
+      });
+
+      element.appendChild(document.createElement("hr")); // separator
+    });
+
+    document.body.appendChild(element);
+
+    const canvas = await html2canvas(element, { scale: 2 });
+    const imgData = canvas.toDataURL("image/png");
+    const pdf = new jsPDF("p", "mm", "a4");
+    const imgProps = pdf.getImageProperties(imgData);
+    const pdfWidth = pdf.internal.pageSize.getWidth();
+    const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+    pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight);
+    pdf.save(`${site}-all-completed-checklists.pdf`);
+
+    document.body.removeChild(element);
+  };
+
   return (
     <div style={{ padding: "30px", textAlign: "center" }}>
       <h1 style={{ color: "#1a4a4c" }}>{site} - Checklists</h1>
@@ -247,6 +292,12 @@ const ChecklistSection = ({ goBack, site, user }) => {
           {completed.length > 0 && (
             <>
               <h2 style={{ marginTop: "40px" }}>Completed Checklists</h2>
+              <button
+                onClick={exportAllCompletedToPDF}
+                style={{ marginBottom: "20px", padding: "10px 20px", borderRadius: "8px", cursor: "pointer" }}
+              >
+                Export All Completed Checklists
+              </button>
               {completed.map((c, idx) => (
                 <div key={idx} style={{ position: "relative", cursor: "pointer", backgroundColor: "#f0f0f0", color: "#000", padding: "10px", margin: "10px auto", maxWidth: "600px", borderRadius: "8px" }} onClick={() => viewCompleted(c)}>
                   <p><strong>{c.title}</strong></p>
@@ -281,57 +332,4 @@ const ChecklistSection = ({ goBack, site, user }) => {
       {adding && titleSet && (
         <>
           <h2>{checklistTitle}</h2>
-          <div style={{ margin: "20px 0" }}>
-            <input type="text" value={newItem} onChange={(e) => setNewItem(e.target.value)} placeholder="Enter a new question" style={{ padding: "10px", fontSize: "16px", width: "300px", borderRadius: "5px" }} />
-            <button onClick={addItem} style={{ padding: "10px 20px", fontSize: "16px", marginLeft: "10px", borderRadius: "5px", cursor: "pointer" }}>
-              Add
-            </button>
-          </div>
-          <div style={{ maxWidth: "600px", margin: "0 auto", textAlign: "left" }}>
-            {renderChecklistItems(true)}
-          </div>
-          <button onClick={saveChecklist} style={{ marginTop: "30px", padding: "10px 20px", borderRadius: "8px", cursor: "pointer" }}>
-            Save Checklist
-          </button>
-        </>
-      )}
-
-      {/* SELECTED CHECKLIST VIEW */}
-      {selectedChecklist && (
-        <>
-          <h2>{selectedChecklist.title}</h2>
-          <div style={{ maxWidth: "600px", margin: "0 auto", textAlign: "left" }}>
-            {renderChecklistItems(true)}
-          </div>
-          <button onClick={saveAnswers} style={{ marginTop: "30px", padding: "10px 20px", borderRadius: "8px", cursor: "pointer" }}>
-            Save Answers
-          </button>
-          <button onClick={() => exportChecklistToPDF(selectedChecklist.title, items)} style={{ marginTop: "10px", marginLeft: "10px", padding: "10px 20px", borderRadius: "8px", cursor: "pointer" }}>
-            Export to PDF
-          </button>
-          <button onClick={resetView} style={{ marginTop: "10px", padding: "10px 20px", borderRadius: "8px", cursor: "pointer" }}>
-            Back to Checklists
-          </button>
-        </>
-      )}
-
-      {/* VIEW COMPLETED CHECKLIST */}
-      {viewingCompleted && (
-        <>
-          <h2>{viewingCompleted.title} (Completed by {viewingCompleted.person})</h2>
-          <div style={{ maxWidth: "600px", margin: "0 auto", textAlign: "left" }}>
-            {renderChecklistItems(false)}
-          </div>
-          <button onClick={() => exportChecklistToPDF(viewingCompleted.title, items)} style={{ marginTop: "10px", marginLeft: "10px", padding: "10px 20px", borderRadius: "8px", cursor: "pointer" }}>
-            Export to PDF
-          </button>
-          <button onClick={resetView} style={{ marginTop: "20px", padding: "10px 20px", borderRadius: "8px", cursor: "pointer" }}>
-            Back to Checklists
-          </button>
-        </>
-      )}
-    </div>
-  );
-};
-
-export default ChecklistSection;
+          <div style
