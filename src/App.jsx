@@ -14,19 +14,30 @@ function App() {
   const [checklists, setChecklists] = useState([]);
   const [completed, setCompleted] = useState([]);
 
-  const resetApp = () => {
-    setUser(null);
-    setSite(null);
+  // logout function
+  const handleLogout = () => {
+    setUser(null);       // reset logged in user
+    setSite(null);       // reset selected site
     setCurrentSection(null);
   };
 
   let content;
 
-  if (!user) content = <LoginPage setUser={setUser} />;
-  else if (!site) content = <SitePage setSite={setSite} user={user} />;
-  else if (!currentSection)
-    content = <HomePage user={user} site={site} onSelectSection={setCurrentSection} resetApp={resetApp} />;
-  else {
+  if (!user) {
+    content = <LoginPage setUser={setUser} />;
+  } else if (!site) {
+    // pass onLogout so SitePage can call it
+    content = <SitePage user={user} onLogout={handleLogout} />;
+  } else if (!currentSection) {
+    content = (
+      <HomePage
+        user={user}
+        site={site}
+        onSelectSection={setCurrentSection}
+        resetApp={handleLogout} // optional: allow HomePage to logout too
+      />
+    );
+  } else {
     switch (currentSection) {
       case "checklist":
         content = (
@@ -51,7 +62,14 @@ function App() {
         content = <CookingSection goBack={() => setCurrentSection(null)} />;
         break;
       default:
-        content = <HomePage user={user} site={site} onSelectSection={setCurrentSection} resetApp={resetApp} />;
+        content = (
+          <HomePage
+            user={user}
+            site={site}
+            onSelectSection={setCurrentSection}
+            resetApp={handleLogout}
+          />
+        );
         break;
     }
   }
