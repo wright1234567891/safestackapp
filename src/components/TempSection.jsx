@@ -1,18 +1,32 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
+import { collection, addDoc, getDocs, updateDoc, doc } from "firebase/firestore";
+import { db } from "../firebase";
 
-const TempSection = ({ tempChecks = [], setTempChecks, site, user, goBack }) => {
+const TempSection = ({ site, user, goBack }) => {
+  const [equipmentList, setEquipmentList] = useState([]);
   const [selectedEquipment, setSelectedEquipment] = useState(null);
   const [newTemp, setNewTemp] = useState("");
   const [viewingRecord, setViewingRecord] = useState(null);
 
-  // Only show fridges/freezers for this site
-  const siteTempChecks = tempChecks.filter(
-    eq => eq.site === site && (eq.type === "Fridge" || eq.type === "Freezer")
-  );
+  // Fetch fridge/freezer equipment on mount
+  useEffect(() => {
+    const fetchEquipment = async () => {
+      try {
+        const snapshot = await getDocs(collection(db, "equipment"));
+        const data = snapshot.docs
+          .map(doc => ({ id: doc.id, ...doc.data() }))
+          .filter(eq => eq.site === site && (eq.type === "Fridge" || eq.type === "Freezer"));
+        setEquipmentList(data);
+      } catch (error) {
+        console.error("Error fetching equipment:", error);
+      }
+    };
+    fetchEquipment();
+  }, [site]);
 
-  const generateId = () => '_' + Math.random().toString(36).substr(2, 9);
+  const generateId = () => "_" + Math.random().toString(36).substr(2, 9);
 
-  const addRecord = () => {
+  const addRecord = async () => {
     if (!newTemp.trim() || !selectedEquipment) return;
 
     const now = new Date();
@@ -24,14 +38,21 @@ const TempSection = ({ tempChecks = [], setTempChecks, site, user, goBack }) => 
       person: typeof user === "string" ? user : user?.name || "Unknown"
     };
 
-    const updatedTempChecks = tempChecks.map(eq =>
-      eq.id === selectedEquipment.id
-        ? { ...eq, records: [...(eq.records || []), record] }
-        : eq
-    );
+    // Update Firestore
+    try {
+      const eqRef = doc(db, "equipment", selectedEquipment.id);
+      const updatedRecords = [...(selectedEquipment.records || []), record];
+      await updateDoc(eqRef, { records: updatedRecords });
 
-    setTempChecks(updatedTempChecks);
-    setNewTemp("");
+      // Update local state
+      setEquipmentList(equipmentList.map(eq =>
+        eq.id === selectedEquipment.id ? { ...eq, records: updatedRecords } : eq
+      ));
+      setSelectedEquipment({ ...selectedEquipment, records: updatedRecords });
+      setNewTemp("");
+    } catch (error) {
+      console.error("Error adding temperature record:", error);
+    }
   };
 
   const viewRecord = (eq, rec) => {
@@ -48,12 +69,11 @@ const TempSection = ({ tempChecks = [], setTempChecks, site, user, goBack }) => 
     <div style={{ padding: "30px", textAlign: "center" }}>
       <h1>{site} - Temperature Checks</h1>
 
-      {/* Main list */}
       {!selectedEquipment && !viewingRecord && (
         <>
-          {siteTempChecks.length === 0 && <p>No fridge/freezer equipment yet</p>}
+          {equipmentList.length === 0 && <p>No fridge/freezer equipment yet</p>}
 
-          {siteTempChecks.map(eq => (
+          {equipmentList.map(eq => (
             <div
               key={eq.id}
               style={{ border: "1px solid #ccc", padding: "10px", margin: "10px", borderRadius: "5px", cursor: "pointer" }}
@@ -64,7 +84,6 @@ const TempSection = ({ tempChecks = [], setTempChecks, site, user, goBack }) => 
             </div>
           ))}
 
-          {/* Back button to SitePage */}
           <button
             onClick={goBack}
             style={{ marginTop: "20px", padding: "10px 20px", borderRadius: "8px", cursor: "pointer" }}
@@ -74,7 +93,6 @@ const TempSection = ({ tempChecks = [], setTempChecks, site, user, goBack }) => 
         </>
       )}
 
-      {/* Selected equipment */}
       {selectedEquipment && !viewingRecord && (
         <>
           <h2>{selectedEquipment.name}</h2>
@@ -97,7 +115,6 @@ const TempSection = ({ tempChecks = [], setTempChecks, site, user, goBack }) => 
         </>
       )}
 
-      {/* Single record view */}
       {viewingRecord && (
         <>
           <h2>{viewingRecord.equipment.name} - Record</h2>
