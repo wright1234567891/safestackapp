@@ -14,11 +14,10 @@ const Reports = ({ site, goBack, user }) => {
   const [reports, setReports] = useState([]);
   const [stockItems, setStockItems] = useState([]);
   const [haccpPoints, setHaccpPoints] = useState([]);
-
   const [newReportName, setNewReportName] = useState("");
   const [newReportType, setNewReportType] = useState("HACCP");
 
-  // --- fetch reports ---
+  // fetch reports
   useEffect(() => {
     if (!site) return;
     const q = query(collection(db, "reports"), where("site", "==", site));
@@ -28,7 +27,7 @@ const Reports = ({ site, goBack, user }) => {
     return () => unsub();
   }, [site]);
 
-  // --- fetch stock items ---
+  // fetch stock items
   useEffect(() => {
     if (!site) return;
     const q = query(collection(db, "stockItems"), where("site", "==", site));
@@ -38,7 +37,7 @@ const Reports = ({ site, goBack, user }) => {
     return () => unsub();
   }, [site]);
 
-  // --- fetch HACCP points ---
+  // fetch HACCP points
   useEffect(() => {
     if (!site) return;
     const q = query(collection(db, "haccpPoints"), where("site", "==", site));
@@ -48,7 +47,7 @@ const Reports = ({ site, goBack, user }) => {
     return () => unsub();
   }, [site]);
 
-  // --- add report ---
+  // add new report
   const addReport = async () => {
     if (!newReportName) return;
 
@@ -57,8 +56,6 @@ const Reports = ({ site, goBack, user }) => {
       stockData = stockItems.map((item) => ({
         id: item.id,
         name: item.name,
-        quantity: item.quantity,
-        measurement: item.measurement,
         haccpPoints: item.haccpPoints || [],
       }));
     }
@@ -75,34 +72,49 @@ const Reports = ({ site, goBack, user }) => {
     setNewReportName("");
   };
 
-  // --- HACCP schema styled like your example ---
-  const buildHaccpTable = (items) => {
-    return items.map((item) => {
+  // build HACCP table rows
+  const buildHaccpRows = (items) => {
+    const rows = [];
+    items.forEach((item) => {
       const linked = item.haccpPoints?.map(
         (id) => haccpPoints.find((hp) => hp.id === id)?.name
       );
-
-      return {
-        "Process Step": item.name,
-        "Food Safety Hazards": linked?.length
-          ? linked.join(", ")
-          : "No hazards linked",
-        "Preventive Controls / Measures": "Define controls here",
-        CCP: linked?.length ? "Yes" : "No",
-        "Critical Limits": "Set critical limits",
-        Monitoring: "Add monitoring method",
-        "Corrective Actions": "Add corrective actions",
-        Verification: "Add verification",
-        Records: "Add records",
-      };
+      if (linked?.length) {
+        linked.forEach((hazard) => {
+          rows.push({
+            "Process Step": item.name,
+            "Food Safety Hazard": hazard,
+            "Preventive Controls / Measures": "",
+            CCP: "Yes",
+            "Critical Limits": "",
+            Monitoring: "",
+            "Corrective Actions": "",
+            Verification: "",
+            Records: "",
+          });
+        });
+      } else {
+        rows.push({
+          "Process Step": item.name,
+          "Food Safety Hazard": "No hazards linked",
+          "Preventive Controls / Measures": "",
+          CCP: "No",
+          "Critical Limits": "",
+          Monitoring: "",
+          "Corrective Actions": "",
+          Verification: "",
+          Records: "",
+        });
+      }
     });
+    return rows;
   };
 
   return (
     <div className="p-4 bg-white shadow rounded-xl">
       <h2 className="text-xl font-bold mb-4">Reports — {site}</h2>
 
-      {/* --- add report form --- */}
+      {/* add report form */}
       <div className="mb-4 flex flex-col md:flex-row gap-2 items-center">
         <input
           type="text"
@@ -128,7 +140,7 @@ const Reports = ({ site, goBack, user }) => {
         </button>
       </div>
 
-      {/* --- list reports --- */}
+      {/* list reports */}
       {reports.map((report) => (
         <div key={report.id} className="mb-8">
           <h3 className="font-semibold text-lg mb-2">
@@ -136,12 +148,12 @@ const Reports = ({ site, goBack, user }) => {
           </h3>
 
           {report.type === "HACCP" ? (
-            <table className="min-w-full border border-gray-600 text-sm">
+            <table className="min-w-full border border-gray-600 border-collapse text-sm">
               <thead>
                 <tr className="bg-gray-200">
                   {[
                     "Process Step",
-                    "Food Safety Hazards",
+                    "Food Safety Hazard",
                     "Preventive Controls / Measures",
                     "CCP?",
                     "Critical Limits",
@@ -150,19 +162,26 @@ const Reports = ({ site, goBack, user }) => {
                     "Verification",
                     "Records",
                   ].map((header) => (
-                    <th key={header} className="border border-gray-600 px-2 py-1">
+                    <th
+                      key={header}
+                      className="border border-gray-600 px-2 py-1 text-left"
+                    >
                       {header}
                     </th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {buildHaccpTable(report.stockItems || []).map((row, i) => (
+                {buildHaccpRows(report.stockItems || []).map((row, i) => (
                   <tr key={i}>
-                    {Object.values(row).map((val, j) => (
+                    {Object.entries(row).map(([key, val]) => (
                       <td
-                        key={j}
+                        key={key}
                         className="border border-gray-600 px-2 py-1 align-top"
+                        contentEditable={
+                          key !== "Process Step" && key !== "Food Safety Hazard"
+                        }
+                        suppressContentEditableWarning={true}
                       >
                         {val}
                       </td>
@@ -172,7 +191,7 @@ const Reports = ({ site, goBack, user }) => {
               </tbody>
             </table>
           ) : report.type === "Cleaning" ? (
-            <table className="min-w-full border border-gray-600 text-sm">
+            <table className="min-w-full border border-gray-600 border-collapse text-sm">
               <thead>
                 <tr className="bg-gray-200">
                   <th className="border border-gray-600 px-2 py-1">Task</th>
@@ -194,12 +213,14 @@ const Reports = ({ site, goBack, user }) => {
               </tbody>
             </table>
           ) : (
-            <p className="text-gray-600">No structured format for this report type yet.</p>
+            <p className="text-gray-600">
+              No structured format for this report type yet.
+            </p>
           )}
         </div>
       ))}
 
-      {/* --- back button --- */}
+      {/* back button */}
       <button
         onClick={goBack}
         className="mt-6 bg-gray-300 px-4 py-2 rounded hover:bg-gray-400"
