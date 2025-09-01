@@ -16,18 +16,19 @@ import {
 
 const StockSection = ({ site, goBack, user }) => {
   const [stockItems, setStockItems] = useState([]);
-  const [equipment, setEquipment] = useState([]); 
-  const [suppliers, setSuppliers] = useState([]); 
+  const [equipment, setEquipment] = useState([]);
+  const [suppliers, setSuppliers] = useState([]);
 
   const [newItemName, setNewItemName] = useState("");
   const [newItemQty, setNewItemQty] = useState(0);
+  const [newMeasurement, setNewMeasurement] = useState("unit"); // unit or kg
   const [newLocation, setNewLocation] = useState("Ambient");
   const [newExpiry, setNewExpiry] = useState("");
   const [newSupplier, setNewSupplier] = useState("");
   const [selectedItem, setSelectedItem] = useState(null);
   const [movementQty, setMovementQty] = useState(0);
 
-  const [newSupplierName, setNewSupplierName] = useState(""); 
+  const [newSupplierName, setNewSupplierName] = useState("");
 
   // Stock updates
   useEffect(() => {
@@ -72,6 +73,7 @@ const StockSection = ({ site, goBack, user }) => {
     await addDoc(collection(db, "stockItems"), {
       name: newItemName,
       quantity: Number(newItemQty),
+      measurement: newMeasurement, // store whether it's unit or kg
       location: newLocation,
       expiryDate: newExpiry || null,
       supplier: newSupplier,
@@ -81,6 +83,7 @@ const StockSection = ({ site, goBack, user }) => {
     });
     setNewItemName("");
     setNewItemQty(0);
+    setNewMeasurement("unit");
     setNewLocation("Ambient");
     setNewExpiry("");
     setNewSupplier("");
@@ -129,7 +132,7 @@ const StockSection = ({ site, goBack, user }) => {
       <h2 className="text-xl font-bold mb-3">Stock Management — {site}</h2>
 
       {/* Add stock item */}
-      <div className="mb-4 grid grid-cols-1 md:grid-cols-6 gap-2">
+      <div className="mb-4 grid grid-cols-1 md:grid-cols-7 gap-2">
         <input
           type="text"
           placeholder="Item name"
@@ -144,6 +147,14 @@ const StockSection = ({ site, goBack, user }) => {
           onChange={(e) => setNewItemQty(e.target.value)}
           className="border p-2 rounded"
         />
+        <select
+          value={newMeasurement}
+          onChange={(e) => setNewMeasurement(e.target.value)}
+          className="border p-2 rounded"
+        >
+          <option value="unit">Units</option>
+          <option value="kg">Kilograms</option>
+        </select>
         <select
           value={newLocation}
           onChange={(e) => setNewLocation(e.target.value)}
@@ -176,7 +187,7 @@ const StockSection = ({ site, goBack, user }) => {
         </select>
         <button
           onClick={addStockItem}
-          className="bg-green-600 text-white px-4 py-2 rounded col-span-1 md:col-span-6"
+          className="bg-green-600 text-white px-4 py-2 rounded col-span-1 md:col-span-7"
         >
           Add Item
         </button>
@@ -190,7 +201,8 @@ const StockSection = ({ site, goBack, user }) => {
             className="flex flex-col md:flex-row md:justify-between md:items-center border-b py-2"
           >
             <span>
-              <strong>{item.name}</strong> — {item.quantity} units <br />
+              <strong>{item.name}</strong> — {item.quantity} {item.measurement}{" "}
+              <br />
               <span className="text-sm text-gray-600">
                 Location: {item.location} | Expiry:{" "}
                 {item.expiryDate ? item.expiryDate : "N/A"} | Supplier:{" "}
@@ -229,6 +241,7 @@ const StockSection = ({ site, goBack, user }) => {
           </h3>
           <input
             type="number"
+            step={selectedItem.measurement === "kg" ? "0.1" : "1"}
             value={movementQty}
             onChange={(e) => setMovementQty(Number(e.target.value))}
             className="border p-2 rounded w-24 mr-2"
