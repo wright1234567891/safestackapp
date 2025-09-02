@@ -1,6 +1,18 @@
 // src/components/SitePage.jsx
 import React, { useState } from "react";
-import { FaMapMarkerAlt, FaChevronRight, FaPlus } from "react-icons/fa";
+import {
+  FaMapMarkerAlt,
+  FaChevronRight,
+  FaPlus,
+  FaClipboardCheck,
+  FaThermometerHalf,
+  FaBroom,
+  FaDrumstickBite,
+  FaBoxes,
+  FaChartBar,
+  FaExclamationTriangle,
+  FaTools,
+} from "react-icons/fa";
 import EquipmentManager from "./EquipmentManager";
 import ChecklistSection from "./ChecklistSection";
 import TempSection from "./TempSection";
@@ -31,7 +43,7 @@ const SitePage = ({ user, onLogout }) => {
     setActiveSection(null);
   };
 
-  // Section rendering stays unchanged
+  // Section rendering
   if (selectedSite && activeSection === "equipment") {
     return (
       <EquipmentManager
@@ -43,7 +55,6 @@ const SitePage = ({ user, onLogout }) => {
       />
     );
   }
-
   if (selectedSite && activeSection === "checklists") {
     return (
       <ChecklistSection
@@ -57,12 +68,12 @@ const SitePage = ({ user, onLogout }) => {
       />
     );
   }
-
   if (selectedSite && activeSection === "temp") {
     const siteTempChecks = tempChecks.filter(
-      (e) => e.site === selectedSite && (e.type === "Fridge" || e.type === "Freezer")
+      (e) =>
+        e.site === selectedSite &&
+        (e.type === "Fridge" || e.type === "Freezer")
     );
-
     return (
       <TempSection
         goBack={() => setActiveSection(null)}
@@ -73,7 +84,6 @@ const SitePage = ({ user, onLogout }) => {
       />
     );
   }
-
   if (selectedSite && activeSection === "cleaning") {
     return (
       <CleaningSection
@@ -85,12 +95,10 @@ const SitePage = ({ user, onLogout }) => {
       />
     );
   }
-
   if (selectedSite && activeSection === "cooking") {
     const cookingEquipment = tempChecks.filter(
       (e) => e.site === selectedSite && e.type === "Cooking"
     );
-
     return (
       <CookingSection
         goBack={() => setActiveSection(null)}
@@ -101,30 +109,54 @@ const SitePage = ({ user, onLogout }) => {
       />
     );
   }
-
   if (selectedSite && activeSection === "stock") {
     return (
-      <StockSection goBack={() => setActiveSection(null)} site={selectedSite} user={user} />
+      <StockSection
+        goBack={() => setActiveSection(null)}
+        site={selectedSite}
+        user={user}
+      />
     );
   }
-
   if (selectedSite && activeSection === "reports") {
     return (
-      <Reports goBack={() => setActiveSection(null)} site={selectedSite} user={user} />
+      <Reports
+        goBack={() => setActiveSection(null)}
+        site={selectedSite}
+        user={user}
+      />
     );
   }
-
   if (selectedSite && activeSection === "ccp") {
     return (
-      <CCPSection goBack={() => setActiveSection(null)} site={selectedSite} user={user} />
+      <CCPSection
+        goBack={() => setActiveSection(null)}
+        site={selectedSite}
+        user={user}
+      />
     );
   }
 
-  // Site selection screen (🔽 updated to match screenshot style)
+  // Site selection screen
   if (!selectedSite) {
     return (
-      <div style={{ maxWidth: "500px", margin: "0 auto", padding: "40px 20px", fontFamily: "'Inter', sans-serif" }}>
-        <h1 style={{ fontSize: "30px", fontWeight: "700", marginBottom: "25px", color: "#111", textAlign: "center" }}>
+      <div
+        style={{
+          maxWidth: "500px",
+          margin: "0 auto",
+          padding: "40px 20px",
+          fontFamily: "'Inter', sans-serif",
+        }}
+      >
+        <h1
+          style={{
+            fontSize: "30px",
+            fontWeight: "700",
+            marginBottom: "25px",
+            color: "#111",
+            textAlign: "center",
+          }}
+        >
           Venues
         </h1>
 
@@ -144,16 +176,28 @@ const SitePage = ({ user, onLogout }) => {
                 cursor: "pointer",
                 transition: "all 0.2s ease",
               }}
-              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#f9fafb")}
-              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#fff")}
+              onMouseEnter={(e) =>
+                (e.currentTarget.style.backgroundColor = "#f9fafb")
+              }
+              onMouseLeave={(e) =>
+                (e.currentTarget.style.backgroundColor = "#fff")
+              }
             >
               <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
                 <FaMapMarkerAlt size={20} color="#ef4444" />
                 <div>
-                  <div style={{ fontWeight: "600", fontSize: "16px", color: "#111" }}>
+                  <div
+                    style={{
+                      fontWeight: "600",
+                      fontSize: "16px",
+                      color: "#111",
+                    }}
+                  >
                     {site}
                   </div>
-                  <div style={{ fontSize: "13px", color: "#666" }}>Tap to enter venue</div>
+                  <div style={{ fontSize: "13px", color: "#666" }}>
+                    Tap to enter venue
+                  </div>
                 </div>
               </div>
               <FaChevronRight size={16} color="#999" />
@@ -173,12 +217,24 @@ const SitePage = ({ user, onLogout }) => {
               cursor: "pointer",
               transition: "all 0.2s ease",
             }}
-            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#f9fafb")}
-            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#fff")}
+            onMouseEnter={(e) =>
+              (e.currentTarget.style.backgroundColor = "#f9fafb")
+            }
+            onMouseLeave={(e) =>
+              (e.currentTarget.style.backgroundColor = "#fff")
+            }
           >
             <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
               <FaPlus size={18} color="#555" />
-              <div style={{ fontWeight: "600", fontSize: "16px", color: "#111" }}>Set up a new venue</div>
+              <div
+                style={{
+                  fontWeight: "600",
+                  fontSize: "16px",
+                  color: "#111",
+                }}
+              >
+                Set up a new venue
+              </div>
             </div>
             <FaChevronRight size={16} color="#999" />
           </div>
@@ -199,8 +255,12 @@ const SitePage = ({ user, onLogout }) => {
             fontWeight: "600",
             transition: "all 0.2s",
           }}
-          onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#ff3f3f")}
-          onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#ff5f5f")}
+          onMouseEnter={(e) =>
+            (e.currentTarget.style.backgroundColor = "#ff3f3f")
+          }
+          onMouseLeave={(e) =>
+            (e.currentTarget.style.backgroundColor = "#ff5f5f")
+          }
         >
           Logout
         </button>
@@ -208,79 +268,171 @@ const SitePage = ({ user, onLogout }) => {
     );
   }
 
-  // --- Dashboard (unchanged) ---
-  const buttonStyle = {
-    padding: "14px 28px",
-    borderRadius: "12px",
-    cursor: "pointer",
-    minWidth: "160px",
-    fontWeight: 500,
-    fontSize: "15px",
-    transition: "all 0.25s",
-    boxShadow: "0 2px 6px rgba(0,0,0,0.08)",
-    border: "none",
-    backgroundColor: "#f3f4f6",
-    color: "#111",
-  };
+  // Dashboard with icon cards
+  const sections = [
+    {
+      label: "Checklists",
+      key: "checklists",
+      icon: <FaClipboardCheck size={24} color="#2563eb" />,
+    },
+    {
+      label: "Temp Checks",
+      key: "temp",
+      icon: <FaThermometerHalf size={24} color="#ef4444" />,
+    },
+    {
+      label: "Cleaning",
+      key: "cleaning",
+      icon: <FaBroom size={24} color="#10b981" />,
+    },
+    {
+      label: "Cooking & Cooling",
+      key: "cooking",
+      icon: <FaDrumstickBite size={24} color="#f59e0b" />,
+    },
+    {
+      label: "Stock",
+      key: "stock",
+      icon: <FaBoxes size={24} color="#6366f1" />,
+    },
+    {
+      label: "Reports",
+      key: "reports",
+      icon: <FaChartBar size={24} color="#9333ea" />,
+    },
+    {
+      label: "CCPs",
+      key: "ccp",
+      icon: <FaExclamationTriangle size={24} color="#dc2626" />,
+    },
+    {
+      label: "Add Equipment",
+      key: "equipment",
+      icon: <FaTools size={24} color="#374151" />,
+    },
+  ];
 
   return (
-    <div style={{ textAlign: "center", padding: "60px 20px", fontFamily: "'Inter', sans-serif" }}>
-      <h1 style={{ fontSize: "30px", marginBottom: "35px", color: "#111", fontWeight: 600 }}>
-        {selectedSite}
-      </h1>
-      <div
+    <div
+      style={{
+        maxWidth: "800px",
+        margin: "0 auto",
+        padding: "40px 20px",
+        fontFamily: "'Inter', sans-serif",
+      }}
+    >
+      <h1
         style={{
-          display: "flex",
-          justifyContent: "center",
-          gap: "16px",
-          flexWrap: "wrap",
-          marginTop: "20px",
+          fontSize: "30px",
+          marginBottom: "30px",
+          color: "#111",
+          fontWeight: 600,
+          textAlign: "center",
         }}
       >
-        {[
-          { label: "Checklists", key: "checklists" },
-          { label: "Temp Checks", key: "temp" },
-          { label: "Cleaning", key: "cleaning" },
-          { label: "Cooking & Cooling", key: "cooking" },
-          { label: "Stock", key: "stock" },
-          { label: "Reports", key: "reports" },
-          { label: "CCPs", key: "ccp" },
-          { label: "Add Equipment", key: "equipment" },
-        ].map((sec) => (
-          <button
+        {selectedSite}
+      </h1>
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+          gap: "20px",
+        }}
+      >
+        {sections.map((sec) => (
+          <div
             key={sec.key}
-            style={{ ...buttonStyle, backgroundColor: "#fff", minWidth: "180px" }}
+            onClick={() => setActiveSection(sec.key)}
+            style={{
+              background: "#fff",
+              borderRadius: "14px",
+              padding: "20px",
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              justifyContent: "center",
+              cursor: "pointer",
+              boxShadow: "0 2px 6px rgba(0,0,0,0.08)",
+              transition: "all 0.2s ease",
+            }}
             onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = "#eef2f7";
-              e.currentTarget.style.transform = "translateY(-2px)";
-              e.currentTarget.style.boxShadow = "0 6px 12px rgba(0,0,0,0.12)";
+              e.currentTarget.style.transform = "translateY(-4px)";
+              e.currentTarget.style.boxShadow =
+                "0 6px 12px rgba(0,0,0,0.12)";
+              e.currentTarget.style.backgroundColor = "#f9fafb";
             }}
             onMouseLeave={(e) => {
-              e.currentTarget.style.backgroundColor = "#fff";
               e.currentTarget.style.transform = "translateY(0)";
-              e.currentTarget.style.boxShadow = "0 2px 6px rgba(0,0,0,0.08)";
+              e.currentTarget.style.boxShadow =
+                "0 2px 6px rgba(0,0,0,0.08)";
+              e.currentTarget.style.backgroundColor = "#fff";
             }}
-            onClick={() => setActiveSection(sec.key)}
           >
-            {sec.label}
-          </button>
+            <div style={{ marginBottom: "10px" }}>{sec.icon}</div>
+            <div
+              style={{
+                fontWeight: "600",
+                fontSize: "15px",
+                color: "#111",
+                textAlign: "center",
+              }}
+            >
+              {sec.label}
+            </div>
+          </div>
         ))}
       </div>
 
-      <div style={{ marginTop: "40px", display: "flex", gap: "16px", justifyContent: "center", flexWrap: "wrap" }}>
+      <div
+        style={{
+          marginTop: "40px",
+          display: "flex",
+          gap: "16px",
+          justifyContent: "center",
+          flexWrap: "wrap",
+        }}
+      >
         <button
           onClick={resetSite}
-          style={buttonStyle}
-          onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#e0e3e8")}
-          onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#f3f4f6")}
+          style={{
+            padding: "12px 24px",
+            borderRadius: "10px",
+            cursor: "pointer",
+            backgroundColor: "#f3f4f6",
+            fontSize: "15px",
+            fontWeight: 500,
+            border: "none",
+            transition: "all 0.25s",
+          }}
+          onMouseEnter={(e) =>
+            (e.currentTarget.style.backgroundColor = "#e0e3e8")
+          }
+          onMouseLeave={(e) =>
+            (e.currentTarget.style.backgroundColor = "#f3f4f6")
+          }
         >
           Back
         </button>
         <button
           onClick={onLogout}
-          style={{ ...buttonStyle, backgroundColor: "#ff5f5f", color: "#fff" }}
-          onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#ff3f3f")}
-          onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#ff5f5f")}
+          style={{
+            padding: "12px 24px",
+            borderRadius: "10px",
+            cursor: "pointer",
+            backgroundColor: "#ff5f5f",
+            fontSize: "15px",
+            color: "#fff",
+            fontWeight: 500,
+            border: "none",
+            transition: "all 0.25s",
+          }}
+          onMouseEnter={(e) =>
+            (e.currentTarget.style.backgroundColor = "#ff3f3f")
+          }
+          onMouseLeave={(e) =>
+            (e.currentTarget.style.backgroundColor = "#ff5f5f")
+          }
         >
           Logout
         </button>
