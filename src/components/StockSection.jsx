@@ -14,6 +14,7 @@ import {
   where,
 } from "firebase/firestore";
 import Select from "react-select";
+import Tesseract from "tesseract.js"; // 👈 OCR
 
 const StockSection = ({ site, goBack, user }) => {
   const [stockItems, setStockItems] = useState([]);
@@ -34,6 +35,12 @@ const StockSection = ({ site, goBack, user }) => {
   const [newSupplierName, setNewSupplierName] = useState("");
 
   const [editBuffer, setEditBuffer] = useState({});
+
+  // --- OCR states (added) ---
+  const [ocrLoading, setOcrLoading] = useState(false);
+  const [ocrError, setOcrError] = useState("");
+  const [ocrItems, setOcrItems] = useState([]); // [{id, selected, name, qty, measurement, price, rawWeight}]
+  const [ocrImageName, setOcrImageName] = useState("");
 
   const selectStyles = {
     control: (provided) => ({ ...provided, minHeight: "40px", fontSize: "14px" }),
@@ -184,10 +191,335 @@ const StockSection = ({ site, goBack, user }) => {
 
   const filteredHACCP = haccpPoints.map((ccp) => ({ value: ccp.id, label: ccp.name }));
 
+  // -------------------------
+  // OCR HELPERS (added)
+  // -------------------------
+  const gramsToKg = (gNum) => {
+    if (!gNum && gNum !== 0) return null;
+    return Number(gNum) / 1000;
+    };
+
+  const parseMoney = (str) => {
+    if (!str) return null;
+    const m = String(str).match(/(\d+(?:[\.,]\d{2})?)/);
+    if (!m) return null;
+    return Number(m[1].replace(",", "."));
+  };
+
+  const parseWeightToQtyAndMeasurement = (weightStr) => {
+    if (!weightStr) return { qty: 1, measurement: "unit", rawWeight: "" };
+
+    const s = weightStr.toLowerCase().replace(/\s/g, "");
+    // e.g. "500g", "0.5kg", "2kg"
+    const m = s.match(/(\d+(?:[\.,]\d+)?)(kg|g|l|ml)/i);
+    if (!m) return { qty: 1, measurement: "unit", rawWeight: weightStr };
+
+    const num = Number(m[1].replace(",", "."));
+    const unit = m[2];
+
+    if (unit === "kg") return { qty: num, measurement: "kg", rawWeight: weightStr };
+    if (unit === "g") return { qty: gramsToKg(num), measurement: "kg", rawWeight: weightStr };
+    // If you want liquids later, adapt here:
+    if (unit === "l") return { qty: num, measurement: "unit", rawWeight: weightStr };
+    if (unit === "ml") return { qty: num / 1000, measurement: "unit", rawWeight: weightStr };
+
+    return { qty: 1, measurement: "unit", rawWeight: weightStr };
+  };
+
+  const parseReceiptText = (text) => {
+    // Split lines, keep non-empty
+    const lines = text
+      .split("\n")
+      .map((l) => l.trim())
+      .filter(Boolean)
+      // remove obvious headers/footers (very lightweight)
+      .filter((l) => !/total|subtotal|vat|change/i.test(l));
+
+    // Build items (best-effort)
+    const items = [];
+    for (const line of lines) {
+      // Try to find price and weight within the same line
+      const priceMatch = line.match(/£\s*\d+(?:[\.,]\d{2})?|\d+(?:[\.,]\d{2})\s*£/i) || line.match(/\b\d+(?:[\.,]\d{2})\b/);
+      const weightMatch = line.match(/(\d+(?:[\.,]\d+)?)(kg|g|ml|l)\b/i);
+
+      // Build name by removing obvious bits
+      let name = line;
+      if (priceMatch) name = name.replace(priceMatch[0], "");
+      if (weightMatch) name = name.replace(weightMatch[0], "");
+      name = name.replace(/\s{2,}/g, " ").trim();
+
+      // Skip barcode-only lines etc.
+      if (!name || name.length < 2) continue;
+
+      const price = priceMatch ? parseMoney(priceMatch[0]) : null;
+      const weightStr = weightMatch ? weightMatch[0] : "";
+      const { qty, measurement, rawWeight } = parseWeightToQtyAndMeasurement(weightStr);
+
+      items.push({
+        id: `${line}-${Math.random().toString(36).slice(2, 7)}`,
+        selected: true,
+        name,
+        quantity: qty || 1,
+        measurement: measurement || "unit",
+        price: price,
+        rawWeight,
+        location: "Ambient",
+        expiryDate: "",
+        supplier: newSupplier || "", // prefer currently chosen supplier if any
+      });
+    }
+    return items;
+  };
+
+  const handlePhotoUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setOcrImageName(file.name);
+    setOcrLoading(true);
+    setOcrError("");
+    try {
+      const { data: { text } } = await Tesseract.recognize(file, "eng");
+      const parsed = parseReceiptText(text);
+      if (!parsed.length) {
+        setOcrItems([]);
+        setOcrError("No items could be parsed from this image. Try a clearer, well-lit photo.");
+      } else {
+        setOcrItems(parsed);
+      }
+    } catch (err) {
+      console.error("OCR error:", err);
+      setOcrError("Failed to process receipt image.");
+      setOcrItems([]);
+    } finally {
+      setOcrLoading(false);
+      // reset file input so same image can be selected again if needed
+      e.target.value = "";
+    }
+  };
+
+  const updateOcrItem = (id, field, value) => {
+    setOcrItems((prev) =>
+      prev.map((it) => (it.id === id ? { ...it, [field]: value } : it))
+    );
+  };
+
+  const addSelectedOcrItems = async () => {
+    const selected = ocrItems.filter((i) => i.selected && i.name);
+    if (!selected.length) {
+      alert("Nothing selected to add.");
+      return;
+    }
+    try {
+      for (const it of selected) {
+        await addDoc(collection(db, "stockItems"), {
+          name: it.name,
+          quantity: Number(it.quantity) > 0 ? Number(it.quantity) : 1,
+          measurement: it.measurement || "unit",
+          location: it.location || "Ambient",
+          expiryDate: it.expiryDate || null,
+          supplier: it.supplier || newSupplier || "Unknown",
+          haccpPoints: [],
+          site,
+          createdAt: serverTimestamp(),
+          createdBy: user?.uid || null,
+          ...(it.price != null ? { price: Number(it.price) } : {}),
+          ...(it.rawWeight ? { parsedWeight: it.rawWeight } : {}),
+          source: ocrImageName || "ocr",
+        });
+      }
+      alert(`${selected.length} item(s) added from receipt.`);
+      setOcrItems([]);
+      setOcrImageName("");
+      setOcrError("");
+    } catch (err) {
+      console.error("Error adding OCR items:", err);
+      alert("Failed to save one or more items.");
+    }
+  };
+
   // --- JSX ---
   return (
     <div className="p-4 bg-white shadow rounded-xl">
       <h2 className="text-xl font-bold mb-3">Stock Management — {site}</h2>
+
+      {/* Upload Receipt (OCR) - added */}
+      <div className="mb-6 p-3 border rounded bg-gray-50">
+        <h3 className="font-semibold mb-2">Add from receipt (photo)</h3>
+        <div className="flex flex-col md:flex-row gap-2 items-start md:items-center">
+          <input
+            type="file"
+            accept="image/*"
+            capture="environment"
+            onChange={handlePhotoUpload}
+            className="border p-2 rounded w-full md:w-auto"
+          />
+          <select
+            value={newSupplier}
+            onChange={(e) => setNewSupplier(e.target.value)}
+            className="border p-2 rounded md:w-60"
+            title="Supplier for OCR-added items"
+          >
+            <option value="">Select supplier (optional)</option>
+            {suppliers.map((sup) => (
+              <option key={sup.id} value={sup.name}>
+                {sup.name}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {ocrLoading && (
+          <div className="mt-3 text-sm text-gray-600">Reading receipt… this can take a moment.</div>
+        )}
+        {ocrError && (
+          <div className="mt-3 text-sm text-red-600">{ocrError}</div>
+        )}
+
+        {/* OCR Preview */}
+        {ocrItems.length > 0 && (
+          <div className="mt-4">
+            <div className="flex justify-between items-center mb-2">
+              <div className="font-medium">
+                Parsed items from <span className="italic">{ocrImageName || "image"}</span>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setOcrItems((prev) => prev.map((i) => ({ ...i, selected: true })))}
+                  className="px-3 py-1 rounded bg-gray-200 hover:bg-gray-300 text-sm"
+                >
+                  Select all
+                </button>
+                <button
+                  onClick={() => setOcrItems((prev) => prev.map((i) => ({ ...i, selected: false })))}
+                  className="px-3 py-1 rounded bg-gray-200 hover:bg-gray-300 text-sm"
+                >
+                  Deselect all
+                </button>
+                <button
+                  onClick={() => { setOcrItems([]); setOcrError(""); setOcrImageName(""); }}
+                  className="px-3 py-1 rounded bg-gray-200 hover:bg-gray-300 text-sm"
+                >
+                  Clear
+                </button>
+              </div>
+            </div>
+
+            <div className="overflow-x-auto border rounded">
+              <table className="min-w-full text-sm">
+                <thead className="bg-gray-100">
+                  <tr>
+                    <th className="text-left p-2">Add</th>
+                    <th className="text-left p-2">Name</th>
+                    <th className="text-left p-2">Qty</th>
+                    <th className="text-left p-2">Meas.</th>
+                    <th className="text-left p-2">Supplier</th>
+                    <th className="text-left p-2">Location</th>
+                    <th className="text-left p-2">Expiry</th>
+                    <th className="text-left p-2">Price (£)</th>
+                    <th className="text-left p-2">Parsed weight</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {ocrItems.map((it) => (
+                    <tr key={it.id} className="border-t">
+                      <td className="p-2 align-middle">
+                        <input
+                          type="checkbox"
+                          checked={!!it.selected}
+                          onChange={(e) => updateOcrItem(it.id, "selected", e.target.checked)}
+                        />
+                      </td>
+                      <td className="p-2">
+                        <input
+                          type="text"
+                          value={it.name}
+                          onChange={(e) => updateOcrItem(it.id, "name", e.target.value)}
+                          className="border p-1 rounded w-48"
+                        />
+                      </td>
+                      <td className="p-2">
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={it.quantity}
+                          onChange={(e) => updateOcrItem(it.id, "quantity", Number(e.target.value))}
+                          className="border p-1 rounded w-24"
+                        />
+                      </td>
+                      <td className="p-2">
+                        <select
+                          value={it.measurement}
+                          onChange={(e) => updateOcrItem(it.id, "measurement", e.target.value)}
+                          className="border p-1 rounded w-24"
+                        >
+                          <option value="unit">Units</option>
+                          <option value="kg">Kilograms</option>
+                        </select>
+                      </td>
+                      <td className="p-2">
+                        <select
+                          value={it.supplier || ""}
+                          onChange={(e) => updateOcrItem(it.id, "supplier", e.target.value)}
+                          className="border p-1 rounded w-40"
+                        >
+                          <option value="">(none)</option>
+                          {suppliers.map((sup) => (
+                            <option key={sup.id} value={sup.name}>
+                              {sup.name}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="p-2">
+                        <select
+                          value={it.location}
+                          onChange={(e) => updateOcrItem(it.id, "location", e.target.value)}
+                          className="border p-1 rounded w-40"
+                        >
+                          <option value="Ambient">Ambient</option>
+                          {equipment.map((eq) => (
+                            <option key={eq.id} value={eq.name || eq.id}>
+                              {eq.name || eq.type}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="p-2">
+                        <input
+                          type="date"
+                          value={it.expiryDate || ""}
+                          onChange={(e) => updateOcrItem(it.id, "expiryDate", e.target.value)}
+                          className="border p-1 rounded w-40"
+                        />
+                      </td>
+                      <td className="p-2">
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={it.price ?? ""}
+                          onChange={(e) =>
+                            updateOcrItem(it.id, "price", e.target.value === "" ? null : Number(e.target.value))
+                          }
+                          className="border p-1 rounded w-24"
+                          placeholder="0.00"
+                        />
+                      </td>
+                      <td className="p-2 text-gray-500">{it.rawWeight || "-"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <button
+              onClick={addSelectedOcrItems}
+              className="mt-3 bg-green-600 text-white px-4 py-2 rounded"
+            >
+              Add selected items
+            </button>
+          </div>
+        )}
+      </div>
 
       {/* Add stock item */}
       <div className="mb-4 grid grid-cols-1 md:grid-cols-12 gap-2 items-end">
@@ -321,6 +653,23 @@ const StockSection = ({ site, goBack, user }) => {
                   </option>
                 ))}
               </select>
+
+              {/* Price (optional) */}
+              <input
+                type="number"
+                step="0.01"
+                value={(editBuffer[item.id]?.price ?? item.price) ?? ""}
+                onChange={(e) =>
+                  handleEdit(
+                    item.id,
+                    "price",
+                    e.target.value === "" ? null : Number(e.target.value)
+                  )
+                }
+                className="border p-1 rounded w-24"
+                placeholder="£"
+                title="Item price (optional)"
+              />
             </div>
 
             <div className="flex gap-2 mt-2 md:mt-0">
