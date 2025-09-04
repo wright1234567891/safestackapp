@@ -1,5 +1,5 @@
 // src/components/ChecklistSection.jsx
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   collection,
   addDoc,
@@ -44,6 +44,9 @@ const ChecklistSection = ({ goBack, site, user }) => {
   const [items, setItems] = useState([]);
   const [newItem, setNewItem] = useState("");
 
+  // keep focus steady on the “new question” field
+  const newItemRef = useRef(null);
+
   // Working state
   const [selectedChecklist, setSelectedChecklist] = useState(null);
   const [viewingCompleted, setViewingCompleted] = useState(null);
@@ -85,6 +88,32 @@ const ChecklistSection = ({ goBack, site, user }) => {
 
   const siteChecklists = checklists.filter((cl) => cl.site === site);
 
+  // ---------- Focus helpers ----------
+  // Focus the "new question" input when you land on the questions step
+  useEffect(() => {
+    if (adding && titleSet) {
+      // slight delay ensures the element exists after re-render
+      requestAnimationFrame(() => newItemRef.current?.focus());
+    }
+  }, [adding, titleSet]);
+
+  // Keep focus while typing (some environments blur on re-render)
+  useEffect(() => {
+    if (adding && titleSet) {
+      requestAnimationFrame(() => {
+        // Only re-focus if the input exists and isn't already focused
+        if (newItemRef.current && document.activeElement !== newItemRef.current) {
+          newItemRef.current.focus();
+          // put cursor at end (some mobile keyboards can move caret)
+          const len = newItemRef.current.value?.length ?? 0;
+          try {
+            newItemRef.current.setSelectionRange(len, len);
+          } catch {}
+        }
+      });
+    }
+  }, [newItem, adding, titleSet]);
+
   // ---------- Authoring ----------
   const addItem = () => {
     if (!newItem.trim()) return;
@@ -93,6 +122,8 @@ const ChecklistSection = ({ goBack, site, user }) => {
       { text: newItem.trim(), answer: null, corrective: "" },
     ]);
     setNewItem("");
+    // Return focus to the input so you can keep adding questions quickly
+    requestAnimationFrame(() => newItemRef.current?.focus());
   };
 
   const handleAnswerChange = (index, value) => {
@@ -327,6 +358,7 @@ const ChecklistSection = ({ goBack, site, user }) => {
     kind = "neutral",
     style = {},
     tabIndex = 0,
+    type = "button",
   }) => {
     const palette = {
       neutral: { bg: "#f3f4f6", hover: "#e5e7eb", color: "#111" },
@@ -354,6 +386,7 @@ const ChecklistSection = ({ goBack, site, user }) => {
 
     return (
       <button
+        type={type}
         onClick={onClick}
         style={base}
         onMouseEnter={(e) =>
@@ -513,6 +546,10 @@ const ChecklistSection = ({ goBack, site, user }) => {
                 setAdding(true);
                 setSelectedChecklist(null);
                 setViewingCompleted(null);
+                // ensure focus goes to title first
+                requestAnimationFrame(() => {
+                  // no-op here; title field will be first interactive element
+                });
               }}
             >
               + Add Checklist
@@ -702,9 +739,16 @@ const ChecklistSection = ({ goBack, site, user }) => {
             }}
           >
             <input
+              ref={newItemRef}
               type="text"
               value={newItem}
               onChange={(e) => setNewItem(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  addItem();
+                }
+              }}
               placeholder="New question"
               style={{
                 padding: "12px 14px",
