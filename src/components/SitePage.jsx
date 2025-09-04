@@ -12,6 +12,7 @@ import {
   FaChartBar,
   FaExclamationTriangle,
   FaTools,
+  FaUtensils, // ✅ added
 } from "react-icons/fa";
 import EquipmentManager from "./EquipmentManager";
 import ChecklistSection from "./ChecklistSection";
@@ -22,6 +23,7 @@ import StockSection from "./StockSection";
 import Reports from "./Reports";
 import CCPSection from "./CCPSection";
 import HaccpDashboard from "./HaccpDashboard"; // ✅ NEW
+import DishesSection from "./DishesSection";   // ✅ added
 
 const sites = [
   "Thorganby Site",
@@ -143,6 +145,16 @@ const SitePage = ({ user, onLogout }) => {
       <HaccpDashboard
         goBack={() => setActiveSection(null)}
         site={selectedSite}
+      />
+    );
+  }
+  // ✅ NEW: Dishes route
+  if (selectedSite && activeSection === "dishes") {
+    return (
+      <DishesSection
+        goBack={() => setActiveSection(null)}
+        site={selectedSite}
+        user={user}
       />
     );
   }
@@ -309,6 +321,12 @@ const SitePage = ({ user, onLogout }) => {
       label: "Reports",
       key: "reports",
       icon: <FaChartBar size={24} color="#9333ea" />,
+    },
+    // ✅ NEW: Dishes (recipes) card
+    {
+      label: "Dishes",
+      key: "dishes",
+      icon: <FaUtensils size={24} color="#0ea5e9" />,
     },
     // ✅ NEW: HACCP Dashboard (read-only live status)
     {

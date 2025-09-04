@@ -23,21 +23,91 @@ import {
   FaEdit,
   FaSave,
   FaTimes,
+  FaUtensils,
 } from "react-icons/fa";
 
+// ===== Shared inline styles to match your Stock/Checklist look =====
+const wrap = {
+  maxWidth: "980px",
+  margin: "0 auto",
+  padding: "40px 20px",
+  fontFamily: "'Inter', sans-serif",
+  color: "#111",
+};
+const title = {
+  fontSize: "28px",
+  fontWeight: 700,
+  marginBottom: "22px",
+  textAlign: "center",
+};
+const card = {
+  background: "#fff",
+  borderRadius: "14px",
+  padding: "18px 18px",
+  boxShadow: "0 2px 6px rgba(0,0,0,0.08)",
+  marginBottom: "18px",
+};
+const sectionHeader = {
+  display: "flex",
+  alignItems: "center",
+  gap: "10px",
+  fontWeight: 700,
+  fontSize: "16px",
+  marginBottom: "14px",
+};
+const row = { display: "flex", gap: "10px", flexWrap: "wrap" };
+const input = {
+  padding: "10px 12px",
+  border: "1px solid #e5e7eb",
+  borderRadius: "10px",
+  fontSize: "14px",
+  outline: "none",
+  minWidth: "180px",
+  background: "#fff",
+};
+const area = { ...input, minWidth: "280px", width: "100%", minHeight: 72, resize: "vertical" };
+const selectInput = { ...input };
+const checkboxLabel = { display: "inline-flex", alignItems: "center", gap: 8 };
+const button = (bg = "#f3f4f6", fg = "#111") => ({
+  padding: "10px 14px",
+  borderRadius: "10px",
+  border: "none",
+  cursor: "pointer",
+  backgroundColor: bg,
+  color: fg,
+  fontWeight: 600,
+  transition: "all .2s",
+});
+const primaryBtn = button("#22c55e", "#fff");
+const blueBtn = button("#2563eb", "#fff");
+const redBtn = button("#ef4444", "#fff");
+const grayBtn = button();
+const subtle = { fontSize: "13px", color: "#6b7280" };
+const tag = (bg = "#eef2ff", fg = "#4338ca") => ({
+  padding: "4px 8px",
+  borderRadius: "999px",
+  background: bg,
+  color: fg,
+  fontSize: "12px",
+  fontWeight: 600,
+  display: "inline-flex",
+  alignItems: "center",
+  gap: "6px",
+});
+
 const CCPSection = ({ site, goBack, user }) => {
-  // Data
+  // Data from Firestore
   const [ccps, setCCPs] = useState([]);
   const [equipment, setEquipment] = useState([]);
   const [stockItems, setStockItems] = useState([]);
+  const [dishes, setDishes] = useState([]);
 
-  // Create form
+  // Create form state
   const [newCCP, setNewCCP] = useState({
     name: "",
     hazardType: "Biological",
     isCCP: true,
     step: "",
-    // limits: flexible: numeric min/max or free text (e.g., “≤5°C”, “≥75°C for 30s”)
     limitMin: "",
     limitMax: "",
     limitText: "",
@@ -49,94 +119,15 @@ const CCPSection = ({ site, goBack, user }) => {
     records: "",
     equipmentIds: [],
     stockItemIds: [],
+    dishIds: [], // 👈 NEW: link to dishes
   });
 
-  // UI
+  // UI state
   const [filterText, setFilterText] = useState("");
   const [editingId, setEditingId] = useState(null);
-  const [edit, setEdit] = useState(null); // clone of editing CCP
+  const [edit, setEdit] = useState(null); // clone when editing
 
-  // Styles (match your StockSection/Checklist vibe)
-  const wrap = {
-    maxWidth: "980px",
-    margin: "0 auto",
-    padding: "40px 20px",
-    fontFamily: "'Inter', sans-serif",
-    color: "#111",
-  };
-  const title = {
-    fontSize: "28px",
-    fontWeight: 700,
-    marginBottom: "22px",
-    textAlign: "center",
-  };
-  const card = {
-    background: "#fff",
-    borderRadius: "14px",
-    padding: "18px 18px",
-    boxShadow: "0 2px 6px rgba(0,0,0,0.08)",
-    marginBottom: "18px",
-  };
-  const sectionHeader = {
-    display: "flex",
-    alignItems: "center",
-    gap: "10px",
-    fontWeight: 700,
-    fontSize: "16px",
-    marginBottom: "14px",
-  };
-  const row = {
-    display: "flex",
-    gap: "10px",
-    flexWrap: "wrap",
-  };
-  const input = {
-    padding: "10px 12px",
-    border: "1px solid #e5e7eb",
-    borderRadius: "10px",
-    fontSize: "14px",
-    outline: "none",
-    minWidth: "180px",
-    background: "#fff",
-  };
-  const area = {
-    ...input,
-    minWidth: "280px",
-    width: "100%",
-    minHeight: 72,
-    resize: "vertical",
-  };
-  const selectInput = { ...input };
-  const checkboxLabel = { display: "inline-flex", alignItems: "center", gap: 8 };
-  const button = (bg = "#f3f4f6", fg = "#111") => ({
-    padding: "10px 14px",
-    borderRadius: "10px",
-    border: "none",
-    cursor: "pointer",
-    backgroundColor: bg,
-    color: fg,
-    fontWeight: 600,
-    transition: "all .2s",
-  });
-  const primaryBtn = button("#22c55e", "#fff");
-  const blueBtn = button("#2563eb", "#fff");
-  const orangeBtn = button("#f97316", "#fff");
-  const redBtn = button("#ef4444", "#fff");
-  const grayBtn = button();
-  const subtle = { fontSize: "13px", color: "#6b7280" };
-  const tag = (bg = "#eef2ff", fg = "#4338ca") => ({
-    padding: "4px 8px",
-    borderRadius: "999px",
-    background: bg,
-    color: fg,
-    fontSize: "12px",
-    fontWeight: 600,
-    display: "inline-flex",
-    alignItems: "center",
-    gap: "6px",
-  });
-
-  // Listeners
+  // ===== Listeners =====
   useEffect(() => {
     if (!site) return;
     const qCCP = query(collection(db, "haccpPoints"), where("site", "==", site));
@@ -164,7 +155,16 @@ const CCPSection = ({ site, goBack, user }) => {
     return () => unsub();
   }, [site]);
 
-  // Helpers
+  useEffect(() => {
+    if (!site) return;
+    const qDish = query(collection(db, "dishes"), where("site", "==", site));
+    const unsub = onSnapshot(qDish, (snap) => {
+      setDishes(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+    });
+    return () => unsub();
+  }, [site]);
+
+  // ===== Helpers =====
   const resetNew = () =>
     setNewCCP({
       name: "",
@@ -182,6 +182,7 @@ const CCPSection = ({ site, goBack, user }) => {
       records: "",
       equipmentIds: [],
       stockItemIds: [],
+      dishIds: [],
     });
 
   const startEdit = (ccp) => {
@@ -202,7 +203,9 @@ const CCPSection = ({ site, goBack, user }) => {
       records: ccp.records ?? "",
       equipmentIds: ccp.equipmentIds ?? [],
       stockItemIds: ccp.stockItemIds ?? [],
+      dishIds: ccp.dishIds ?? [], // 👈 include dish links in edit
     });
+    window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
   const cancelEdit = () => {
@@ -235,7 +238,7 @@ const CCPSection = ({ site, goBack, user }) => {
   };
 
   const deleteCCP = async (id) => {
-    if (!window.confirm("Are you sure you want to delete this CCP?")) return;
+    if (!window.confirm("Are you sure you want to delete this CCP/control measure?")) return;
     await deleteDoc(doc(db, "haccpPoints", id));
   };
 
@@ -246,16 +249,17 @@ const CCPSection = ({ site, goBack, user }) => {
         c.name,
         c.hazardType,
         c.step,
-        ...(c.limitText ? [c.limitText] : []),
+        c.limitText,
+        (c.dishIds || []).map((dId) => dishes.find((d) => d.id === dId)?.name).join(" "),
       ]
         .filter(Boolean)
         .join(" ")
         .toLowerCase();
       return bucket.includes(f);
     });
-  }, [ccps, filterText]);
+  }, [ccps, filterText, dishes]);
 
-  // Render pieces
+  // ===== Render pieces =====
   const LimitsHint = () => (
     <div style={{ ...subtle, marginTop: 4 }}>
       Use either numeric range (min/max) or a text rule (e.g. “Cook ≥ 75°C” / “Chill ≤ 5°C”).
@@ -264,23 +268,13 @@ const CCPSection = ({ site, goBack, user }) => {
 
   const CCPCard = ({ ccp }) => {
     const isEditing = editingId === ccp.id;
+    const val = (k) => (isEditing ? edit?.[k] : ccp?.[k] ?? (k === "isCCP" ? true : ""));
+    const setVal = (k, v) => setEdit((prev) => ({ ...prev, [k]: v }));
 
-    const val = (k) =>
-      isEditing ? edit?.[k] : ccp?.[k] ?? (k === "isCCP" ? true : "");
-
-    const setVal = (k, v) =>
-      setEdit((prev) => ({ ...prev, [k]: v }));
-
-    const checkbox = (k) => (
-      <label style={checkboxLabel}>
-        <input
-          type="checkbox"
-          checked={!!val(k)}
-          onChange={(e) => setVal(k, e.target.checked)}
-        />
-        CCP?
-      </label>
-    );
+    const linkedDishNames =
+      (val("dishIds") || [])
+        .map((id) => dishes.find((d) => d.id === id)?.name)
+        .filter(Boolean);
 
     return (
       <div style={card}>
@@ -292,10 +286,10 @@ const CCPSection = ({ site, goBack, user }) => {
                 style={{ ...input, minWidth: 240 }}
                 value={val("name")}
                 onChange={(e) => setVal("name", e.target.value)}
-                placeholder="CCP name"
+                placeholder="CCP/Control name"
               />
             ) : (
-              ccp.name || "(Unnamed CCP)"
+              ccp.name || "(Unnamed Control)"
             )}
           </span>
           <span style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
@@ -373,7 +367,16 @@ const CCPSection = ({ site, goBack, user }) => {
             {val("isCCP") ? "Critical Control Point" : "Not a CCP"}
           </div>
 
-          {isEditing && checkbox("isCCP")}
+          {isEditing && (
+            <label style={checkboxLabel}>
+              <input
+                type="checkbox"
+                checked={!!val("isCCP")}
+                onChange={(e) => setVal("isCCP", e.target.checked)}
+              />
+              CCP?
+            </label>
+          )}
         </div>
 
         {/* Row 2: Limits */}
@@ -497,7 +500,7 @@ const CCPSection = ({ site, goBack, user }) => {
           <select
             multiple
             disabled={!isEditing}
-            style={{ ...selectInput, minWidth: 280, height: 110, flex: 1 }}
+            style={{ ...selectInput, minWidth: 280, height: 110 }}
             value={val("stockItemIds") || []}
             onChange={(e) =>
               setVal(
@@ -513,15 +516,46 @@ const CCPSection = ({ site, goBack, user }) => {
               </option>
             ))}
           </select>
+
+          <span style={tag("#fff7ed", "#c2410c")}>
+            <FaUtensils /> Dishes
+          </span>
+          <select
+            multiple
+            disabled={!isEditing}
+            style={{ ...selectInput, minWidth: 280, height: 110, flex: 1 }}
+            value={val("dishIds") || []}
+            onChange={(e) =>
+              setVal(
+                "dishIds",
+                Array.from(e.target.selectedOptions).map((o) => o.value)
+              )
+            }
+            title="Link to dishes/recipes (hold Ctrl/Cmd to select multiple)"
+          >
+            {dishes.map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.name}
+              </option>
+            ))}
+          </select>
         </div>
+
+        {/* Linked dishes (read-only preview when not editing) */}
+        {!isEditing && (linkedDishNames?.length > 0) && (
+          <div style={{ marginTop: 10, ...subtle }}>
+            Linked dishes: <strong>{linkedDishNames.join(", ")}</strong>
+          </div>
+        )}
       </div>
     );
   };
 
+  // ===== Main JSX =====
   return (
     <div style={wrap}>
       <h2 style={title}>
-        Manage CCPs — <span style={{ color: "#2563eb" }}>{site}</span>
+        Manage CCPs & Controls — <span style={{ color: "#2563eb" }}>{site}</span>
       </h2>
 
       {/* Create */}
@@ -584,9 +618,7 @@ const CCPSection = ({ site, goBack, user }) => {
             onChange={(e) => setNewCCP((p) => ({ ...p, limitText: e.target.value }))}
           />
         </div>
-        <div style={{ ...subtle, marginTop: 4 }}>
-          You can use numeric min/max, text, or both.
-        </div>
+        <div style={{ ...subtle, marginTop: 4 }}>You can use numeric min/max, text, or both.</div>
 
         <div style={{ ...row, marginTop: 10 }}>
           <input
@@ -662,13 +694,13 @@ const CCPSection = ({ site, goBack, user }) => {
             </select>
           </div>
 
-          <div style={{ display: "flex", gap: 8, alignItems: "center", flex: 1 }}>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             <span style={tag("#ecfeff", "#0891b2")}>
               <FaBoxOpen /> Stock Items
             </span>
             <select
               multiple
-              style={{ ...selectInput, minWidth: 280, height: 110, flex: 1 }}
+              style={{ ...selectInput, minWidth: 280, height: 110 }}
               value={newCCP.stockItemIds}
               onChange={(e) =>
                 setNewCCP((p) => ({
@@ -681,6 +713,30 @@ const CCPSection = ({ site, goBack, user }) => {
               {stockItems.map((si) => (
                 <option key={si.id} value={si.id}>
                   {si.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flex: 1 }}>
+            <span style={tag("#fff7ed", "#c2410c")}>
+              <FaUtensils /> Dishes
+            </span>
+            <select
+              multiple
+              style={{ ...selectInput, minWidth: 280, height: 110, flex: 1 }}
+              value={newCCP.dishIds}
+              onChange={(e) =>
+                setNewCCP((p) => ({
+                  ...p,
+                  dishIds: Array.from(e.target.selectedOptions).map((o) => o.value),
+                }))
+              }
+              title="Link to dishes/recipes (hold Ctrl/Cmd to select multiple)"
+            >
+              {dishes.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.name}
                 </option>
               ))}
             </select>
@@ -707,7 +763,7 @@ const CCPSection = ({ site, goBack, user }) => {
         </div>
         <input
           style={{ ...input, width: "100%" }}
-          placeholder="Search by name, step, hazard…"
+          placeholder="Search by name, step, hazard, or linked dish…"
           value={filterText}
           onChange={(e) => setFilterText(e.target.value)}
         />
