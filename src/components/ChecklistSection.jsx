@@ -65,29 +65,64 @@ const ChecklistSection = ({ goBack, site, user }) => {
 
     const fetchData = async () => {
       try {
-        // Only load checklists for this site
+        // Try the preferred query (requires composite index: site + createdAt desc)
         const qChecklist = query(
           checklistCollectionRef,
           where("site", "==", site),
           orderBy("createdAt", "desc")
         );
         const checklistSnapshot = await getDocs(qChecklist);
-        setChecklists(
-          checklistSnapshot.docs.map((d) => ({ id: d.id, ...d.data() }))
-        );
+        setChecklists(checklistSnapshot.docs.map((d) => ({ id: d.id, ...d.data() })));
+      } catch (err) {
+        // If index is missing, Firestore throws "failed-precondition".
+        // Fallback: fetch without orderBy and sort on the client.
+        console.warn("Checklist query fell back (likely missing index):", err);
+        try {
+          const qChecklistFallback = query(
+            checklistCollectionRef,
+            where("site", "==", site)
+          );
+          const snap = await getDocs(qChecklistFallback);
+          const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+          rows.sort((a, b) => {
+            const ta = a.createdAt?.toMillis?.() ?? 0;
+            const tb = b.createdAt?.toMillis?.() ?? 0;
+            return tb - ta;
+          });
+          setChecklists(rows);
+        } catch (err2) {
+          console.error("Error fetching checklists (fallback):", err2);
+          setChecklists([]); // avoid stale UI
+        }
+      }
 
-        // Only load completed entries for this site
+      try {
         const qCompleted = query(
           completedCollectionRef,
           where("site", "==", site),
           orderBy("createdAt", "desc")
         );
         const completedSnapshot = await getDocs(qCompleted);
-        setCompleted(
-          completedSnapshot.docs.map((d) => ({ id: d.id, ...d.data() }))
-        );
-      } catch (error) {
-        console.error("Error fetching checklists/completed:", error);
+        setCompleted(completedSnapshot.docs.map((d) => ({ id: d.id, ...d.data() })));
+      } catch (err) {
+        console.warn("Completed query fell back (likely missing index):", err);
+        try {
+          const qCompletedFallback = query(
+            completedCollectionRef,
+            where("site", "==", site)
+          );
+          const snap = await getDocs(qCompletedFallback);
+          const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+          rows.sort((a, b) => {
+            const ta = a.createdAt?.toMillis?.() ?? 0;
+            const tb = b.createdAt?.toMillis?.() ?? 0;
+            return tb - ta;
+          });
+          setCompleted(rows);
+        } catch (err2) {
+          console.error("Error fetching completed (fallback):", err2);
+          setCompleted([]);
+        }
       }
     };
 
@@ -111,8 +146,6 @@ const ChecklistSection = ({ goBack, site, user }) => {
       requestAnimationFrame(() => newItemRef.current?.focus());
     }
   }, [adding, titleSet]);
-
-  // (Removed the second focus effect that ran on each keystroke)
 
   // ---------- Authoring ----------
   const addItem = () => {
@@ -148,6 +181,7 @@ const ChecklistSection = ({ goBack, site, user }) => {
       site,
       title: checklistTitle.trim(),
       questions: items,
+      // Keep as Timestamp.now() so the field exists immediately (avoids blink)
       createdAt: Timestamp.now(),
       person: user || "Unknown",
     };
@@ -165,12 +199,7 @@ const ChecklistSection = ({ goBack, site, user }) => {
   };
 
   const deleteChecklist = async (cl) => {
-    if (
-      !window.confirm(
-        `Delete checklist "${cl.title}"? This cannot be undone.`
-      )
-    )
-      return;
+    if (!window.confirm(`Delete checklist "${cl.title}"? This cannot be undone.`)) return;
     try {
       await deleteDoc(doc(db, "checklists", cl.id));
       setChecklists((prev) => prev.filter((c) => c.id !== cl.id));
@@ -194,18 +223,16 @@ const ChecklistSection = ({ goBack, site, user }) => {
     if (!selectedChecklist) return;
 
     try {
-      // Persist the answered questions back into the checklist
       await updateDoc(doc(db, "checklists", selectedChecklist.id), {
         questions: items,
       });
 
-      // And also add a record to "completed" (includes site)
       const now = Timestamp.now();
       const completedEntry = {
         title: selectedChecklist.title,
         person: user || "Unknown",
         questions: items,
-        site,            // 👈 keep site on record
+        site,            // keep site on record
         createdAt: now,
       };
 
@@ -220,12 +247,7 @@ const ChecklistSection = ({ goBack, site, user }) => {
   };
 
   const deleteCompleted = async (entry) => {
-    if (
-      !window.confirm(
-        `Delete completed checklist "${entry.title}"? This cannot be undone.`
-      )
-    )
-      return;
+    if (!window.confirm(`Delete completed checklist "${entry.title}"? This cannot be undone.`)) return;
     try {
       await deleteDoc(doc(db, "completed", entry.id));
       setCompleted((prev) => prev.filter((c) => c.id !== entry.id));
@@ -269,18 +291,16 @@ const ChecklistSection = ({ goBack, site, user }) => {
     element.appendChild(titleEl);
 
     const subTitleEl = document.createElement("p");
-    subTitleEl.innerText = `Completed by: ${completedBy} — ${formatTimestamp(
-      ts
-    )}`;
+    subTitleEl.innerText = `Completed by: ${completedBy} — ${formatTimestamp(ts)}`;
     subTitleEl.style.margin = "0 0 16px 0";
     element.appendChild(subTitleEl);
 
     questions.forEach((q, idx) => {
       const qEl = document.createElement("p");
       qEl.style.margin = "0 0 8px 0";
-      qEl.innerText = `${idx + 1}. ${q.text} — Answer: ${
-        q.answer || "N/A"
-      }${q.answer === "No" && q.corrective ? ` — Corrective: ${q.corrective}` : ""}`;
+      qEl.innerText = `${idx + 1}. ${q.text} — Answer: ${q.answer || "N/A"}${
+        q.answer === "No" && q.corrective ? ` — Corrective: ${q.corrective}` : ""
+      }`;
       element.appendChild(qEl);
     });
 
@@ -318,18 +338,18 @@ const ChecklistSection = ({ goBack, site, user }) => {
 
     siteCompleted.forEach((c, cIdx) => {
       const subTitle = document.createElement("h3");
-      subTitle.innerText = `${cIdx + 1}. ${c.title} (Completed by ${
-        c.person
-      } at ${formatTimestamp(c.createdAt)})`;
+      subTitle.innerText = `${cIdx + 1}. ${c.title} (Completed by ${c.person} at ${formatTimestamp(
+        c.createdAt
+      )})`;
       subTitle.style.margin = "16px 0 8px 0";
       element.appendChild(subTitle);
 
       c.questions.forEach((q, idx) => {
         const qEl = document.createElement("p");
         qEl.style.margin = "0 0 6px 0";
-        qEl.innerText = `${idx + 1}. ${q.text} — Answer: ${
-          q.answer || "N/A"
-        }${q.answer === "No" && q.corrective ? ` — Corrective: ${q.corrective}` : ""}`;
+        qEl.innerText = `${idx + 1}. ${q.text} — Answer: ${q.answer || "N/A"}${
+          q.answer === "No" && q.corrective ? ` — Corrective: ${q.corrective}` : ""
+        }`;
         element.appendChild(qEl);
       });
 
@@ -388,12 +408,8 @@ const ChecklistSection = ({ goBack, site, user }) => {
         type={type}
         onClick={onClick}
         style={base}
-        onMouseEnter={(e) =>
-          (e.currentTarget.style.backgroundColor = p.hover)
-        }
-        onMouseLeave={(e) =>
-          (e.currentTarget.style.backgroundColor = p.bg)
-        }
+        onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = p.hover)}
+        onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = p.bg)}
         tabIndex={tabIndex}
       >
         {children}
@@ -450,9 +466,7 @@ const ChecklistSection = ({ goBack, site, user }) => {
             <div style={{ display: "flex", gap: 8 }}>
               <Button
                 kind={yesActive ? "success" : "subtle"}
-                onClick={
-                  editable ? () => handleAnswerChange(index, "Yes") : undefined
-                }
+                onClick={editable ? () => handleAnswerChange(index, "Yes") : undefined}
                 style={{
                   border: yesActive ? "1px solid #059669" : "1px solid #e5e7eb",
                 }}
@@ -461,9 +475,7 @@ const ChecklistSection = ({ goBack, site, user }) => {
               </Button>
               <Button
                 kind={noActive ? "danger" : "subtle"}
-                onClick={
-                  editable ? () => handleAnswerChange(index, "No") : undefined
-                }
+                onClick={editable ? () => handleAnswerChange(index, "No") : undefined}
                 style={{
                   border: noActive ? "1px solid #ef4444" : "1px solid #e5e7eb",
                 }}
@@ -479,11 +491,7 @@ const ChecklistSection = ({ goBack, site, user }) => {
               type="text"
               placeholder="Corrective action"
               value={item.corrective}
-              onChange={
-                editable
-                  ? (e) => handleCorrectiveChange(index, e.target.value)
-                  : undefined
-              }
+              onChange={editable ? (e) => handleCorrectiveChange(index, e.target.value) : undefined}
               readOnly={!editable}
               style={{
                 marginTop: "12px",
