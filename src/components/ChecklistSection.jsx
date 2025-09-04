@@ -10,6 +10,7 @@ import {
   Timestamp,
   query,
   orderBy,
+  where, // 👈 add where
 } from "firebase/firestore";
 import { db } from "../firebase";
 import jsPDF from "jspdf";
@@ -44,8 +45,7 @@ const ChecklistSection = ({ goBack, site, user }) => {
   const [items, setItems] = useState([]);
   const [newItem, setNewItem] = useState("");
 
-  // keep focus steady on the title + “new question” fields
-  const titleRef = useRef(null);
+  // keep focus steady on the “new question” field
   const newItemRef = useRef(null);
 
   // Working state
@@ -59,12 +59,16 @@ const ChecklistSection = ({ goBack, site, user }) => {
   const checklistCollectionRef = collection(db, "checklists");
   const completedCollectionRef = collection(db, "completed");
 
-  // ---------- Fetch ----------
+  // ---------- Fetch (site-scoped + reacts to site change) ----------
   useEffect(() => {
+    if (!site) return;
+
     const fetchData = async () => {
       try {
+        // Only load checklists for this site
         const qChecklist = query(
           checklistCollectionRef,
+          where("site", "==", site),
           orderBy("createdAt", "desc")
         );
         const checklistSnapshot = await getDocs(qChecklist);
@@ -72,8 +76,10 @@ const ChecklistSection = ({ goBack, site, user }) => {
           checklistSnapshot.docs.map((d) => ({ id: d.id, ...d.data() }))
         );
 
+        // Only load completed entries for this site
         const qCompleted = query(
           completedCollectionRef,
+          where("site", "==", site),
           orderBy("createdAt", "desc")
         );
         const completedSnapshot = await getDocs(qCompleted);
@@ -84,20 +90,28 @@ const ChecklistSection = ({ goBack, site, user }) => {
         console.error("Error fetching checklists/completed:", error);
       }
     };
-    fetchData();
-  }, []);
 
-  const siteChecklists = checklists.filter((cl) => cl.site === site);
+    fetchData();
+    // reset transient states when switching sites
+    setAdding(false);
+    setTitleSet(false);
+    setChecklistTitle("");
+    setItems([]);
+    setSelectedChecklist(null);
+    setViewingCompleted(null);
+    setNewItem("");
+  }, [site]); // 👈 re-run when site changes
+
+  const siteChecklists = checklists; // already filtered by query
+  const siteCompleted = completed;   // already filtered by query
 
   // ---------- Focus helpers ----------
-  // Focus the "new question" input when you land on the questions step
   useEffect(() => {
     if (adding && titleSet) {
       requestAnimationFrame(() => newItemRef.current?.focus());
     }
   }, [adding, titleSet]);
 
-  // Keep focus while typing (some environments blur on re-render)
   useEffect(() => {
     if (adding && titleSet) {
       requestAnimationFrame(() => {
@@ -112,28 +126,6 @@ const ChecklistSection = ({ goBack, site, user }) => {
     }
   }, [newItem, adding, titleSet]);
 
-  // NEW: focus management for the TITLE field (fixes your issue)
-  useEffect(() => {
-    if (adding && !titleSet) {
-      requestAnimationFrame(() => titleRef.current?.focus());
-    }
-  }, [adding, titleSet]);
-
-  useEffect(() => {
-    if (adding && !titleSet) {
-      requestAnimationFrame(() => {
-        if (titleRef.current && document.activeElement !== titleRef.current) {
-          // restore focus + caret position if it was lost
-          const len = titleRef.current.value?.length ?? 0;
-          titleRef.current.focus();
-          try {
-            titleRef.current.setSelectionRange(len, len);
-          } catch {}
-        }
-      });
-    }
-  }, [checklistTitle, adding, titleSet]);
-
   // ---------- Authoring ----------
   const addItem = () => {
     if (!newItem.trim()) return;
@@ -142,7 +134,6 @@ const ChecklistSection = ({ goBack, site, user }) => {
       { text: newItem.trim(), answer: null, corrective: "" },
     ]);
     setNewItem("");
-    // Return focus to the input so you can keep adding questions quickly
     requestAnimationFrame(() => newItemRef.current?.focus());
   };
 
@@ -220,13 +211,13 @@ const ChecklistSection = ({ goBack, site, user }) => {
         questions: items,
       });
 
-      // And also add a record to "completed"
+      // And also add a record to "completed" (includes site)
       const now = Timestamp.now();
       const completedEntry = {
         title: selectedChecklist.title,
         person: user || "Unknown",
         questions: items,
-        site,
+        site,            // 👈 keep site on record
         createdAt: now,
       };
 
@@ -320,7 +311,7 @@ const ChecklistSection = ({ goBack, site, user }) => {
   };
 
   const exportAllCompletedToPDF = async () => {
-    if (completed.length === 0) {
+    if (siteCompleted.length === 0) {
       alert("No completed checklists to export");
       return;
     }
@@ -337,7 +328,7 @@ const ChecklistSection = ({ goBack, site, user }) => {
     titleEl.style.margin = "0 0 16px 0";
     element.appendChild(titleEl);
 
-    completed.forEach((c, cIdx) => {
+    siteCompleted.forEach((c, cIdx) => {
       const subTitle = document.createElement("h3");
       subTitle.innerText = `${cIdx + 1}. ${c.title} (Completed by ${
         c.person
@@ -571,7 +562,7 @@ const ChecklistSection = ({ goBack, site, user }) => {
               + Add Checklist
             </Button>
           )}
-          {completed.length > 0 && (
+          {siteCompleted.length > 0 && (
             <Button kind="warn" onClick={exportAllCompletedToPDF}>
               Export All Completed
             </Button>
@@ -646,7 +637,7 @@ const ChecklistSection = ({ goBack, site, user }) => {
             ))}
           </div>
 
-          {completed.length > 0 && (
+          {siteCompleted.length > 0 && (
             <>
               <SectionTitle style={{ marginTop: 24 }}>
                 Completed Checklists
@@ -658,7 +649,7 @@ const ChecklistSection = ({ goBack, site, user }) => {
                   gap: 14,
                 }}
               >
-                {completed.map((c) => (
+                {siteCompleted.map((c) => (
                   <Card key={c.id} onClick={() => viewCompleted(c)}>
                     <div style={{ paddingRight: 64 }}>
                       <div
@@ -710,8 +701,6 @@ const ChecklistSection = ({ goBack, site, user }) => {
             Give your checklist a clear, descriptive title.
           </div>
           <input
-            ref={titleRef}
-            autoFocus
             type="text"
             value={checklistTitle}
             onChange={(e) => setChecklistTitle(e.target.value)}

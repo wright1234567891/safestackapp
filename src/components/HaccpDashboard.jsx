@@ -1,12 +1,7 @@
 // src/components/HaccpDashboard.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import { db } from "../firebase";
-import {
-  collection,
-  onSnapshot,
-  query,
-  where,
-} from "firebase/firestore";
+import { collection, onSnapshot, query, where } from "firebase/firestore";
 import {
   FaClipboardCheck,
   FaExclamationTriangle,
@@ -16,6 +11,8 @@ import {
   FaSearch,
   FaCheckCircle,
   FaTimesCircle,
+  FaUtensils,
+  FaListUl,
 } from "react-icons/fa";
 
 // -------------------------------
@@ -45,10 +42,7 @@ const parseLimitText = (s) => {
   const text = String(s).toLowerCase();
   const m = text.match(/(<=|≥|>=|≤|<|>|=)\s*([\-]?\d+(\.\d+)?)/);
   if (!m) return null;
-  const op = m[1]
-    .replace("≤", "<=")
-    .replace("≥", ">=")
-    .replace("=", "==");
+  const op = m[1].replace("≤", "<=").replace("≥", ">=").replace("=", "==");
   const val = toNum(m[2]);
   if (val === null) return null;
   return { op, val };
@@ -90,14 +84,8 @@ const evalAgainstLimits = (ccp, reading) => {
 const latestRecord = (eq) => {
   const arr = Array.isArray(eq?.records) ? eq.records : [];
   if (!arr.length) return null;
-  // records were saved with {id, temp, date, time, person}
-  // build a sortable timestamp when possible
-  const withWhen = arr.map((r) => {
-    const when = r.when || `${r.date ?? ""} ${r.time ?? ""}`;
-    return { ...r, _when: when };
-  });
-  // naive sort by index; most of your saves are append-at-end
-  return withWhen[0]; // you saved newest last? or first? If wrong, switch to withWhen[withWhen.length-1]
+  // Your records append; newest should be the last. If yours are first, flip.
+  return arr[arr.length - 1];
 };
 
 // -------------------------------
@@ -107,12 +95,14 @@ const HaccpDashboard = ({ site, goBack }) => {
   const [ccps, setCCPs] = useState([]);
   const [equipment, setEquipment] = useState([]);
   const [stock, setStock] = useState([]);
+  const [dishes, setDishes] = useState([]); // 👈 NEW
 
   // UI
   const [qText, setQText] = useState("");
   const [onlyShow, setOnlyShow] = useState("ALL"); // ALL | OK | ALERT
+  const [viewMode, setViewMode] = useState("CCP"); // "CCP" | "DISH"  👈 NEW
 
-  // Styles (match Stock/Checklist look)
+  // Styles
   const wrap = {
     maxWidth: "980px",
     margin: "0 auto",
@@ -197,10 +187,20 @@ const HaccpDashboard = ({ site, goBack }) => {
     return () => unsub();
   }, [site]);
 
+  // 👇 NEW: Dishes listener
+  useEffect(() => {
+    if (!site) return;
+    const qDish = query(collection(db, "dishes"), where("site", "==", site));
+    const unsub = onSnapshot(qDish, (snap) => {
+      setDishes(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+    });
+    return () => unsub();
+  }, [site]);
+
   // -------------------------------
   // Derived rows (CCP x latest equipment reading)
   // -------------------------------
-  const rows = useMemo(() => {
+  const rowsByCCP = useMemo(() => {
     const eqById = Object.fromEntries(equipment.map((e) => [e.id, e]));
     const stockById = Object.fromEntries(stock.map((s) => [s.id, s]));
 
@@ -208,9 +208,7 @@ const HaccpDashboard = ({ site, goBack }) => {
       const eqIds = c.equipmentIds || [];
       const siIds = c.stockItemIds || [];
 
-      const linkedEquip = eqIds
-        .map((id) => eqById[id])
-        .filter(Boolean);
+      const linkedEquip = eqIds.map((id) => eqById[id]).filter(Boolean);
 
       const latestEvidences = linkedEquip.map((eq) => ({
         equipmentId: eq.id,
@@ -218,21 +216,19 @@ const HaccpDashboard = ({ site, goBack }) => {
         last: latestRecord(eq),
       }));
 
-      // status: if ANY linked equipment has a last reading and it fails => ALERT
+      // status: if ANY linked equipment fails => ALERT
       let worst = { ok: true, reason: "No linked readings" };
       latestEvidences.forEach((evi) => {
         const res = evalAgainstLimits(c, evi.last?.temp);
         if (!res.ok) worst = res;
       });
 
-      // build friendly strings
       const limitText =
-        (c.limitMin || c.limitMax) ?
-          [
-            c.limitMin ? `Min ${c.limitMin}°C` : null,
-            c.limitMax ? `Max ${c.limitMax}°C` : null
-          ].filter(Boolean).join(" • ")
-        : (c.limitText || "—");
+        c.limitMin || c.limitMax
+          ? [c.limitMin ? `Min ${c.limitMin}°C` : null, c.limitMax ? `Max ${c.limitMax}°C` : null]
+              .filter(Boolean)
+              .join(" • ")
+          : c.limitText || "—";
 
       const stockNames = siIds
         .map((id) => stockById[id]?.name)
@@ -254,20 +250,123 @@ const HaccpDashboard = ({ site, goBack }) => {
     });
   }, [ccps, equipment, stock]);
 
-  const filtered = useMemo(() => {
+  const filteredCCP = useMemo(() => {
     const t = qText.toLowerCase();
-    return rows.filter((r) => {
+    return rowsByCCP.filter((r) => {
       const matchesText =
         r.name.toLowerCase().includes(t) ||
         r.step.toLowerCase().includes(t) ||
         r.hazardType.toLowerCase().includes(t) ||
         r.limits.toLowerCase().includes(t) ||
         r.stockNames.toLowerCase().includes(t);
-      const matchesStatus =
-        onlyShow === "ALL" ? true : r.status === onlyShow;
+      const matchesStatus = onlyShow === "ALL" ? true : r.status === onlyShow;
       return matchesText && matchesStatus;
     });
-  }, [rows, qText, onlyShow]);
+  }, [rowsByCCP, qText, onlyShow]);
+
+  // -------------------------------
+  // NEW: Derived rows By Dish (infer CCPs via ingredient stock links)
+  // -------------------------------
+  const rowsByDish = useMemo(() => {
+    if (!dishes.length) return [];
+
+    const eqById = Object.fromEntries(equipment.map((e) => [e.id, e]));
+    const ccpById = Object.fromEntries(ccps.map((c) => [c.id, c]));
+
+    // Pre-build: stockItemId -> CCPs that reference it
+    const stockToCCPs = new Map();
+    ccps.forEach((c) => {
+      (c.stockItemIds || []).forEach((sid) => {
+        if (!stockToCCPs.has(sid)) stockToCCPs.set(sid, []);
+        stockToCCPs.get(sid).push(c);
+      });
+    });
+
+    return dishes.map((d) => {
+      const ing = Array.isArray(d.ingredients) ? d.ingredients : [];
+      const stockIds = ing.map((i) => i.stockItemId).filter(Boolean);
+
+      // All CCPs that reference any ingredient stock item
+      const ccpsForDish = [
+        ...new Set(stockIds.flatMap((sid) => stockToCCPs.get(sid) || [])),
+      ];
+
+      // Compute latest evidence and status per CCP
+      const detailed = ccpsForDish.map((c) => {
+        const linkedEquip = (c.equipmentIds || [])
+          .map((id) => eqById[id])
+          .filter(Boolean);
+
+        const latestEvidences = linkedEquip.map((eq) => ({
+          equipmentId: eq.id,
+          equipmentName: eq.name || eq.type || eq.id,
+          last: latestRecord(eq),
+        }));
+
+        let status = { ok: true, reason: "No linked readings" };
+        latestEvidences.forEach((evi) => {
+          const res = evalAgainstLimits(c, evi.last?.temp);
+          if (!res.ok) status = res;
+        });
+
+        const limitText =
+          c.limitMin || c.limitMax
+            ? [
+                c.limitMin ? `Min ${c.limitMin}°C` : null,
+                c.limitMax ? `Max ${c.limitMax}°C` : null,
+              ]
+                .filter(Boolean)
+                .join(" • ")
+            : c.limitText || "—";
+
+        return {
+          id: c.id,
+          name: c.name || "(Unnamed CCP)",
+          step: c.step || "",
+          hazardType: c.hazardType || "—",
+          limits: limitText,
+          equipments: latestEvidences,
+          status: status.ok ? "OK" : "ALERT",
+          statusReason: status.reason,
+        };
+      });
+
+      // Dish overall status: ALERT if any CCP alerts
+      const overallAlert = detailed.some((x) => x.status === "ALERT");
+
+      return {
+        id: d.id,
+        name: d.name || "(Dish)",
+        description: d.description || "",
+        ingredients: ing,
+        ccpDetails: detailed,
+        status: overallAlert ? "ALERT" : "OK",
+      };
+    });
+  }, [dishes, ccps, equipment]);
+
+  const filteredDish = useMemo(() => {
+    const t = qText.toLowerCase();
+    return rowsByDish.filter((r) => {
+      const ingredientNames = (r.ingredients || [])
+        .map((i) => i.stockItemId)
+        .filter(Boolean)
+        .join(", ");
+      const matchesText =
+        r.name.toLowerCase().includes(t) ||
+        r.description.toLowerCase().includes(t) ||
+        ingredientNames.toLowerCase().includes(t) ||
+        r.ccpDetails.some(
+          (c) =>
+            c.name.toLowerCase().includes(t) ||
+            c.step.toLowerCase().includes(t) ||
+            c.hazardType.toLowerCase().includes(t) ||
+            (c.limits || "").toLowerCase().includes(t)
+        );
+      const matchesStatus = onlyShow === "ALL" ? true : r.status === onlyShow;
+      return matchesText && matchesStatus;
+    });
+  }, [rowsByDish, qText, onlyShow]);
 
   // -------------------------------
   // Render
@@ -278,6 +377,44 @@ const HaccpDashboard = ({ site, goBack }) => {
         HACCP Dashboard — <span style={{ color: "#2563eb" }}>{site}</span>
       </h2>
 
+      {/* View toggle */}
+      <div style={{ ...card, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div style={sectionHeader}>
+          <FaListUl color="#111827" />
+          View
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button
+            onClick={() => setViewMode("CCP")}
+            style={{
+              padding: "8px 12px",
+              borderRadius: 10,
+              border: "1px solid #e5e7eb",
+              background: viewMode === "CCP" ? "#2563eb" : "#fff",
+              color: viewMode === "CCP" ? "#fff" : "#111",
+              fontWeight: 700,
+              cursor: "pointer",
+            }}
+          >
+            By CCP
+          </button>
+          <button
+            onClick={() => setViewMode("DISH")}
+            style={{
+              padding: "8px 12px",
+              borderRadius: 10,
+              border: "1px solid #e5e7eb",
+              background: viewMode === "DISH" ? "#2563eb" : "#fff",
+              color: viewMode === "DISH" ? "#fff" : "#111",
+              fontWeight: 700,
+              cursor: "pointer",
+            }}
+          >
+            By Dish
+          </button>
+        </div>
+      </div>
+
       {/* Filters */}
       <div style={card}>
         <div style={sectionHeader}>
@@ -287,7 +424,11 @@ const HaccpDashboard = ({ site, goBack }) => {
         <div style={row}>
           <input
             style={{ ...input, flex: 1, minWidth: 260 }}
-            placeholder="Search CCPs (name, step, hazard, limits, stock)…"
+            placeholder={
+              viewMode === "CCP"
+                ? "Search CCPs (name, step, hazard, limits, stock)…"
+                : "Search dishes (name, desc, CCPs, ingredients)…"
+            }
             value={qText}
             onChange={(e) => setQText(e.target.value)}
           />
@@ -310,148 +451,237 @@ const HaccpDashboard = ({ site, goBack }) => {
           Summary
         </div>
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-          <span style={chip()}>
-            Total CCPs: <strong>{ccps.length}</strong>
-          </span>
-          <span style={badgeOK}>
-            <FaCheckCircle />
-            OK: <strong>{rows.filter((r) => r.status === "OK").length}</strong>
-          </span>
-          <span style={badgeWarn}>
-            <FaTimesCircle />
-            Alerts: <strong>{rows.filter((r) => r.status === "ALERT").length}</strong>
-          </span>
-          <span style={chip("#ecfeff", "#0891b2")}>
-            <FaTools />
-            Equip linked:{" "}
-            <strong>
-              {
-                [...new Set(ccps.flatMap((c) => c.equipmentIds || []))].length
-              }
-            </strong>
-          </span>
-          <span style={chip("#f5f3ff", "#6d28d9")}>
-            <FaBoxOpen />
-            Stock linked:{" "}
-            <strong>
-              {
-                [...new Set(ccps.flatMap((c) => c.stockItemIds || []))].length
-              }
-            </strong>
-          </span>
+          {viewMode === "CCP" ? (
+            <>
+              <span style={chip()}>
+                Total CCPs: <strong>{ccps.length}</strong>
+              </span>
+              <span style={badgeOK}>
+                <FaCheckCircle />
+                OK: <strong>{rowsByCCP.filter((r) => r.status === "OK").length}</strong>
+              </span>
+              <span style={badgeWarn}>
+                <FaTimesCircle />
+                Alerts: <strong>{rowsByCCP.filter((r) => r.status === "ALERT").length}</strong>
+              </span>
+              <span style={chip("#ecfeff", "#0891b2")}>
+                <FaTools />
+                Equip linked:{" "}
+                <strong>{[...new Set(ccps.flatMap((c) => c.equipmentIds || []))].length}</strong>
+              </span>
+              <span style={chip("#f5f3ff", "#6d28d9")}>
+                <FaBoxOpen />
+                Stock linked:{" "}
+                <strong>{[...new Set(ccps.flatMap((c) => c.stockItemIds || []))].length}</strong>
+              </span>
+            </>
+          ) : (
+            <>
+              <span style={chip()}>
+                Total dishes: <strong>{dishes.length}</strong>
+              </span>
+              <span style={badgeOK}>
+                <FaCheckCircle />
+                OK: <strong>{rowsByDish.filter((r) => r.status === "OK").length}</strong>
+              </span>
+              <span style={badgeWarn}>
+                <FaTimesCircle />
+                Alerts: <strong>{rowsByDish.filter((r) => r.status === "ALERT").length}</strong>
+              </span>
+              <span style={chip("#fdf4ff", "#7e22ce")}>
+                <FaUtensils />
+                Dishes with CCPs:{" "}
+                <strong>{rowsByDish.filter((r) => r.ccpDetails.length > 0).length}</strong>
+              </span>
+            </>
+          )}
         </div>
       </div>
 
-      {/* Table of CCPs */}
-      <div style={card}>
-        <div style={sectionHeader}>
-          <FaThermometerHalf color="#16a34a" />
-          CCPs & Latest Monitoring Evidence
-        </div>
+      {/* Table */}
+      {viewMode === "CCP" ? (
+        <div style={card}>
+          <div style={sectionHeader}>
+            <FaThermometerHalf color="#16a34a" />
+            CCPs & Latest Monitoring Evidence
+          </div>
 
-        <div style={{ border: "1px solid #e5e7eb", borderRadius: 12, overflow: "hidden" }}>
-          <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: 0, fontSize: 14 }}>
-              <thead>
-                <tr style={{ background: "#f9fafb" }}>
-                  {[
-                    "CCP / Control",
-                    "Step",
-                    "Hazard",
-                    "Limits",
-                    "Linked Equipment (latest)",
-                    "Linked Stock",
-                    "Status",
-                  ].map((h) => (
-                    <th
-                      key={h}
-                      style={{
-                        textAlign: "left",
-                        padding: "10px 12px",
-                        borderBottom: "1px solid #e5e7eb",
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map((r, idx) => (
-                  <tr key={r.id} style={{ background: idx % 2 ? "#fafafa" : "#fff" }}>
-                    <td style={{ padding: "10px 12px", borderBottom: "1px solid #f1f5f9", fontWeight: 600 }}>
-                      {r.name}
-                    </td>
-                    <td style={{ padding: "10px 12px", borderBottom: "1px solid #f1f5f9" }}>
-                      {r.step || "—"}
-                    </td>
-                    <td style={{ padding: "10px 12px", borderBottom: "1px solid #f1f5f9" }}>
-                      {r.hazardType}
-                    </td>
-                    <td style={{ padding: "10px 12px", borderBottom: "1px solid #f1f5f9" }}>
-                      {r.limits}
-                    </td>
-                    <td style={{ padding: "10px 12px", borderBottom: "1px solid #f1f5f9" }}>
-                      {r.equipments.length === 0 ? (
-                        <span style={subtle}>No equipment linked</span>
-                      ) : (
-                        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                          {r.equipments.map((evi) => {
-                            const last = evi.last;
-                            if (!last)
+          <div style={{ border: "1px solid #e5e7eb", borderRadius: 12, overflow: "hidden" }}>
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: 0, fontSize: 14 }}>
+                <thead>
+                  <tr style={{ background: "#f9fafb" }}>
+                    {["CCP / Control","Step","Hazard","Limits","Linked Equipment (latest)","Linked Stock","Status"].map((h) => (
+                      <th key={h} style={{ textAlign: "left", padding: "10px 12px", borderBottom: "1px solid #e5e7eb", whiteSpace: "nowrap" }}>
+                        {h}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredCCP.map((r, idx) => (
+                    <tr key={r.id} style={{ background: idx % 2 ? "#fafafa" : "#fff" }}>
+                      <td style={{ padding: "10px 12px", borderBottom: "1px solid #f1f5f9", fontWeight: 600 }}>{r.name}</td>
+                      <td style={{ padding: "10px 12px", borderBottom: "1px solid #f1f5f9" }}>{r.step || "—"}</td>
+                      <td style={{ padding: "10px 12px", borderBottom: "1px solid #f1f5f9" }}>{r.hazardType}</td>
+                      <td style={{ padding: "10px 12px", borderBottom: "1px solid #f1f5f9" }}>{r.limits}</td>
+                      <td style={{ padding: "10px 12px", borderBottom: "1px solid " + "#f1f5f9" }}>
+                        {r.equipments.length === 0 ? (
+                          <span style={subtle}>No equipment linked</span>
+                        ) : (
+                          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                            {r.equipments.map((evi) => {
+                              const last = evi.last;
+                              if (!last)
+                                return (
+                                  <div key={evi.equipmentId} style={subtle}>
+                                    {evi.equipmentName}: no readings
+                                  </div>
+                                );
                               return (
-                                <div key={evi.equipmentId} style={subtle}>
-                                  {evi.equipmentName}: no readings
+                                <div key={evi.equipmentId}>
+                                  <strong>{evi.equipmentName}</strong> — {last.temp ?? "?"}°C{" "}
+                                  <span style={subtle}>
+                                    ({last.date} {last.time} {last.person ? `• ${last.person}` : ""})
+                                  </span>
                                 </div>
                               );
-                            return (
-                              <div key={evi.equipmentId}>
-                                <strong>{evi.equipmentName}</strong> — {last.temp ?? "?"}°C{" "}
-                                <span style={subtle}>
-                                  ({last.date} {last.time} {last.person ? `• ${last.person}` : ""})
-                                </span>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </td>
-                    <td style={{ padding: "10px 12px", borderBottom: "1px solid #f1f5f9" }}>
-                      {r.stockNames || <span style={subtle}>—</span>}
-                    </td>
-                    <td style={{ padding: "10px 12px", borderBottom: "1px solid #f1f5f9" }}>
-                      {r.status === "OK" ? (
-                        <span style={badgeOK}>
-                          <FaCheckCircle /> OK
-                        </span>
-                      ) : (
-                        <span style={badgeWarn}>
-                          <FaTimesCircle /> Alert
-                        </span>
-                      )}
-                      <div style={{ ...subtle, marginTop: 4 }}>{r.statusReason}</div>
-                    </td>
-                  </tr>
-                ))}
+                            })}
+                          </div>
+                        )}
+                      </td>
+                      <td style={{ padding: "10px 12px", borderBottom: "1px solid #f1f5f9" }}>
+                        {r.stockNames || <span style={subtle}>—</span>}
+                      </td>
+                      <td style={{ padding: "10px 12px", borderBottom: "1px solid #f1f5f9" }}>
+                        {r.status === "OK" ? (
+                          <span style={badgeOK}><FaCheckCircle /> OK</span>
+                        ) : (
+                          <span style={badgeWarn}><FaTimesCircle /> Alert</span>
+                        )}
+                        <div style={{ ...subtle, marginTop: 4 }}>{r.statusReason}</div>
+                      </td>
+                    </tr>
+                  ))}
+                  {filteredCCP.length === 0 && (
+                    <tr>
+                      <td colSpan={7} style={{ padding: 14, textAlign: "center", color: "#6b7280" }}>
+                        No results
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
 
-                {filtered.length === 0 && (
-                  <tr>
-                    <td colSpan={7} style={{ padding: 14, textAlign: "center", color: "#6b7280" }}>
-                      No results
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
+          <div style={{ ...subtle, marginTop: 10 }}>
+            Status compares each CCP’s numeric limits (min/max) first, otherwise tries a simple rule
+            in the text (e.g. “≤5°C”, “≥75°C”). We can expand this parser if you use other formats.
           </div>
         </div>
+      ) : (
+        <div style={card}>
+          <div style={sectionHeader}>
+            <FaUtensils color="#f59e0b" />
+            Dishes & Applicable CCPs (via ingredients)
+          </div>
 
-        <div style={{ ...subtle, marginTop: 10 }}>
-          Status compares each CCP’s numeric limits (min/max) first, otherwise tries a simple rule
-          in the text (e.g. “≤5°C”, “≥75°C”). We can expand this parser if you use other formats.
+          <div style={{ border: "1px solid #e5e7eb", borderRadius: 12, overflow: "hidden" }}>
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: 0, fontSize: 14 }}>
+                <thead>
+                  <tr style={{ background: "#f9fafb" }}>
+                    {["Dish","Description","CCPs (name • step • limits)","Overall Status"].map((h) => (
+                      <th key={h} style={{ textAlign: "left", padding: "10px 12px", borderBottom: "1px solid #e5e7eb", whiteSpace: "nowrap" }}>
+                        {h}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredDish.map((r, idx) => (
+                    <tr key={r.id} style={{ background: idx % 2 ? "#fafafa" : "#fff" }}>
+                      <td style={{ padding: "10px 12px", borderBottom: "1px solid #f1f5f9", fontWeight: 700 }}>
+                        {r.name}
+                      </td>
+                      <td style={{ padding: "10px 12px", borderBottom: "1px solid #f1f5f9", color: "#374151" }}>
+                        {r.description || <span style={subtle}>—</span>}
+                      </td>
+                      <td style={{ padding: "10px 12px", borderBottom: "1px solid #f1f5f9" }}>
+                        {r.ccpDetails.length === 0 ? (
+                          <span style={subtle}>No CCPs linked via ingredients</span>
+                        ) : (
+                          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                            {r.ccpDetails.map((c) => (
+                              <div key={c.id} style={{ lineHeight: 1.35 }}>
+                                <div style={{ fontWeight: 600 }}>{c.name}</div>
+                                <div style={{ fontSize: 12, color: "#6b7280" }}>
+                                  {c.step || "—"} • {c.limits}
+                                </div>
+                                <div style={{ fontSize: 12, marginTop: 2 }}>
+                                  {c.equipments.length ? (
+                                    c.equipments.map((evi) => {
+                                      const last = evi.last;
+                                      if (!last)
+                                        return (
+                                          <div key={evi.equipmentId} style={subtle}>
+                                            {evi.equipmentName}: no readings
+                                          </div>
+                                        );
+                                      return (
+                                        <div key={evi.equipmentId}>
+                                          <strong>{evi.equipmentName}</strong> — {last.temp ?? "?"}°C{" "}
+                                          <span style={subtle}>
+                                            ({last.date} {last.time} {last.person ? `• ${last.person}` : ""})
+                                          </span>
+                                        </div>
+                                      );
+                                    })
+                                  ) : (
+                                    <span style={subtle}>No equipment linked</span>
+                                  )}
+                                </div>
+                                <div style={{ marginTop: 4 }}>
+                                  {c.status === "OK" ? (
+                                    <span style={badgeOK}><FaCheckCircle /> OK</span>
+                                  ) : (
+                                    <span style={badgeWarn}><FaTimesCircle /> Alert</span>
+                                  )}
+                                  <span style={{ ...subtle, marginLeft: 8 }}>{c.statusReason}</span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </td>
+                      <td style={{ padding: "10px 12px", borderBottom: "1px solid #f1f5f9" }}>
+                        {r.status === "OK" ? (
+                          <span style={badgeOK}><FaCheckCircle /> OK</span>
+                        ) : (
+                          <span style={badgeWarn}><FaTimesCircle /> Alert</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                  {filteredDish.length === 0 && (
+                    <tr>
+                      <td colSpan={4} style={{ padding: 14, textAlign: "center", color: "#6b7280" }}>
+                        No results
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div style={{ ...subtle, marginTop: 10 }}>
+            A dish inherits CCPs if any of its ingredients (stock items) are referenced by a CCP. You can also
+            add a `dishIds` array to CCPs later for explicit linking if you want.
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Back */}
       <div style={{ display: "flex", justifyContent: "center", marginTop: 18 }}>
