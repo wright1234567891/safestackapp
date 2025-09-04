@@ -1,5 +1,5 @@
 // src/components/ChecklistSection.jsx
-import React, { useState, useEffect, useRef, useRef as ReactUseRef } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   collection,
   addDoc,
@@ -11,7 +11,6 @@ import {
   query,
   orderBy,
   where,
-  limit,
 } from "firebase/firestore";
 import { db } from "../firebase";
 import jsPDF from "jspdf";
@@ -60,57 +59,6 @@ const ChecklistSection = ({ goBack, site, user }) => {
   const checklistCollectionRef = collection(db, "checklists");
   const completedCollectionRef = collection(db, "completed");
 
-  // ---------- ONE-TIME LEGACY MIGRATION (optional, safe to remove after) ----------
-  // This will tag any docs missing the `site` field as "Thorganby Site".
-  // It only runs once per mount and only updates docs without `site`.
-  useEffect(() => {
-    const MIGRATION_ENABLED = true; // set to false or remove the whole effect after it runs once
-    const LEGACY_SITE_NAME = "Thorganby Site";
-    if (!MIGRATION_ENABLED) return;
-
-    let didRun = false;
-
-    const runMigration = async () => {
-      if (didRun) return;
-      didRun = true;
-
-      try {
-        // Pull a reasonable batch of newest docs and patch ones missing `site`
-        // (missing field can’t be queried directly, so we filter client-side)
-        const [checklistsSnap, completedSnap] = await Promise.all([
-          getDocs(query(checklistCollectionRef, orderBy("createdAt", "desc"), limit(200))),
-          getDocs(query(completedCollectionRef, orderBy("createdAt", "desc"), limit(200))),
-        ]);
-
-        const updates = [];
-
-        checklistsSnap.forEach((d) => {
-          const data = d.data();
-          if (!("site" in data) || data.site === "" || data.site == null) {
-            updates.push(updateDoc(doc(db, "checklists", d.id), { site: LEGACY_SITE_NAME }));
-          }
-        });
-
-        completedSnap.forEach((d) => {
-          const data = d.data();
-          if (!("site" in data) || data.site === "" || data.site == null) {
-            updates.push(updateDoc(doc(db, "completed", d.id), { site: LEGACY_SITE_NAME }));
-          }
-        });
-
-        if (updates.length) {
-          await Promise.all(updates);
-          // Optional: you could console.log how many were migrated
-          // console.log(`Migrated ${updates.length} legacy docs to site="${LEGACY_SITE_NAME}"`);
-        }
-      } catch (err) {
-        console.error("Legacy migration error:", err);
-      }
-    };
-
-    runMigration();
-  }, [db]); // runs once
-
   // ---------- Fetch (site-scoped + reacts to site change) ----------
   useEffect(() => {
     if (!site) return;
@@ -152,7 +100,7 @@ const ChecklistSection = ({ goBack, site, user }) => {
     setSelectedChecklist(null);
     setViewingCompleted(null);
     setNewItem("");
-  }, [site]);
+  }, [site]); // 👈 re-run when site changes
 
   const siteChecklists = checklists; // already filtered by query
   const siteCompleted = completed;   // already filtered by query
@@ -164,19 +112,7 @@ const ChecklistSection = ({ goBack, site, user }) => {
     }
   }, [adding, titleSet]);
 
-  useEffect(() => {
-    if (adding && titleSet) {
-      requestAnimationFrame(() => {
-        if (newItemRef.current && document.activeElement !== newItemRef.current) {
-          newItemRef.current.focus();
-          const len = newItemRef.current.value?.length ?? 0;
-          try {
-            newItemRef.current.setSelectionRange(len, len);
-          } catch {}
-        }
-      });
-    }
-  }, [newItem, adding, titleSet]);
+  // (Removed the second focus effect that ran on each keystroke)
 
   // ---------- Authoring ----------
   const addItem = () => {
@@ -800,6 +736,7 @@ const ChecklistSection = ({ goBack, site, user }) => {
             <input
               ref={newItemRef}
               type="text"
+              autoFocus={adding && titleSet}
               value={newItem}
               onChange={(e) => setNewItem(e.target.value)}
               onKeyDown={(e) => {
