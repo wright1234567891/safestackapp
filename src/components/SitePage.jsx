@@ -21,6 +21,7 @@ import CookingSection from "./CookingSection";
 import StockSection from "./StockSection";
 import Reports from "./Reports";
 import CCPSection from "./CCPSection";
+import HaccpDashboard from "./HaccpDashboard"; // ✅ NEW
 
 const sites = [
   "Thorganby Site",
@@ -133,6 +134,15 @@ const SitePage = ({ user, onLogout }) => {
         goBack={() => setActiveSection(null)}
         site={selectedSite}
         user={user}
+      />
+    );
+  }
+  // ✅ NEW: HACCP Dashboard route
+  if (selectedSite && activeSection === "haccpDashboard") {
+    return (
+      <HaccpDashboard
+        goBack={() => setActiveSection(null)}
+        site={selectedSite}
       />
     );
   }
@@ -300,6 +310,13 @@ const SitePage = ({ user, onLogout }) => {
       key: "reports",
       icon: <FaChartBar size={24} color="#9333ea" />,
     },
+    // ✅ NEW: HACCP Dashboard (read-only live status)
+    {
+      label: "HACCP Dashboard",
+      key: "haccpDashboard",
+      icon: <FaExclamationTriangle size={24} color="#16a34a" />,
+    },
+    // Existing CCP manager (add/edit CCPs)
     {
       label: "CCPs",
       key: "ccp",
