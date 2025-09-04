@@ -11,8 +11,18 @@ import {
 } from "firebase/firestore";
 import html2canvas from "html2canvas";
 import jsPDF from "jspdf";
+import {
+  FaFileAlt,
+  FaFilter,
+  FaPlus,
+  FaFileCsv,
+  FaFilePdf,
+  FaArrowLeft,
+  FaClipboardList,
+} from "react-icons/fa";
 
 const Reports = ({ site, goBack, user }) => {
+  // ========= State =========
   const [reports, setReports] = useState([]);
   const [stockItems, setStockItems] = useState([]);
   const [haccpPoints, setHaccpPoints] = useState([]);
@@ -23,48 +33,162 @@ const Reports = ({ site, goBack, user }) => {
   const [filterText, setFilterText] = useState("");
   const [onlyType, setOnlyType] = useState("ALL");
 
+  // keep table DOM refs so we can export edited content, not just generated defaults
   const tableRefs = useRef({});
 
-  // ---------------------------
-  // Firestore listeners
-  // ---------------------------
+  // ========= Styles (mirrors StockSection / ChecklistSection) =========
+  const wrap = {
+    maxWidth: "980px",
+    margin: "0 auto",
+    padding: "40px 20px",
+    fontFamily: "'Inter', sans-serif",
+    color: "#111",
+  };
+
+  const headerBar = {
+    display: "flex",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: 12,
+    marginBottom: 18,
+    flexWrap: "wrap",
+  };
+
+  const title = {
+    fontSize: "28px",
+    fontWeight: 700,
+    margin: 0,
+  };
+
+  const subtitle = { fontSize: 13, color: "#6b7280", marginTop: 4 };
+
+  const card = {
+    background: "#fff",
+    borderRadius: "14px",
+    padding: "18px 18px",
+    boxShadow: "0 2px 6px rgba(0,0,0,0.08)",
+    marginBottom: "18px",
+  };
+
+  const sectionHeader = {
+    display: "flex",
+    alignItems: "center",
+    gap: "10px",
+    fontWeight: 700,
+    fontSize: "16px",
+    marginBottom: "14px",
+  };
+
+  const row = {
+    display: "flex",
+    gap: "10px",
+    flexWrap: "wrap",
+    alignItems: "center",
+  };
+
+  const input = {
+    padding: "10px 12px",
+    border: "1px solid #e5e7eb",
+    borderRadius: "10px",
+    fontSize: "14px",
+    outline: "none",
+    minWidth: "220px",
+    background: "#fff",
+  };
+
+  const selectInput = { ...input, minWidth: "180px" };
+
+  const button = (bg = "#f3f4f6", fg = "#111") => ({
+    padding: "10px 14px",
+    borderRadius: "10px",
+    border: "none",
+    cursor: "pointer",
+    backgroundColor: bg,
+    color: fg,
+    fontWeight: 600,
+    transition: "all .2s",
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 8,
+  });
+
+  const primaryBtn = button("#22c55e", "#fff");
+  const blueBtn = button("#2563eb", "#fff");
+  const orangeBtn = button("#f97316", "#fff");
+  const grayBtn = button();
+
+  const tableWrap = {
+    borderRadius: "12px",
+    border: "1px solid #e5e7eb",
+    overflow: "hidden",
+  };
+
+  const table = {
+    width: "100%",
+    borderCollapse: "separate",
+    borderSpacing: 0,
+    fontSize: "14px",
+  };
+
+  const th = {
+    textAlign: "left",
+    padding: "10px 12px",
+    background: "#111827",
+    color: "#fff",
+    position: "sticky",
+    top: 0,
+    zIndex: 1,
+    borderBottom: "1px solid #e5e7eb",
+    borderRight: "1px solid #374151",
+    whiteSpace: "nowrap",
+  };
+
+  const td = {
+    padding: "10px 12px",
+    borderBottom: "1px solid #f1f5f9",
+    borderRight: "1px solid #f1f5f9",
+    verticalAlign: "top",
+  };
+
+  const smallNote = { fontSize: 12, color: "#6b7280" };
+
+  // ========= Data listeners =========
   useEffect(() => {
     if (!site) return;
-    const q = query(collection(db, "reports"), where("site", "==", site));
-    const unsub = onSnapshot(q, (snapshot) => {
-      setReports(snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })));
+    const q1 = query(collection(db, "reports"), where("site", "==", site));
+    const unsub1 = onSnapshot(q1, (snap) => {
+      setReports(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
     });
-    return () => unsub();
+    return () => unsub1();
   }, [site]);
 
   useEffect(() => {
     if (!site) return;
-    const q = query(collection(db, "stockItems"), where("site", "==", site));
-    const unsub = onSnapshot(q, (snapshot) => {
-      setStockItems(snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })));
+    const q2 = query(collection(db, "stockItems"), where("site", "==", site));
+    const unsub2 = onSnapshot(q2, (snap) => {
+      setStockItems(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
     });
-    return () => unsub();
+    return () => unsub2();
   }, [site]);
 
   useEffect(() => {
     if (!site) return;
-    const q = query(collection(db, "haccpPoints"), where("site", "==", site));
-    const unsub = onSnapshot(q, (snapshot) => {
-      setHaccpPoints(snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })));
+    const q3 = query(collection(db, "haccpPoints"), where("site", "==", site));
+    const unsub3 = onSnapshot(q3, (snap) => {
+      setHaccpPoints(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
     });
-    return () => unsub();
+    return () => unsub3();
   }, [site]);
 
-  // ---------------------------
-  // Builders
-  // ---------------------------
+  // ========= Builders =========
   const buildHaccpRows = (items) => {
     const rows = [];
     items.forEach((item) => {
-      const linked = item.haccpPoints?.map(
-        (id) => haccpPoints.find((hp) => hp.id === id)?.name
-      );
-      if (linked?.length) {
+      const linked =
+        item.haccpPoints?.map(
+          (id) => haccpPoints.find((hp) => hp.id === id)?.name
+        ) || [];
+      if (linked.length) {
         linked.forEach((hazard) => {
           rows.push({
             "Process Step": item.name,
@@ -72,10 +196,10 @@ const Reports = ({ site, goBack, user }) => {
             "Preventive Controls / Measures": "",
             "CCP?": "Yes",
             "Critical Limits": "",
-            "Monitoring": "",
+            Monitoring: "",
             "Corrective Actions": "",
-            "Verification": "",
-            "Records": "",
+            Verification: "",
+            Records: "",
           });
         });
       } else {
@@ -85,10 +209,10 @@ const Reports = ({ site, goBack, user }) => {
           "Preventive Controls / Measures": "",
           "CCP?": "No",
           "Critical Limits": "",
-          "Monitoring": "",
+          Monitoring: "",
           "Corrective Actions": "",
-          "Verification": "",
-          "Records": "",
+          Verification: "",
+          Records: "",
         });
       }
     });
@@ -110,9 +234,7 @@ const Reports = ({ site, goBack, user }) => {
     Cleaning: ["Task", "Frequency", "Status"],
   };
 
-  // ---------------------------
-  // Add report
-  // ---------------------------
+  // ========= Add Report =========
   const addReport = async () => {
     if (!newReportName.trim()) return;
 
@@ -138,17 +260,14 @@ const Reports = ({ site, goBack, user }) => {
     setNewReportType("HACCP");
   };
 
-  // ---------------------------
-  // Export helpers
-  // ---------------------------
-  const readTableToJSON = (table) => {
-    if (!table) return [];
-    const headers = Array.from(table.querySelectorAll("thead th")).map((th) =>
+  // ========= Export helpers (read live DOM so edited cells are captured) =========
+  const readTableToJSON = (tableEl) => {
+    if (!tableEl) return [];
+    const headers = Array.from(tableEl.querySelectorAll("thead th")).map((th) =>
       (th.textContent || "").trim()
     );
-
-    const bodyRows = Array.from(table.querySelectorAll("tbody tr"));
-    return bodyRows.map((tr) => {
+    const rows = Array.from(tableEl.querySelectorAll("tbody tr"));
+    return rows.map((tr) => {
       const cells = Array.from(tr.querySelectorAll("td"));
       const obj = {};
       headers.forEach((h, i) => {
@@ -159,20 +278,19 @@ const Reports = ({ site, goBack, user }) => {
   };
 
   const exportCSV = (reportId, filename) => {
-    const table = tableRefs.current[reportId];
-    const data = readTableToJSON(table);
+    const tableEl = tableRefs.current[reportId];
+    const data = readTableToJSON(tableEl);
     if (!data.length) return;
 
     const headers = Object.keys(data[0]);
     const escape = (val) => {
       const s = String(val ?? "");
-      if (/[",\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
-      return s;
+      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
     };
     const csv =
       headers.map(escape).join(",") +
       "\n" +
-      data.map((row) => headers.map((h) => escape(row[h])).join(",")).join("\n");
+      data.map((r) => headers.map((h) => escape(r[h])).join(",")).join("\n");
 
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
@@ -199,68 +317,74 @@ const Reports = ({ site, goBack, user }) => {
     const imgWidth = pageWidth;
     const imgHeight = (canvas.height * imgWidth) / canvas.width;
 
-    pdf.addImage(imgData, "PNG", 0, 0, imgWidth, imgHeight);
+    const pageHeight = pdf.internal.pageSize.getHeight();
+    const y = imgHeight < pageHeight ? (pageHeight - imgHeight) / 2 : 0;
+
+    pdf.addImage(imgData, "PNG", 0, y, imgWidth, imgHeight);
     pdf.save(`${filename}.pdf`);
   };
 
-  // ---------------------------
-  // Filters
-  // ---------------------------
+  // ========= Filters =========
   const filteredReports = useMemo(() => {
+    const s = filterText.toLowerCase();
     const byText = (r) =>
-      r.name?.toLowerCase().includes(filterText.toLowerCase()) ||
-      r.type?.toLowerCase().includes(filterText.toLowerCase());
-
-    const byType =
-      onlyType === "ALL" ? () => true : (r) => r.type === onlyType;
-
+      r.name?.toLowerCase().includes(s) || r.type?.toLowerCase().includes(s);
+    const byType = onlyType === "ALL" ? () => true : (r) => r.type === onlyType;
     return reports.filter((r) => byText(r) && byType(r));
   }, [reports, filterText, onlyType]);
 
-  // ---------------------------
-  // Renderers
-  // ---------------------------
+  // ========= Renderers =========
   const renderHACCP = (report) => {
     const headers = defaultHeadersByType.HACCP;
     const rows = buildHaccpRows(report.stockItems || []);
 
     return (
-      <div className="overflow-x-auto border rounded bg-white">
-        <table
-          className="min-w-full text-sm"
-          ref={(el) => (tableRefs.current[report.id] = el)}
-        >
-          <thead>
-            <tr className="bg-gray-800 text-white">
-              {headers.map((h) => (
-                <th
-                  key={h}
-                  className="px-3 py-2 text-left border border-gray-200"
-                >
-                  {h}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row, i) => (
-              <tr key={i} className={i % 2 === 0 ? "bg-gray-50" : "bg-white"}>
+      <div style={tableWrap}>
+        <div style={{ overflowX: "auto" }}>
+          <table
+            style={table}
+            ref={(el) => (tableRefs.current[report.id] = el)}
+          >
+            <thead>
+              <tr>
                 {headers.map((h) => (
-                  <td
-                    key={h}
-                    className="px-3 py-2 align-top border border-gray-200"
-                    contentEditable={
-                      h !== "Process Step" && h !== "Food Safety Hazard"
-                    }
-                    suppressContentEditableWarning
-                  >
-                    {row[h]}
-                  </td>
+                  <th key={h} style={th}>
+                    {h}
+                  </th>
                 ))}
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {rows.map((row, i) => (
+                <tr
+                  key={i}
+                  style={{
+                    background: i % 2 === 0 ? "#ffffff" : "#fafafa",
+                  }}
+                >
+                  {headers.map((h) => (
+                    <td
+                      key={h}
+                      style={td}
+                      contentEditable={
+                        h !== "Process Step" && h !== "Food Safety Hazard"
+                      }
+                      suppressContentEditableWarning
+                    >
+                      {row[h]}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div style={{ paddingTop: 8, textAlign: "right" }}>
+          <span style={smallNote}>
+            Tip: Click any cell (except “Process Step” and “Food Safety
+            Hazard”) to edit before exporting.
+          </span>
+        </div>
       </div>
     );
   };
@@ -273,189 +397,222 @@ const Reports = ({ site, goBack, user }) => {
     ];
 
     return (
-      <div className="overflow-x-auto border rounded bg-white">
-        <table
-          className="min-w-full text-sm"
-          ref={(el) => (tableRefs.current[report.id] = el)}
-        >
-          <thead>
-            <tr className="bg-gray-800 text-white">
-              {headers.map((h) => (
-                <th
-                  key={h}
-                  className="px-3 py-2 text-left border border-gray-200"
-                >
-                  {h}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row, i) => (
-              <tr key={i} className={i % 2 === 0 ? "bg-gray-50" : "bg-white"}>
+      <div style={tableWrap}>
+        <div style={{ overflowX: "auto" }}>
+          <table
+            style={table}
+            ref={(el) => (tableRefs.current[report.id] = el)}
+          >
+            <thead>
+              <tr>
                 {headers.map((h) => (
-                  <td
-                    key={h}
-                    className="px-3 py-2 align-top border border-gray-200"
-                    contentEditable
-                    suppressContentEditableWarning
-                  >
-                    {row[h]}
-                  </td>
+                  <th key={h} style={th}>
+                    {h}
+                  </th>
                 ))}
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {rows.map((row, i) => (
+                <tr
+                  key={i}
+                  style={{
+                    background: i % 2 === 0 ? "#ffffff" : "#fafafa",
+                  }}
+                >
+                  {headers.map((h) => (
+                    <td key={h} style={td} contentEditable suppressContentEditableWarning>
+                      {row[h]}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div style={{ paddingTop: 8, textAlign: "right" }}>
+          <span style={smallNote}>
+            You can edit these cells inline before exporting.
+          </span>
+        </div>
       </div>
     );
   };
 
-  // ---------------------------
-  // JSX
-  // ---------------------------
+  // ========= JSX =========
   return (
-    <div className="p-4 sm:p-6">
-      <div className="mx-auto max-w-5xl">
-        {/* Header */}
-        <div className="flex items-start sm:items-center justify-between flex-col sm:flex-row gap-3 mb-4">
-          <div>
-            <h2 className="text-2xl font-bold text-gray-900">
-              Reports — {site}
-            </h2>
-            <p className="text-gray-500 text-sm">
-              Create custom reports and export as CSV or PDF. You can edit the
-              table cells before exporting.
-            </p>
-          </div>
-
-          <div className="flex gap-2">
-            <button
-              onClick={goBack}
-              className="bg-gray-200 hover:bg-gray-300 text-gray-900 px-4 py-2 rounded"
-            >
-              Back
-            </button>
+    <div style={wrap}>
+      {/* Header */}
+      <div style={headerBar}>
+        <div>
+          <h2 style={title}>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
+              <FaClipboardList color="#2563eb" />
+              Reports — <span style={{ color: "#2563eb" }}>{site}</span>
+            </span>
+          </h2>
+          <div style={subtitle}>
+            Create custom reports and export as CSV or PDF. Edit table cells
+            inline before exporting.
           </div>
         </div>
 
-        {/* Create report */}
-        <div className="rounded-xl bg-white shadow p-3 sm:p-4 mb-5">
-          <div className="flex flex-col md:flex-row gap-2 md:items-end">
-            <div className="flex-1">
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Report name
-              </label>
-              <input
-                type="text"
-                placeholder="e.g. Monthly HACCP Review"
-                value={newReportName}
-                onChange={(e) => setNewReportName(e.target.value)}
-                className="border p-2 rounded w-full"
-              />
-            </div>
-            <div className="md:w-56">
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Type
-              </label>
-              <select
-                value={newReportType}
-                onChange={(e) => setNewReportType(e.target.value)}
-                className="border p-2 rounded w-full"
-              >
-                <option value="HACCP">HACCP</option>
-                <option value="Cleaning">Cleaning</option>
-                <option value="Other">Other</option>
-              </select>
-            </div>
-            <button
-              onClick={addReport}
-              className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded"
-            >
-              Add Report
-            </button>
-          </div>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <button
+            onClick={goBack}
+            style={grayBtn}
+            onMouseEnter={(e) =>
+              (e.currentTarget.style.backgroundColor = "#e5e7eb")
+            }
+            onMouseLeave={(e) =>
+              (e.currentTarget.style.backgroundColor = "#f3f4f6")
+            }
+            title="Back"
+          >
+            <FaArrowLeft />
+            Back
+          </button>
         </div>
-
-        {/* Filters */}
-        <div className="rounded-xl bg-white shadow p-3 sm:p-4 mb-5">
-          <div className="flex flex-col md:flex-row gap-3 md:items-center">
-            <input
-              type="text"
-              placeholder="Search by name or type…"
-              value={filterText}
-              onChange={(e) => setFilterText(e.target.value)}
-              className="border p-2 rounded flex-1"
-            />
-            <select
-              value={onlyType}
-              onChange={(e) => setOnlyType(e.target.value)}
-              className="border p-2 rounded md:w-56"
-            >
-              <option value="ALL">All types</option>
-              <option value="HACCP">HACCP</option>
-              <option value="Cleaning">Cleaning</option>
-              <option value="Other">Other</option>
-            </select>
-          </div>
-        </div>
-
-        {/* Reports list */}
-        {filteredReports.length === 0 ? (
-          <div className="text-gray-500 text-center py-10">
-            No reports yet. Create one above.
-          </div>
-        ) : (
-          filteredReports.map((report) => {
-            const title = `${report.name} — ${report.type}`;
-
-            return (
-              <div
-                key={report.id}
-                className="report-card rounded-xl bg-white shadow p-3 sm:p-4 mb-6"
-              >
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
-                  <div className="font-semibold text-lg text-gray-900">
-                    {title}
-                  </div>
-                  <div className="flex gap-2">
-                    {report.type !== "Other" && (
-                      <>
-                        <button
-                          onClick={() =>
-                            exportCSV(report.id, `${report.name}-${report.type}`)
-                          }
-                          className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded text-sm"
-                        >
-                          Export CSV
-                        </button>
-                        <button
-                          onClick={() =>
-                            exportPDF(report.id, `${report.name}-${report.type}`)
-                          }
-                          className="bg-orange-500 hover:bg-orange-600 text-white px-3 py-2 rounded text-sm"
-                        >
-                          Export PDF
-                        </button>
-                      </>
-                    )}
-                  </div>
-                </div>
-
-                {report.type === "HACCP"
-                  ? renderHACCP(report)
-                  : report.type === "Cleaning"
-                  ? renderCleaning(report)
-                  : (
-                    <p className="text-gray-600">
-                      No structured format for this report type yet.
-                    </p>
-                  )}
-              </div>
-            );
-          })
-        )}
       </div>
+
+      {/* Create report */}
+      <div style={card}>
+        <div style={sectionHeader}>
+          <FaFileAlt />
+          Create a report
+        </div>
+        <div style={row}>
+          <input
+            type="text"
+            placeholder="e.g. Monthly HACCP Review"
+            value={newReportName}
+            onChange={(e) => setNewReportName(e.target.value)}
+            style={{ ...input, flex: 1 }}
+          />
+          <select
+            value={newReportType}
+            onChange={(e) => setNewReportType(e.target.value)}
+            style={selectInput}
+          >
+            <option value="HACCP">HACCP</option>
+            <option value="Cleaning">Cleaning</option>
+            <option value="Other">Other</option>
+          </select>
+          <button
+            onClick={addReport}
+            style={primaryBtn}
+            onMouseEnter={(e) =>
+              (e.currentTarget.style.backgroundColor = "#16a34a")
+            }
+            onMouseLeave={(e) =>
+              (e.currentTarget.style.backgroundColor = "#22c55e")
+            }
+          >
+            <FaPlus />
+            Add Report
+          </button>
+        </div>
+      </div>
+
+      {/* Filters */}
+      <div style={card}>
+        <div style={sectionHeader}>
+          <FaFilter />
+          Filter reports
+        </div>
+        <div style={row}>
+          <input
+            type="text"
+            placeholder="Search by name or type…"
+            value={filterText}
+            onChange={(e) => setFilterText(e.target.value)}
+            style={{ ...input, flex: 1, minWidth: 260 }}
+          />
+          <select
+            value={onlyType}
+            onChange={(e) => setOnlyType(e.target.value)}
+            style={selectInput}
+          >
+            <option value="ALL">All types</option>
+            <option value="HACCP">HACCP</option>
+            <option value="Cleaning">Cleaning</option>
+            <option value="Other">Other</option>
+          </select>
+        </div>
+      </div>
+
+      {/* Reports list */}
+      {filteredReports.length === 0 ? (
+        <div style={{ ...card, textAlign: "center", color: "#6b7280" }}>
+          No reports yet. Create one above.
+        </div>
+      ) : (
+        filteredReports.map((report) => {
+          const titleText = `${report.name} — ${report.type}`;
+          return (
+            <div key={report.id} className="report-card" style={card}>
+              <div
+                style={{
+                  ...row,
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  marginBottom: 6,
+                }}
+              >
+                <div style={{ fontWeight: 700, fontSize: 16 }}>{titleText}</div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  {report.type !== "Other" && (
+                    <>
+                      <button
+                        onClick={() =>
+                          exportCSV(report.id, `${report.name}-${report.type}`)
+                        }
+                        style={blueBtn}
+                        onMouseEnter={(e) =>
+                          (e.currentTarget.style.backgroundColor = "#1d4ed8")
+                        }
+                        onMouseLeave={(e) =>
+                          (e.currentTarget.style.backgroundColor = "#2563eb")
+                        }
+                        title="Export as CSV"
+                      >
+                        <FaFileCsv />
+                        CSV
+                      </button>
+                      <button
+                        onClick={() =>
+                          exportPDF(report.id, `${report.name}-${report.type}`)
+                        }
+                        style={orangeBtn}
+                        onMouseEnter={(e) =>
+                          (e.currentTarget.style.backgroundColor = "#ea580c")
+                        }
+                        onMouseLeave={(e) =>
+                          (e.currentTarget.style.backgroundColor = "#f97316")
+                        }
+                        title="Export as PDF"
+                      >
+                        <FaFilePdf />
+                        PDF
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {report.type === "HACCP" ? (
+                renderHACCP(report)
+              ) : report.type === "Cleaning" ? (
+                renderCleaning(report)
+              ) : (
+                <p style={{ color: "#6b7280", margin: 0 }}>
+                  No structured format for this report type yet.
+                </p>
+              )}
+            </div>
+          );
+        })
+      )}
     </div>
   );
 };
