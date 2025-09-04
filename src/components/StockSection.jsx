@@ -15,6 +15,17 @@ import {
 } from "firebase/firestore";
 import Select from "react-select";
 import Tesseract from "tesseract.js"; // 👈 OCR
+import {
+  FaUpload,
+  FaReceipt,
+  FaPlus,
+  FaCheckCircle,
+  FaTimes,
+  FaTruckLoading,
+  FaUtensils,
+  FaBoxOpen,
+  FaIndustry,
+} from "react-icons/fa";
 
 const StockSection = ({ site, goBack, user }) => {
   const [stockItems, setStockItems] = useState([]);
@@ -42,19 +53,153 @@ const StockSection = ({ site, goBack, user }) => {
   const [ocrItems, setOcrItems] = useState([]); // [{id, selected, name, qty, measurement, price, rawWeight}]
   const [ocrImageName, setOcrImageName] = useState("");
 
+  // ===== Styles (inspired by SitePage) =====
+  const wrap = {
+    maxWidth: "980px",
+    margin: "0 auto",
+    padding: "40px 20px",
+    fontFamily: "'Inter', sans-serif",
+    color: "#111",
+  };
+
+  const title = {
+    fontSize: "28px",
+    fontWeight: 700,
+    marginBottom: "22px",
+    textAlign: "center",
+  };
+
+  const card = {
+    background: "#fff",
+    borderRadius: "14px",
+    padding: "18px 18px",
+    boxShadow: "0 2px 6px rgba(0,0,0,0.08)",
+    marginBottom: "18px",
+  };
+
+  const sectionHeader = {
+    display: "flex",
+    alignItems: "center",
+    gap: "10px",
+    fontWeight: 700,
+    fontSize: "16px",
+    marginBottom: "14px",
+  };
+
+  const row = {
+    display: "flex",
+    gap: "10px",
+    flexWrap: "wrap",
+  };
+
+  const input = {
+    padding: "10px 12px",
+    border: "1px solid #e5e7eb",
+    borderRadius: "10px",
+    fontSize: "14px",
+    outline: "none",
+    minWidth: "180px",
+    background: "#fff",
+  };
+
+  const selectInput = { ...input };
+
+  const button = (bg = "#f3f4f6", fg = "#111") => ({
+    padding: "10px 14px",
+    borderRadius: "10px",
+    border: "none",
+    cursor: "pointer",
+    backgroundColor: bg,
+    color: fg,
+    fontWeight: 600,
+    transition: "all .2s",
+  });
+
+  const primaryBtn = button("#22c55e", "#fff");
+  const blueBtn = button("#2563eb", "#fff");
+  const orangeBtn = button("#f97316", "#fff");
+  const redBtn = button("#ef4444", "#fff");
+  const grayBtn = button();
+
+  const subtle = { fontSize: "13px", color: "#6b7280" };
+
+  const tableWrap = {
+    borderRadius: "12px",
+    border: "1px solid #e5e7eb",
+    overflow: "hidden",
+  };
+
+  const table = {
+    width: "100%",
+    borderCollapse: "separate",
+    borderSpacing: 0,
+    fontSize: "14px",
+  };
+
+  const th = {
+    textAlign: "left",
+    padding: "10px 12px",
+    background: "#f9fafb",
+    position: "sticky",
+    top: 0,
+    zIndex: 1,
+    borderBottom: "1px solid #e5e7eb",
+  };
+
+  const td = {
+    padding: "10px 12px",
+    borderBottom: "1px solid #f1f5f9",
+    verticalAlign: "middle",
+  };
+
+  const smallInput = {
+    ...input,
+    padding: "6px 8px",
+    borderRadius: "8px",
+    minWidth: "90px",
+  };
+
+  const smallSelect = { ...smallInput };
+
+  const chip = (bg = "#eef2ff", fg = "#4338ca") => ({
+    padding: "4px 8px",
+    borderRadius: "999px",
+    background: bg,
+    color: fg,
+    fontSize: "12px",
+    fontWeight: 600,
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "6px",
+  });
+
+  const sectionDivider = {
+    margin: "16px 0 10px",
+    height: "1px",
+    background: "#f1f5f9",
+  };
+
   const selectStyles = {
-    control: (provided) => ({ ...provided, minHeight: "40px", fontSize: "14px" }),
-    menu: (provided) => ({ ...provided, fontSize: "14px", color: "#333" }),
+    control: (provided) => ({
+      ...provided,
+      minHeight: 42,
+      borderRadius: 10,
+      borderColor: "#e5e7eb",
+      boxShadow: "none",
+      ":hover": { borderColor: "#d1d5db" },
+      fontSize: 14,
+    }),
+    menu: (provided) => ({ ...provided, fontSize: 14, color: "#333" }),
     option: (provided, state) => ({
       ...provided,
       color: "#333",
-      backgroundColor: state.isFocused ? "#e2e8f0" : "#fff",
+      backgroundColor: state.isFocused ? "#f3f4f6" : "#fff",
     }),
-    multiValueLabel: (provided) => ({ ...provided, color: "#fff" }),
-    multiValue: (provided) => ({ ...provided, backgroundColor: "#4ade80" }),
+    multiValueLabel: (p) => ({ ...p, color: "#111" }),
+    multiValue: (p) => ({ ...p, backgroundColor: "#e5e7eb", borderRadius: 8 }),
   };
 
-  // --- Fetch Firestore collections ---
+  // --- Firestore listeners ---
   useEffect(() => {
     if (!site) return;
     const q = query(collection(db, "stockItems"), where("site", "==", site));
@@ -98,7 +243,7 @@ const StockSection = ({ site, goBack, user }) => {
     return () => unsub();
   }, [site]);
 
-  // --- Add / Update / Delete functions ---
+  // --- CRUD helpers ---
   const addStockItem = async () => {
     if (!newItemName || newItemQty <= 0 || !newSupplier) {
       alert("Please fill in all required fields");
@@ -167,7 +312,7 @@ const StockSection = ({ site, goBack, user }) => {
     await deleteDoc(doc(db, "stockItems", itemId));
   };
 
-  // Update Firestore with debounce
+  // Debounced inline editing
   useEffect(() => {
     const timeout = setTimeout(() => {
       Object.entries(editBuffer).forEach(([id, fields]) => {
@@ -178,7 +323,6 @@ const StockSection = ({ site, goBack, user }) => {
       });
       setEditBuffer({});
     }, 500);
-
     return () => clearTimeout(timeout);
   }, [editBuffer]);
 
@@ -197,7 +341,7 @@ const StockSection = ({ site, goBack, user }) => {
   const gramsToKg = (gNum) => {
     if (!gNum && gNum !== 0) return null;
     return Number(gNum) / 1000;
-    };
+  };
 
   const parseMoney = (str) => {
     if (!str) return null;
@@ -208,47 +352,36 @@ const StockSection = ({ site, goBack, user }) => {
 
   const parseWeightToQtyAndMeasurement = (weightStr) => {
     if (!weightStr) return { qty: 1, measurement: "unit", rawWeight: "" };
-
     const s = weightStr.toLowerCase().replace(/\s/g, "");
-    // e.g. "500g", "0.5kg", "2kg"
     const m = s.match(/(\d+(?:[\.,]\d+)?)(kg|g|l|ml)/i);
     if (!m) return { qty: 1, measurement: "unit", rawWeight: weightStr };
-
     const num = Number(m[1].replace(",", "."));
     const unit = m[2];
-
     if (unit === "kg") return { qty: num, measurement: "kg", rawWeight: weightStr };
     if (unit === "g") return { qty: gramsToKg(num), measurement: "kg", rawWeight: weightStr };
-    // If you want liquids later, adapt here:
     if (unit === "l") return { qty: num, measurement: "unit", rawWeight: weightStr };
     if (unit === "ml") return { qty: num / 1000, measurement: "unit", rawWeight: weightStr };
-
     return { qty: 1, measurement: "unit", rawWeight: weightStr };
   };
 
   const parseReceiptText = (text) => {
-    // Split lines, keep non-empty
     const lines = text
       .split("\n")
       .map((l) => l.trim())
       .filter(Boolean)
-      // remove obvious headers/footers (very lightweight)
       .filter((l) => !/total|subtotal|vat|change/i.test(l));
 
-    // Build items (best-effort)
     const items = [];
     for (const line of lines) {
-      // Try to find price and weight within the same line
-      const priceMatch = line.match(/£\s*\d+(?:[\.,]\d{2})?|\d+(?:[\.,]\d{2})\s*£/i) || line.match(/\b\d+(?:[\.,]\d{2})\b/);
+      const priceMatch =
+        line.match(/£\s*\d+(?:[\.,]\d{2})?|\d+(?:[\.,]\d{2})\s*£/i) ||
+        line.match(/\b\d+(?:[\.,]\d{2})\b/);
       const weightMatch = line.match(/(\d+(?:[\.,]\d+)?)(kg|g|ml|l)\b/i);
 
-      // Build name by removing obvious bits
       let name = line;
       if (priceMatch) name = name.replace(priceMatch[0], "");
       if (weightMatch) name = name.replace(weightMatch[0], "");
       name = name.replace(/\s{2,}/g, " ").trim();
-
-      // Skip barcode-only lines etc.
       if (!name || name.length < 2) continue;
 
       const price = priceMatch ? parseMoney(priceMatch[0]) : null;
@@ -265,7 +398,7 @@ const StockSection = ({ site, goBack, user }) => {
         rawWeight,
         location: "Ambient",
         expiryDate: "",
-        supplier: newSupplier || "", // prefer currently chosen supplier if any
+        supplier: newSupplier || "", // default to current dropdown
       });
     }
     return items;
@@ -278,7 +411,9 @@ const StockSection = ({ site, goBack, user }) => {
     setOcrLoading(true);
     setOcrError("");
     try {
-      const { data: { text } } = await Tesseract.recognize(file, "eng");
+      const {
+        data: { text },
+      } = await Tesseract.recognize(file, "eng");
       const parsed = parseReceiptText(text);
       if (!parsed.length) {
         setOcrItems([]);
@@ -292,15 +427,12 @@ const StockSection = ({ site, goBack, user }) => {
       setOcrItems([]);
     } finally {
       setOcrLoading(false);
-      // reset file input so same image can be selected again if needed
       e.target.value = "";
     }
   };
 
   const updateOcrItem = (id, field, value) => {
-    setOcrItems((prev) =>
-      prev.map((it) => (it.id === id ? { ...it, [field]: value } : it))
-    );
+    setOcrItems((prev) => prev.map((it) => (it.id === id ? { ...it, [field]: value } : it)));
   };
 
   const addSelectedOcrItems = async () => {
@@ -339,420 +471,525 @@ const StockSection = ({ site, goBack, user }) => {
 
   // --- JSX ---
   return (
-    <div className="p-4 bg-white shadow rounded-xl">
-      <h2 className="text-xl font-bold mb-3">Stock Management — {site}</h2>
+    <div style={wrap}>
+      <h2 style={title}>
+        Stock Management — <span style={{ color: "#2563eb" }}>{site}</span>
+      </h2>
 
-      {/* Upload Receipt (OCR) - added */}
-      <div className="mb-6 p-3 border rounded bg-gray-50">
-        <h3 className="font-semibold mb-2">Add from receipt (photo)</h3>
-        <div className="flex flex-col md:flex-row gap-2 items-start md:items-center">
+      {/* OCR Upload */}
+      <div style={card}>
+        <div style={sectionHeader}>
+          <FaReceipt color="#111827" />
+          Add from receipt (photo)
+        </div>
+
+        <div style={{ ...row, alignItems: "center" }}>
+          <label
+            htmlFor="receiptUpload"
+            style={{
+              ...button("#f3f4f6", "#111"),
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 8,
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#e5e7eb")}
+            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#f3f4f6")}
+          >
+            <FaUpload />
+            Upload photo
+          </label>
           <input
+            id="receiptUpload"
             type="file"
             accept="image/*"
             capture="environment"
             onChange={handlePhotoUpload}
-            className="border p-2 rounded w-full md:w-auto"
+            style={{ display: "none" }}
           />
-          <select
-            value={newSupplier}
-            onChange={(e) => setNewSupplier(e.target.value)}
-            className="border p-2 rounded md:w-60"
-            title="Supplier for OCR-added items"
-          >
-            <option value="">Select supplier (optional)</option>
-            {suppliers.map((sup) => (
-              <option key={sup.id} value={sup.name}>
-                {sup.name}
-              </option>
-            ))}
-          </select>
+
+          <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+            <span style={{ ...chip("#ecfeff", "#0891b2") }}>
+              <FaIndustry />
+              Supplier
+            </span>
+            <select
+              value={newSupplier}
+              onChange={(e) => setNewSupplier(e.target.value)}
+              style={selectInput}
+              title="Supplier for OCR-added items"
+            >
+              <option value="">Select supplier (optional)</option>
+              {suppliers.map((sup) => (
+                <option key={sup.id} value={sup.name}>
+                  {sup.name}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
 
         {ocrLoading && (
-          <div className="mt-3 text-sm text-gray-600">Reading receipt… this can take a moment.</div>
+          <div style={{ marginTop: 10, ...subtle }}>Reading receipt… this can take a moment.</div>
         )}
-        {ocrError && (
-          <div className="mt-3 text-sm text-red-600">{ocrError}</div>
-        )}
+        {ocrError && <div style={{ marginTop: 10, color: "#dc2626", fontSize: 13 }}>{ocrError}</div>}
 
-        {/* OCR Preview */}
         {ocrItems.length > 0 && (
-          <div className="mt-4">
-            <div className="flex justify-between items-center mb-2">
-              <div className="font-medium">
-                Parsed items from <span className="italic">{ocrImageName || "image"}</span>
+          <>
+            <div style={sectionDivider} />
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+              <div style={{ fontWeight: 600 }}>
+                Parsed items from <span style={{ fontStyle: "italic", color: "#6b7280" }}>{ocrImageName || "image"}</span>
               </div>
-              <div className="flex gap-2">
+              <div style={{ display: "flex", gap: 8 }}>
                 <button
                   onClick={() => setOcrItems((prev) => prev.map((i) => ({ ...i, selected: true })))}
-                  className="px-3 py-1 rounded bg-gray-200 hover:bg-gray-300 text-sm"
+                  style={grayBtn}
+                  onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#e5e7eb")}
+                  onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#f3f4f6")}
                 >
                   Select all
                 </button>
                 <button
                   onClick={() => setOcrItems((prev) => prev.map((i) => ({ ...i, selected: false })))}
-                  className="px-3 py-1 rounded bg-gray-200 hover:bg-gray-300 text-sm"
+                  style={grayBtn}
+                  onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#e5e7eb")}
+                  onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#f3f4f6")}
                 >
                   Deselect all
                 </button>
                 <button
-                  onClick={() => { setOcrItems([]); setOcrError(""); setOcrImageName(""); }}
-                  className="px-3 py-1 rounded bg-gray-200 hover:bg-gray-300 text-sm"
+                  onClick={() => {
+                    setOcrItems([]);
+                    setOcrError("");
+                    setOcrImageName("");
+                  }}
+                  style={grayBtn}
+                  onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#e5e7eb")}
+                  onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#f3f4f6")}
                 >
                   Clear
                 </button>
               </div>
             </div>
 
-            <div className="overflow-x-auto border rounded">
-              <table className="min-w-full text-sm">
-                <thead className="bg-gray-100">
-                  <tr>
-                    <th className="text-left p-2">Add</th>
-                    <th className="text-left p-2">Name</th>
-                    <th className="text-left p-2">Qty</th>
-                    <th className="text-left p-2">Meas.</th>
-                    <th className="text-left p-2">Supplier</th>
-                    <th className="text-left p-2">Location</th>
-                    <th className="text-left p-2">Expiry</th>
-                    <th className="text-left p-2">Price (£)</th>
-                    <th className="text-left p-2">Parsed weight</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {ocrItems.map((it) => (
-                    <tr key={it.id} className="border-t">
-                      <td className="p-2 align-middle">
-                        <input
-                          type="checkbox"
-                          checked={!!it.selected}
-                          onChange={(e) => updateOcrItem(it.id, "selected", e.target.checked)}
-                        />
-                      </td>
-                      <td className="p-2">
-                        <input
-                          type="text"
-                          value={it.name}
-                          onChange={(e) => updateOcrItem(it.id, "name", e.target.value)}
-                          className="border p-1 rounded w-48"
-                        />
-                      </td>
-                      <td className="p-2">
-                        <input
-                          type="number"
-                          step="0.01"
-                          value={it.quantity}
-                          onChange={(e) => updateOcrItem(it.id, "quantity", Number(e.target.value))}
-                          className="border p-1 rounded w-24"
-                        />
-                      </td>
-                      <td className="p-2">
-                        <select
-                          value={it.measurement}
-                          onChange={(e) => updateOcrItem(it.id, "measurement", e.target.value)}
-                          className="border p-1 rounded w-24"
-                        >
-                          <option value="unit">Units</option>
-                          <option value="kg">Kilograms</option>
-                        </select>
-                      </td>
-                      <td className="p-2">
-                        <select
-                          value={it.supplier || ""}
-                          onChange={(e) => updateOcrItem(it.id, "supplier", e.target.value)}
-                          className="border p-1 rounded w-40"
-                        >
-                          <option value="">(none)</option>
-                          {suppliers.map((sup) => (
-                            <option key={sup.id} value={sup.name}>
-                              {sup.name}
-                            </option>
-                          ))}
-                        </select>
-                      </td>
-                      <td className="p-2">
-                        <select
-                          value={it.location}
-                          onChange={(e) => updateOcrItem(it.id, "location", e.target.value)}
-                          className="border p-1 rounded w-40"
-                        >
-                          <option value="Ambient">Ambient</option>
-                          {equipment.map((eq) => (
-                            <option key={eq.id} value={eq.name || eq.id}>
-                              {eq.name || eq.type}
-                            </option>
-                          ))}
-                        </select>
-                      </td>
-                      <td className="p-2">
-                        <input
-                          type="date"
-                          value={it.expiryDate || ""}
-                          onChange={(e) => updateOcrItem(it.id, "expiryDate", e.target.value)}
-                          className="border p-1 rounded w-40"
-                        />
-                      </td>
-                      <td className="p-2">
-                        <input
-                          type="number"
-                          step="0.01"
-                          value={it.price ?? ""}
-                          onChange={(e) =>
-                            updateOcrItem(it.id, "price", e.target.value === "" ? null : Number(e.target.value))
-                          }
-                          className="border p-1 rounded w-24"
-                          placeholder="0.00"
-                        />
-                      </td>
-                      <td className="p-2 text-gray-500">{it.rawWeight || "-"}</td>
+            <div style={tableWrap}>
+              <div style={{ overflowX: "auto", maxHeight: 420 }}>
+                <table style={table}>
+                  <thead>
+                    <tr>
+                      <th style={th}>Add</th>
+                      <th style={th}>Name</th>
+                      <th style={th}>Qty</th>
+                      <th style={th}>Meas.</th>
+                      <th style={th}>Supplier</th>
+                      <th style={th}>Location</th>
+                      <th style={th}>Expiry</th>
+                      <th style={th}>Price (£)</th>
+                      <th style={th}>Parsed weight</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {ocrItems.map((it, idx) => (
+                      <tr
+                        key={it.id}
+                        style={{
+                          background: idx % 2 === 0 ? "#fff" : "#fafafa",
+                        }}
+                      >
+                        <td style={td}>
+                          <input
+                            type="checkbox"
+                            checked={!!it.selected}
+                            onChange={(e) => updateOcrItem(it.id, "selected", e.target.checked)}
+                          />
+                        </td>
+                        <td style={td}>
+                          <input
+                            type="text"
+                            value={it.name}
+                            onChange={(e) => updateOcrItem(it.id, "name", e.target.value)}
+                            style={{ ...smallInput, minWidth: 200 }}
+                          />
+                        </td>
+                        <td style={td}>
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={it.quantity}
+                            onChange={(e) => updateOcrItem(it.id, "quantity", Number(e.target.value))}
+                            style={smallInput}
+                          />
+                        </td>
+                        <td style={td}>
+                          <select
+                            value={it.measurement}
+                            onChange={(e) => updateOcrItem(it.id, "measurement", e.target.value)}
+                            style={smallSelect}
+                          >
+                            <option value="unit">Units</option>
+                            <option value="kg">Kilograms</option>
+                          </select>
+                        </td>
+                        <td style={td}>
+                          <select
+                            value={it.supplier || ""}
+                            onChange={(e) => updateOcrItem(it.id, "supplier", e.target.value)}
+                            style={{ ...smallSelect, minWidth: 160 }}
+                          >
+                            <option value="">(none)</option>
+                            {suppliers.map((sup) => (
+                              <option key={sup.id} value={sup.name}>
+                                {sup.name}
+                              </option>
+                            ))}
+                          </select>
+                        </td>
+                        <td style={td}>
+                          <select
+                            value={it.location}
+                            onChange={(e) => updateOcrItem(it.id, "location", e.target.value)}
+                            style={{ ...smallSelect, minWidth: 170 }}
+                          >
+                            <option value="Ambient">Ambient</option>
+                            {equipment.map((eq) => (
+                              <option key={eq.id} value={eq.name || eq.id}>
+                                {eq.name || eq.type}
+                              </option>
+                            ))}
+                          </select>
+                        </td>
+                        <td style={td}>
+                          <input
+                            type="date"
+                            value={it.expiryDate || ""}
+                            onChange={(e) => updateOcrItem(it.id, "expiryDate", e.target.value)}
+                            style={smallInput}
+                          />
+                        </td>
+                        <td style={td}>
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={it.price ?? ""}
+                            onChange={(e) =>
+                              updateOcrItem(it.id, "price", e.target.value === "" ? null : Number(e.target.value))
+                            }
+                            placeholder="0.00"
+                            style={smallInput}
+                          />
+                        </td>
+                        <td style={{ ...td, color: "#6b7280" }}>{it.rawWeight || "-"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
 
-            <button
-              onClick={addSelectedOcrItems}
-              className="mt-3 bg-green-600 text-white px-4 py-2 rounded"
-            >
-              Add selected items
-            </button>
-          </div>
+            <div style={{ marginTop: 12, display: "flex", justifyContent: "flex-end" }}>
+              <button
+                onClick={addSelectedOcrItems}
+                style={primaryBtn}
+                onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#16a34a")}
+                onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#22c55e")}
+              >
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                  <FaCheckCircle />
+                  Add selected items
+                </span>
+              </button>
+            </div>
+          </>
         )}
       </div>
 
-      {/* Add stock item */}
-      <div className="mb-4 grid grid-cols-1 md:grid-cols-12 gap-2 items-end">
-        <input
-          type="text"
-          placeholder="Item name"
-          value={newItemName}
-          onChange={(e) => setNewItemName(e.target.value)}
-          className="border p-2 rounded md:col-span-2"
-        />
-        <input
-          type="number"
-          placeholder="Qty"
-          value={newItemQty}
-          onChange={(e) => setNewItemQty(e.target.value)}
-          className="border p-2 rounded md:col-span-1"
-        />
-        <select
-          value={newMeasurement}
-          onChange={(e) => setNewMeasurement(e.target.value)}
-          className="border p-2 rounded md:col-span-1"
-        >
-          <option value="unit">Units</option>
-          <option value="kg">Kilograms</option>
-        </select>
-        <select
-          value={newLocation}
-          onChange={(e) => setNewLocation(e.target.value)}
-          className="border p-2 rounded md:col-span-2"
-        >
-          <option value="Ambient">Ambient</option>
-          {equipment.map((eq) => (
-            <option key={eq.id} value={eq.name || eq.id}>
-              {eq.name || eq.type}
-            </option>
-          ))}
-        </select>
-        <input
-          type="date"
-          value={newExpiry}
-          onChange={(e) => setNewExpiry(e.target.value)}
-          className="border p-2 rounded md:col-span-2"
-        />
-        <select
-          value={newSupplier}
-          onChange={(e) => setNewSupplier(e.target.value)}
-          className="border p-2 rounded md:col-span-2"
-        >
-          <option value="">Select supplier</option>
-          {suppliers.map((sup) => (
-            <option key={sup.id} value={sup.name}>
-              {sup.name}
-            </option>
-          ))}
-        </select>
-        <div className="md:col-span-2">
-          <Select
-            styles={selectStyles}
-            isMulti
-            options={filteredHACCP}
-            value={filteredHACCP.filter((ccp) => newHACCP.includes(ccp.value))}
-            onChange={(selected) =>
-              setNewHACCP(selected ? selected.map((s) => s.value) : [])
-            }
-            placeholder="HACCP points"
-          />
+      {/* Manual Add */}
+      <div style={card}>
+        <div style={sectionHeader}>
+          <FaBoxOpen color="#0ea5e9" />
+          Add stock item
         </div>
-        <button
-          onClick={addStockItem}
-          className="bg-green-600 text-white px-4 py-2 rounded md:col-span-12 mt-2"
-        >
-          Add Item
-        </button>
+
+        <div style={row}>
+          <input
+            type="text"
+            placeholder="Item name"
+            value={newItemName}
+            onChange={(e) => setNewItemName(e.target.value)}
+            style={{ ...input, flex: 1, minWidth: 220 }}
+          />
+          <input
+            type="number"
+            placeholder="Qty"
+            value={newItemQty}
+            onChange={(e) => setNewItemQty(e.target.value)}
+            style={input}
+          />
+          <select
+            value={newMeasurement}
+            onChange={(e) => setNewMeasurement(e.target.value)}
+            style={selectInput}
+          >
+            <option value="unit">Units</option>
+            <option value="kg">Kilograms</option>
+          </select>
+          <select
+            value={newLocation}
+            onChange={(e) => setNewLocation(e.target.value)}
+            style={{ ...selectInput, minWidth: 200 }}
+          >
+            <option value="Ambient">Ambient</option>
+            {equipment.map((eq) => (
+              <option key={eq.id} value={eq.name || eq.id}>
+                {eq.name || eq.type}
+              </option>
+            ))}
+          </select>
+          <input
+            type="date"
+            value={newExpiry}
+            onChange={(e) => setNewExpiry(e.target.value)}
+            style={input}
+          />
+          <select
+            value={newSupplier}
+            onChange={(e) => setNewSupplier(e.target.value)}
+            style={{ ...selectInput, minWidth: 220 }}
+          >
+            <option value="">Select supplier</option>
+            {suppliers.map((sup) => (
+              <option key={sup.id} value={sup.name}>
+                {sup.name}
+              </option>
+            ))}
+          </select>
+
+          <div style={{ flex: 1, minWidth: 240 }}>
+            <Select
+              styles={selectStyles}
+              isMulti
+              options={filteredHACCP}
+              value={filteredHACCP.filter((ccp) => newHACCP.includes(ccp.value))}
+              onChange={(selected) => setNewHACCP(selected ? selected.map((s) => s.value) : [])}
+              placeholder="HACCP points"
+            />
+          </div>
+        </div>
+
+        <div style={{ marginTop: 12, display: "flex", justifyContent: "flex-end" }}>
+          <button
+            onClick={addStockItem}
+            style={primaryBtn}
+            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#16a34a")}
+            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#22c55e")}
+          >
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+              <FaPlus />
+              Add Item
+            </span>
+          </button>
+        </div>
       </div>
 
-      {/* Stock list with editable fields */}
-      <ul>
-        {stockItems.map((item) => (
-          <li
-            key={item.id}
-            className="flex flex-col md:flex-row md:justify-between md:items-center border-b py-2 gap-2"
-          >
-            <div className="flex flex-col md:flex-row md:items-center gap-2">
-              <input
-                type="text"
-                value={editBuffer[item.id]?.name ?? item.name}
-                onChange={(e) => handleEdit(item.id, "name", e.target.value)}
-                className="border p-1 rounded w-32"
-              />
-              <input
-                type="number"
-                value={editBuffer[item.id]?.quantity ?? item.quantity}
-                onChange={(e) => handleEdit(item.id, "quantity", Number(e.target.value))}
-                className="border p-1 rounded w-20"
-              />
-              <select
-                value={editBuffer[item.id]?.measurement ?? item.measurement}
-                onChange={(e) => handleEdit(item.id, "measurement", e.target.value)}
-                className="border p-1 rounded w-24"
-              >
-                <option value="unit">Units</option>
-                <option value="kg">Kilograms</option>
-              </select>
-              <select
-                value={editBuffer[item.id]?.location ?? item.location}
-                onChange={(e) => handleEdit(item.id, "location", e.target.value)}
-                className="border p-1 rounded w-32"
-              >
-                <option value="Ambient">Ambient</option>
-                {equipment.map((eq) => (
-                  <option key={eq.id} value={eq.name || eq.id}>
-                    {eq.name || eq.type}
-                  </option>
-                ))}
-              </select>
-              <input
-                type="date"
-                value={(editBuffer[item.id]?.expiryDate ?? item.expiryDate) || ""}
-                onChange={(e) => handleEdit(item.id, "expiryDate", e.target.value)}
-                className="border p-1 rounded w-32"
-              />
-              <select
-                value={(editBuffer[item.id]?.supplier ?? item.supplier) || ""}
-                onChange={(e) => handleEdit(item.id, "supplier", e.target.value)}
-                className="border p-1 rounded w-32"
-              >
-                <option value="">Select supplier</option>
-                {suppliers.map((sup) => (
-                  <option key={sup.id} value={sup.name}>
-                    {sup.name}
-                  </option>
-                ))}
-              </select>
+      {/* Stock list */}
+      <div style={card}>
+        <div style={sectionHeader}>
+          <FaBoxOpen color="#4f46e5" />
+          Current stock
+        </div>
 
-              {/* Price (optional) */}
-              <input
-                type="number"
-                step="0.01"
-                value={(editBuffer[item.id]?.price ?? item.price) ?? ""}
-                onChange={(e) =>
-                  handleEdit(
-                    item.id,
-                    "price",
-                    e.target.value === "" ? null : Number(e.target.value)
-                  )
-                }
-                className="border p-1 rounded w-24"
-                placeholder="£"
-                title="Item price (optional)"
-              />
-            </div>
+        <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
+          {stockItems.map((item) => (
+            <li
+              key={item.id}
+              style={{
+                display: "flex",
+                gap: 10,
+                flexWrap: "wrap",
+                alignItems: "center",
+                justifyContent: "space-between",
+                borderBottom: "1px solid #f1f5f9",
+                padding: "10px 0",
+              }}
+            >
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                <input
+                  type="text"
+                  value={editBuffer[item.id]?.name ?? item.name}
+                  onChange={(e) => handleEdit(item.id, "name", e.target.value)}
+                  style={{ ...smallInput, minWidth: 180 }}
+                />
+                <input
+                  type="number"
+                  value={editBuffer[item.id]?.quantity ?? item.quantity}
+                  onChange={(e) => handleEdit(item.id, "quantity", Number(e.target.value))}
+                  style={{ ...smallInput, minWidth: 90 }}
+                />
+                <select
+                  value={editBuffer[item.id]?.measurement ?? item.measurement}
+                  onChange={(e) => handleEdit(item.id, "measurement", e.target.value)}
+                  style={smallSelect}
+                >
+                  <option value="unit">Units</option>
+                  <option value="kg">Kilograms</option>
+                </select>
+                <select
+                  value={editBuffer[item.id]?.location ?? item.location}
+                  onChange={(e) => handleEdit(item.id, "location", e.target.value)}
+                  style={{ ...smallSelect, minWidth: 160 }}
+                >
+                  <option value="Ambient">Ambient</option>
+                  {equipment.map((eq) => (
+                    <option key={eq.id} value={eq.name || eq.id}>
+                      {eq.name || eq.type}
+                    </option>
+                  ))}
+                </select>
+                <input
+                  type="date"
+                  value={(editBuffer[item.id]?.expiryDate ?? item.expiryDate) || ""}
+                  onChange={(e) => handleEdit(item.id, "expiryDate", e.target.value)}
+                  style={smallInput}
+                />
+                <select
+                  value={(editBuffer[item.id]?.supplier ?? item.supplier) || ""}
+                  onChange={(e) => handleEdit(item.id, "supplier", e.target.value)}
+                  style={{ ...smallSelect, minWidth: 180 }}
+                >
+                  <option value="">Select supplier</option>
+                  {suppliers.map((sup) => (
+                    <option key={sup.id} value={sup.name}>
+                      {sup.name}
+                    </option>
+                  ))}
+                </select>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={(editBuffer[item.id]?.price ?? item.price) ?? ""}
+                  onChange={(e) =>
+                    handleEdit(item.id, "price", e.target.value === "" ? null : Number(e.target.value))
+                  }
+                  placeholder="£"
+                  title="Item price (optional)"
+                  style={{ ...smallInput, minWidth: 110 }}
+                />
+              </div>
 
-            <div className="flex gap-2 mt-2 md:mt-0">
-              <button
-                onClick={() => setSelectedItem(item)}
-                className="bg-blue-500 text-white px-2 py-1 rounded text-sm"
-              >
-                Delivery
-              </button>
-              <button
-                onClick={() => setSelectedItem(item)}
-                className="bg-orange-500 text-white px-2 py-1 rounded text-sm"
-              >
-                Use
-              </button>
-              <button
-                onClick={() => deleteStockItem(item.id)}
-                className="bg-red-600 text-white px-2 py-1 rounded text-sm"
-              >
-                X
-              </button>
-            </div>
-          </li>
-        ))}
-      </ul>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button
+                  onClick={() => setSelectedItem(item)}
+                  style={blueBtn}
+                  onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#1d4ed8")}
+                  onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#2563eb")}
+                  title="Record delivery (increase qty)"
+                >
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                    <FaTruckLoading />
+                    Delivery
+                  </span>
+                </button>
+                <button
+                  onClick={() => setSelectedItem(item)}
+                  style={orangeBtn}
+                  onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#ea580c")}
+                  onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#f97316")}
+                  title="Use stock (decrease qty)"
+                >
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                    <FaUtensils />
+                    Use
+                  </span>
+                </button>
+                <button
+                  onClick={() => deleteStockItem(item.id)}
+                  style={redBtn}
+                  onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#dc2626")}
+                  onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#ef4444")}
+                  title="Delete item"
+                >
+                  <FaTimes />
+                </button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      </div>
 
       {/* Movement input */}
       {selectedItem && (
-        <div className="mt-4 p-3 border rounded bg-gray-50">
-          <h3 className="font-semibold mb-2">
-            Adjust {selectedItem.name} stock
-          </h3>
-          <input
-            type="number"
-            step={selectedItem.measurement === "kg" ? "0.1" : "1"}
-            value={movementQty}
-            onChange={(e) => setMovementQty(Number(e.target.value))}
-            className="border p-2 rounded w-24 mr-2"
-          />
-          <button
-            onClick={() =>
-              recordDelivery(selectedItem.id, movementQty, selectedItem.expiryDate)
-            }
-            className="bg-blue-600 text-white px-3 py-1 rounded mr-2"
-          >
-            + Delivery
-          </button>
-          <button
-            onClick={() => useStock(selectedItem.id, movementQty)}
-            className="bg-orange-600 text-white px-3 py-1 rounded"
-          >
-            - Usage
-          </button>
+        <div style={card}>
+          <div style={sectionHeader}>
+            <FaBoxOpen color="#16a34a" />
+            Adjust stock — <span style={{ color: "#16a34a" }}>{selectedItem.name}</span>
+          </div>
+          <div style={{ ...row, alignItems: "center" }}>
+            <input
+              type="number"
+              step={selectedItem.measurement === "kg" ? "0.1" : "1"}
+              value={movementQty}
+              onChange={(e) => setMovementQty(Number(e.target.value))}
+              style={{ ...input, minWidth: 140 }}
+            />
+            <button
+              onClick={() => recordDelivery(selectedItem.id, movementQty, selectedItem.expiryDate)}
+              style={blueBtn}
+              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#1d4ed8")}
+              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#2563eb")}
+            >
+              + Delivery
+            </button>
+            <button
+              onClick={() => useStock(selectedItem.id, movementQty)}
+              style={orangeBtn}
+              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#ea580c")}
+              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#f97316")}
+            >
+              - Usage
+            </button>
+          </div>
         </div>
       )}
 
       {/* Add supplier */}
-      <div className="mt-6 p-3 border rounded bg-gray-50">
-        <h3 className="font-semibold mb-2">Add Supplier</h3>
-        <div className="flex gap-2">
+      <div style={card}>
+        <div style={sectionHeader}>
+          <FaIndustry color="#0891b2" />
+          Add Supplier
+        </div>
+        <div style={row}>
           <input
             type="text"
             placeholder="Supplier name"
             value={newSupplierName}
             onChange={(e) => setNewSupplierName(e.target.value)}
-            className="border p-2 rounded flex-1"
+            style={{ ...input, flex: 1, minWidth: 260 }}
           />
           <button
             onClick={addSupplier}
-            className="bg-purple-600 text-white px-4 py-2 rounded"
+            style={primaryBtn}
+            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#16a34a")}
+            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#22c55e")}
           >
-            Add
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+              <FaPlus />
+              Add
+            </span>
           </button>
         </div>
       </div>
 
-      {/* Back button */}
-      <button
-        onClick={goBack}
-        className="mt-6 bg-gray-300 px-4 py-2 rounded hover:bg-gray-400"
-      >
-        Back
-      </button>
+      {/* Back */}
+      <div style={{ display: "flex", justifyContent: "center", marginTop: 18 }}>
+        <button
+          onClick={goBack}
+          style={grayBtn}
+          onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#e5e7eb")}
+          onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#f3f4f6")}
+        >
+          Back
+        </button>
+      </div>
     </div>
   );
 };
