@@ -20,11 +20,9 @@ const Reports = ({ site, goBack, user }) => {
   const [newReportName, setNewReportName] = useState("");
   const [newReportType, setNewReportType] = useState("HACCP");
 
-  // local UI helpers
   const [filterText, setFilterText] = useState("");
   const [onlyType, setOnlyType] = useState("ALL");
 
-  // keep table DOM refs so we can export edited content, not just generated defaults
   const tableRefs = useRef({});
 
   // ---------------------------
@@ -141,7 +139,7 @@ const Reports = ({ site, goBack, user }) => {
   };
 
   // ---------------------------
-  // Exports (read the DOM so edited cells are included)
+  // Export helpers
   // ---------------------------
   const readTableToJSON = (table) => {
     if (!table) return [];
@@ -154,7 +152,6 @@ const Reports = ({ site, goBack, user }) => {
       const cells = Array.from(tr.querySelectorAll("td"));
       const obj = {};
       headers.forEach((h, i) => {
-        // innerText to capture contentEditable text
         obj[h] = (cells[i]?.innerText || "").trim();
       });
       return obj;
@@ -169,7 +166,6 @@ const Reports = ({ site, goBack, user }) => {
     const headers = Object.keys(data[0]);
     const escape = (val) => {
       const s = String(val ?? "");
-      // escape quotes/delimiters/newlines
       if (/[",\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
       return s;
     };
@@ -191,10 +187,8 @@ const Reports = ({ site, goBack, user }) => {
     const container = tableRefs.current[reportId]?.closest?.(".report-card");
     if (!container) return;
 
-    // widen for better capture
-    const scale = 2;
     const canvas = await html2canvas(container, {
-      scale,
+      scale: 2,
       backgroundColor: "#ffffff",
       useCORS: true,
     });
@@ -202,18 +196,10 @@ const Reports = ({ site, goBack, user }) => {
 
     const pdf = new jsPDF("l", "mm", "a4");
     const pageWidth = pdf.internal.pageSize.getWidth();
-    const pageHeight = pdf.internal.pageSize.getHeight();
-
     const imgWidth = pageWidth;
     const imgHeight = (canvas.height * imgWidth) / canvas.width;
 
-    let y = 0;
-    if (imgHeight < pageHeight) {
-      // center vertically on single page
-      y = (pageHeight - imgHeight) / 2;
-    }
-
-    pdf.addImage(imgData, "PNG", 0, y, imgWidth, imgHeight);
+    pdf.addImage(imgData, "PNG", 0, 0, imgWidth, imgHeight);
     pdf.save(`${filename}.pdf`);
   };
 
@@ -239,7 +225,7 @@ const Reports = ({ site, goBack, user }) => {
     const rows = buildHaccpRows(report.stockItems || []);
 
     return (
-      <div className="overflow-x-auto rounded border border-gray-200 bg-white">
+      <div className="overflow-x-auto border rounded bg-white">
         <table
           className="min-w-full text-sm"
           ref={(el) => (tableRefs.current[report.id] = el)}
@@ -247,7 +233,10 @@ const Reports = ({ site, goBack, user }) => {
           <thead>
             <tr className="bg-gray-800 text-white">
               {headers.map((h) => (
-                <th key={h} className="px-3 py-2 text-left border border-gray-200">
+                <th
+                  key={h}
+                  className="px-3 py-2 text-left border border-gray-200"
+                >
                   {h}
                 </th>
               ))}
@@ -260,7 +249,9 @@ const Reports = ({ site, goBack, user }) => {
                   <td
                     key={h}
                     className="px-3 py-2 align-top border border-gray-200"
-                    contentEditable={h !== "Process Step" && h !== "Food Safety Hazard"}
+                    contentEditable={
+                      h !== "Process Step" && h !== "Food Safety Hazard"
+                    }
                     suppressContentEditableWarning
                   >
                     {row[h]}
@@ -282,7 +273,7 @@ const Reports = ({ site, goBack, user }) => {
     ];
 
     return (
-      <div className="overflow-x-auto rounded border border-gray-200 bg-white">
+      <div className="overflow-x-auto border rounded bg-white">
         <table
           className="min-w-full text-sm"
           ref={(el) => (tableRefs.current[report.id] = el)}
@@ -290,7 +281,10 @@ const Reports = ({ site, goBack, user }) => {
           <thead>
             <tr className="bg-gray-800 text-white">
               {headers.map((h) => (
-                <th key={h} className="px-3 py-2 text-left border border-gray-200">
+                <th
+                  key={h}
+                  className="px-3 py-2 text-left border border-gray-200"
+                >
                   {h}
                 </th>
               ))}
@@ -323,6 +317,7 @@ const Reports = ({ site, goBack, user }) => {
   return (
     <div className="p-4 sm:p-6">
       <div className="mx-auto max-w-5xl">
+        {/* Header */}
         <div className="flex items-start sm:items-center justify-between flex-col sm:flex-row gap-3 mb-4">
           <div>
             <h2 className="text-2xl font-bold text-gray-900">
@@ -447,15 +442,15 @@ const Reports = ({ site, goBack, user }) => {
                   </div>
                 </div>
 
-                {report.type === "HACCP" ? (
-                  renderHACCP(report)
-                ) : report.type === "Cleaning" ? (
-                  renderCleaning(report)
-                ) : (
-                  <p className="text-gray-600">
-                    No structured format for this report type yet.
-                  </p>
-                )}
+                {report.type === "HACCP"
+                  ? renderHACCP(report)
+                  : report.type === "Cleaning"
+                  ? renderCleaning(report)
+                  : (
+                    <p className="text-gray-600">
+                      No structured format for this report type yet.
+                    </p>
+                  )}
               </div>
             );
           })

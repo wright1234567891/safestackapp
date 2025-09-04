@@ -333,10 +333,13 @@ const StockSection = ({ site, goBack, user }) => {
     }));
   };
 
-  const filteredHACCP = haccpPoints.map((ccp) => ({ value: ccp.id, label: ccp.name }));
+  const filteredHACCP = haccpPoints.map((ccp) => ({
+    value: ccp.id,
+    label: ccp.name,
+  }));
 
   // -------------------------
-  // OCR HELPERS (added)
+  // OCR HELPERS
   // -------------------------
   const gramsToKg = (gNum) => {
     if (!gNum && gNum !== 0) return null;
@@ -450,7 +453,7 @@ const StockSection = ({ site, goBack, user }) => {
           location: it.location || "Ambient",
           expiryDate: it.expiryDate || null,
           supplier: it.supplier || newSupplier || "Unknown",
-          haccpPoints: [],
+          haccpPoints: [], // can be edited later per-row in "Current stock"
           site,
           createdAt: serverTimestamp(),
           createdBy: user?.uid || null,
@@ -764,6 +767,7 @@ const StockSection = ({ site, goBack, user }) => {
             ))}
           </select>
 
+          {/* HACCP multi-select for NEW item */}
           <div style={{ flex: 1, minWidth: 240 }}>
             <Select
               styles={selectStyles}
@@ -799,120 +803,148 @@ const StockSection = ({ site, goBack, user }) => {
         </div>
 
         <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
-          {stockItems.map((item) => (
-            <li
-              key={item.id}
-              style={{
-                display: "flex",
-                gap: 10,
-                flexWrap: "wrap",
-                alignItems: "center",
-                justifyContent: "space-between",
-                borderBottom: "1px solid #f1f5f9",
-                padding: "10px 0",
-              }}
-            >
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-                <input
-                  type="text"
-                  value={editBuffer[item.id]?.name ?? item.name}
-                  onChange={(e) => handleEdit(item.id, "name", e.target.value)}
-                  style={{ ...smallInput, minWidth: 180 }}
-                />
-                <input
-                  type="number"
-                  value={editBuffer[item.id]?.quantity ?? item.quantity}
-                  onChange={(e) => handleEdit(item.id, "quantity", Number(e.target.value))}
-                  style={{ ...smallInput, minWidth: 90 }}
-                />
-                <select
-                  value={editBuffer[item.id]?.measurement ?? item.measurement}
-                  onChange={(e) => handleEdit(item.id, "measurement", e.target.value)}
-                  style={smallSelect}
-                >
-                  <option value="unit">Units</option>
-                  <option value="kg">Kilograms</option>
-                </select>
-                <select
-                  value={editBuffer[item.id]?.location ?? item.location}
-                  onChange={(e) => handleEdit(item.id, "location", e.target.value)}
-                  style={{ ...smallSelect, minWidth: 160 }}
-                >
-                  <option value="Ambient">Ambient</option>
-                  {equipment.map((eq) => (
-                    <option key={eq.id} value={eq.name || eq.id}>
-                      {eq.name || eq.type}
-                    </option>
-                  ))}
-                </select>
-                <input
-                  type="date"
-                  value={(editBuffer[item.id]?.expiryDate ?? item.expiryDate) || ""}
-                  onChange={(e) => handleEdit(item.id, "expiryDate", e.target.value)}
-                  style={smallInput}
-                />
-                <select
-                  value={(editBuffer[item.id]?.supplier ?? item.supplier) || ""}
-                  onChange={(e) => handleEdit(item.id, "supplier", e.target.value)}
-                  style={{ ...smallSelect, minWidth: 180 }}
-                >
-                  <option value="">Select supplier</option>
-                  {suppliers.map((sup) => (
-                    <option key={sup.id} value={sup.name}>
-                      {sup.name}
-                    </option>
-                  ))}
-                </select>
-                <input
-                  type="number"
-                  step="0.01"
-                  value={(editBuffer[item.id]?.price ?? item.price) ?? ""}
-                  onChange={(e) =>
-                    handleEdit(item.id, "price", e.target.value === "" ? null : Number(e.target.value))
-                  }
-                  placeholder="£"
-                  title="Item price (optional)"
-                  style={{ ...smallInput, minWidth: 110 }}
-                />
-              </div>
+          {stockItems.map((item) => {
+            const currentHaccpIds =
+              editBuffer[item.id]?.haccpPoints ??
+              item.haccpPoints ??
+              [];
+            const currentHaccpOptions = filteredHACCP.filter((opt) =>
+              currentHaccpIds.includes(opt.value)
+            );
 
-              <div style={{ display: "flex", gap: 8 }}>
-                <button
-                  onClick={() => setSelectedItem(item)}
-                  style={blueBtn}
-                  onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#1d4ed8")}
-                  onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#2563eb")}
-                  title="Record delivery (increase qty)"
-                >
-                  <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                    <FaTruckLoading />
-                    Delivery
-                  </span>
-                </button>
-                <button
-                  onClick={() => setSelectedItem(item)}
-                  style={orangeBtn}
-                  onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#ea580c")}
-                  onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#f97316")}
-                  title="Use stock (decrease qty)"
-                >
-                  <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                    <FaUtensils />
-                    Use
-                  </span>
-                </button>
-                <button
-                  onClick={() => deleteStockItem(item.id)}
-                  style={redBtn}
-                  onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#dc2626")}
-                  onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#ef4444")}
-                  title="Delete item"
-                >
-                  <FaTimes />
-                </button>
-              </div>
-            </li>
-          ))}
+            return (
+              <li
+                key={item.id}
+                style={{
+                  display: "flex",
+                  gap: 10,
+                  flexWrap: "wrap",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  borderBottom: "1px solid #f1f5f9",
+                  padding: "10px 0",
+                }}
+              >
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", flex: 1 }}>
+                  <input
+                    type="text"
+                    value={editBuffer[item.id]?.name ?? item.name}
+                    onChange={(e) => handleEdit(item.id, "name", e.target.value)}
+                    style={{ ...smallInput, minWidth: 180 }}
+                  />
+                  <input
+                    type="number"
+                    value={editBuffer[item.id]?.quantity ?? item.quantity}
+                    onChange={(e) => handleEdit(item.id, "quantity", Number(e.target.value))}
+                    style={{ ...smallInput, minWidth: 90 }}
+                  />
+                  <select
+                    value={editBuffer[item.id]?.measurement ?? item.measurement}
+                    onChange={(e) => handleEdit(item.id, "measurement", e.target.value)}
+                    style={smallSelect}
+                  >
+                    <option value="unit">Units</option>
+                    <option value="kg">Kilograms</option>
+                  </select>
+                  <select
+                    value={editBuffer[item.id]?.location ?? item.location}
+                    onChange={(e) => handleEdit(item.id, "location", e.target.value)}
+                    style={{ ...smallSelect, minWidth: 160 }}
+                  >
+                    <option value="Ambient">Ambient</option>
+                    {equipment.map((eq) => (
+                      <option key={eq.id} value={eq.name || eq.id}>
+                        {eq.name || eq.type}
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    type="date"
+                    value={(editBuffer[item.id]?.expiryDate ?? item.expiryDate) || ""}
+                    onChange={(e) => handleEdit(item.id, "expiryDate", e.target.value)}
+                    style={smallInput}
+                  />
+                  <select
+                    value={(editBuffer[item.id]?.supplier ?? item.supplier) || ""}
+                    onChange={(e) => handleEdit(item.id, "supplier", e.target.value)}
+                    style={{ ...smallSelect, minWidth: 180 }}
+                  >
+                    <option value="">Select supplier</option>
+                    {suppliers.map((sup) => (
+                      <option key={sup.id} value={sup.name}>
+                        {sup.name}
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={(editBuffer[item.id]?.price ?? item.price) ?? ""}
+                    onChange={(e) =>
+                      handleEdit(item.id, "price", e.target.value === "" ? null : Number(e.target.value))
+                    }
+                    placeholder="£"
+                    title="Item price (optional)"
+                    style={{ ...smallInput, minWidth: 110 }}
+                  />
+
+                  {/* NEW: HACCP multi-select for EXISTING item */}
+                  <div style={{ minWidth: 240, flex: 1 }}>
+                    <Select
+                      styles={selectStyles}
+                      isMulti
+                      options={filteredHACCP}
+                      value={currentHaccpOptions}
+                      onChange={(selected) =>
+                        handleEdit(
+                          item.id,
+                          "haccpPoints",
+                          selected ? selected.map((s) => s.value) : []
+                        )
+                      }
+                      placeholder="HACCP points"
+                    />
+                  </div>
+                </div>
+
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button
+                    onClick={() => setSelectedItem(item)}
+                    style={blueBtn}
+                    onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#1d4ed8")}
+                    onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#2563eb")}
+                    title="Record delivery (increase qty)"
+                  >
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                      <FaTruckLoading />
+                      Delivery
+                    </span>
+                  </button>
+                  <button
+                    onClick={() => setSelectedItem(item)}
+                    style={orangeBtn}
+                    onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#ea580c")}
+                    onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#f97316")}
+                    title="Use stock (decrease qty)"
+                  >
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                      <FaUtensils />
+                      Use
+                    </span>
+                  </button>
+                  <button
+                    onClick={() => deleteStockItem(item.id)}
+                    style={redBtn}
+                    onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#dc2626")}
+                    onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#ef4444")}
+                    title="Delete item"
+                  >
+                    <FaTimes />
+                  </button>
+                </div>
+              </li>
+            );
+          })}
         </ul>
       </div>
 
