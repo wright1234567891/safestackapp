@@ -44,7 +44,8 @@ const ChecklistSection = ({ goBack, site, user }) => {
   const [items, setItems] = useState([]);
   const [newItem, setNewItem] = useState("");
 
-  // keep focus steady on the “new question” field
+  // keep focus steady on the title + “new question” fields
+  const titleRef = useRef(null);
   const newItemRef = useRef(null);
 
   // Working state
@@ -92,7 +93,6 @@ const ChecklistSection = ({ goBack, site, user }) => {
   // Focus the "new question" input when you land on the questions step
   useEffect(() => {
     if (adding && titleSet) {
-      // slight delay ensures the element exists after re-render
       requestAnimationFrame(() => newItemRef.current?.focus());
     }
   }, [adding, titleSet]);
@@ -101,10 +101,8 @@ const ChecklistSection = ({ goBack, site, user }) => {
   useEffect(() => {
     if (adding && titleSet) {
       requestAnimationFrame(() => {
-        // Only re-focus if the input exists and isn't already focused
         if (newItemRef.current && document.activeElement !== newItemRef.current) {
           newItemRef.current.focus();
-          // put cursor at end (some mobile keyboards can move caret)
           const len = newItemRef.current.value?.length ?? 0;
           try {
             newItemRef.current.setSelectionRange(len, len);
@@ -113,6 +111,28 @@ const ChecklistSection = ({ goBack, site, user }) => {
       });
     }
   }, [newItem, adding, titleSet]);
+
+  // NEW: focus management for the TITLE field (fixes your issue)
+  useEffect(() => {
+    if (adding && !titleSet) {
+      requestAnimationFrame(() => titleRef.current?.focus());
+    }
+  }, [adding, titleSet]);
+
+  useEffect(() => {
+    if (adding && !titleSet) {
+      requestAnimationFrame(() => {
+        if (titleRef.current && document.activeElement !== titleRef.current) {
+          // restore focus + caret position if it was lost
+          const len = titleRef.current.value?.length ?? 0;
+          titleRef.current.focus();
+          try {
+            titleRef.current.setSelectionRange(len, len);
+          } catch {}
+        }
+      });
+    }
+  }, [checklistTitle, adding, titleSet]);
 
   // ---------- Authoring ----------
   const addItem = () => {
@@ -546,10 +566,6 @@ const ChecklistSection = ({ goBack, site, user }) => {
                 setAdding(true);
                 setSelectedChecklist(null);
                 setViewingCompleted(null);
-                // ensure focus goes to title first
-                requestAnimationFrame(() => {
-                  // no-op here; title field will be first interactive element
-                });
               }}
             >
               + Add Checklist
@@ -694,6 +710,8 @@ const ChecklistSection = ({ goBack, site, user }) => {
             Give your checklist a clear, descriptive title.
           </div>
           <input
+            ref={titleRef}
+            autoFocus
             type="text"
             value={checklistTitle}
             onChange={(e) => setChecklistTitle(e.target.value)}
