@@ -13,6 +13,7 @@ import {
   FaExclamationTriangle,
   FaTools,
   FaUtensils, // ✅ added
+  FaUserGraduate, // ✅ NEW (for Staff Training)
 } from "react-icons/fa";
 import EquipmentManager from "./EquipmentManager";
 import ChecklistSection from "./ChecklistSection";
@@ -24,6 +25,7 @@ import Reports from "./Reports";
 import CCPSection from "./CCPSection";
 import HaccpDashboard from "./HaccpDashboard"; // ✅ NEW
 import DishesSection from "./DishesSection";   // ✅ added
+import StaffTrainingSection from "./StaffTrainingSection"; // ✅ NEW
 
 const sites = [
   "Thorganby Site",
@@ -152,6 +154,16 @@ const SitePage = ({ user, onLogout }) => {
   if (selectedSite && activeSection === "dishes") {
     return (
       <DishesSection
+        goBack={() => setActiveSection(null)}
+        site={selectedSite}
+        user={user}
+      />
+    );
+  }
+  // ✅ NEW: Staff Training route
+  if (selectedSite && activeSection === "training") {
+    return (
+      <StaffTrainingSection
         goBack={() => setActiveSection(null)}
         site={selectedSite}
         user={user}
@@ -327,6 +339,12 @@ const SitePage = ({ user, onLogout }) => {
       label: "Dishes",
       key: "dishes",
       icon: <FaUtensils size={24} color="#0ea5e9" />,
+    },
+    // ✅ NEW: Staff Training card
+    {
+      label: "Staff Training",
+      key: "training",
+      icon: <FaUserGraduate size={24} color="#0ea5e9" />,
     },
     // ✅ NEW: HACCP Dashboard (read-only live status)
     {

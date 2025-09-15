@@ -32,6 +32,41 @@ const blueBtn = button("#2563eb", "#fff");
 const redBtn = button("#ef4444", "#fff");
 const grayBtn = button();
 
+// ===== Allergen support =====
+const ALLERGENS = [
+  "Celery",
+  "Cereals (gluten)",
+  "Crustaceans",
+  "Eggs",
+  "Fish",
+  "Lupin",
+  "Milk",
+  "Molluscs",
+  "Mustard",
+  "Peanuts",
+  "Sesame",
+  "Soybeans",
+  "Sulphur dioxide/sulphites",
+  "Tree nuts",
+];
+
+const emptyAllergenMap = () =>
+  ALLERGENS.reduce((acc, a) => {
+    acc[a] = false;
+    return acc;
+  }, {});
+
+const normaliseAllergens = (maybeObj) => {
+  // Ensure all 14 keys exist (backward compatible with older docs)
+  const base = emptyAllergenMap();
+  if (maybeObj && typeof maybeObj === "object") {
+    for (const k of Object.keys(base)) {
+      base[k] = Boolean(maybeObj[k]);
+    }
+  }
+  return base;
+};
+
 const DishesSection = ({ site, user, goBack }) => {
   const [dishes, setDishes] = useState([]);
   const [stock, setStock] = useState([]);
@@ -40,6 +75,8 @@ const DishesSection = ({ site, user, goBack }) => {
     name: "",
     description: "",
     ingredients: [], // [{stockItemId, qty, unit}]
+    allergens: emptyAllergenMap(),
+    mayContain: "", // free text for cross-contact/“may contain” notes
   });
 
   const [editingId, setEditingId] = useState(null);
@@ -87,18 +124,37 @@ const DishesSection = ({ site, user, goBack }) => {
       return { ...p, ingredients: next };
     });
 
+  // Allergen helpers
+  const toggleAllergen = (setFn, allergenKey) =>
+    setFn((p) => {
+      const next = { ...(p.allergens || {}) };
+      // ensure full map
+      const full = normaliseAllergens(next);
+      full[allergenKey] = !full[allergenKey];
+      return { ...p, allergens: full };
+    });
+
   // CRUD
   const saveNewDish = async () => {
-    if (!newDish.name.trim()) return;
+    const n = (newDish.name || "").trim();
+    if (!n) return;
     await addDoc(collection(db, "dishes"), {
-      name: newDish.name.trim(),
-      description: newDish.description.trim(),
+      name: n,
+      description: (newDish.description || "").trim(),
       ingredients: (newDish.ingredients || []).filter(i => i.stockItemId),
+      allergens: normaliseAllergens(newDish.allergens),
+      mayContain: (newDish.mayContain || "").trim(),
       site,
       createdAt: serverTimestamp(),
       createdBy: user?.uid || null,
     });
-    setNewDish({ name: "", description: "", ingredients: [] });
+    setNewDish({
+      name: "",
+      description: "",
+      ingredients: [],
+      allergens: emptyAllergenMap(),
+      mayContain: "",
+    });
   };
 
   const startEdit = (d) => {
@@ -107,6 +163,8 @@ const DishesSection = ({ site, user, goBack }) => {
       name: d.name || "",
       description: d.description || "",
       ingredients: Array.isArray(d.ingredients) ? d.ingredients : [],
+      allergens: normaliseAllergens(d.allergens),
+      mayContain: d.mayContain || "",
     });
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
@@ -116,8 +174,10 @@ const DishesSection = ({ site, user, goBack }) => {
     const ref = doc(db, "dishes", editingId);
     await updateDoc(ref, {
       name: edit.name.trim(),
-      description: edit.description.trim(),
+      description: (edit.description || "").trim(),
       ingredients: (edit.ingredients || []).filter(i => i.stockItemId),
+      allergens: normaliseAllergens(edit.allergens),
+      mayContain: (edit.mayContain || "").trim(),
       updatedAt: serverTimestamp(),
       updatedBy: user?.uid || null,
     });
@@ -131,6 +191,8 @@ const DishesSection = ({ site, user, goBack }) => {
   };
 
   // UI
+  const working = editingId ? edit : newDish;
+
   return (
     <div style={wrap}>
       <h2 style={title}>
@@ -147,7 +209,7 @@ const DishesSection = ({ site, user, goBack }) => {
           <input
             style={{ ...input, minWidth: 260, flex: 1 }}
             placeholder="Dish name (e.g., Mac & Cheese)"
-            value={(editingId ? edit : newDish).name}
+            value={working.name}
             onChange={(e) =>
               (editingId ? setEdit : setNewDish)((p) => ({ ...p, name: e.target.value }))
             }
@@ -155,16 +217,17 @@ const DishesSection = ({ site, user, goBack }) => {
           <input
             style={{ ...input, minWidth: 300, flex: 2 }}
             placeholder="Short description"
-            value={(editingId ? edit : newDish).description}
+            value={working.description}
             onChange={(e) =>
               (editingId ? setEdit : setNewDish)((p) => ({ ...p, description: e.target.value }))
             }
           />
         </div>
 
+        {/* Ingredients */}
         <div style={{ marginTop: 10, fontWeight: 600 }}>Ingredients</div>
         <div style={{ ...row, marginTop: 8 }}>
-          {(editingId ? edit : newDish).ingredients?.map((ing, idx) => (
+          {working.ingredients?.map((ing, idx) => (
             <div key={idx} style={{ display: "flex", gap: 8, flexWrap: "wrap", width: "100%" }}>
               <select
                 style={{ ...input, minWidth: 260, flex: 2 }}
@@ -219,6 +282,51 @@ const DishesSection = ({ site, user, goBack }) => {
           </button>
         </div>
 
+        {/* Allergens */}
+        <div style={{ marginTop: 18 }}>
+          <div style={{ fontWeight: 600, marginBottom: 6 }}>Allergens (tick all that apply)</div>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+              gap: 10,
+              alignItems: "center",
+            }}
+          >
+            {ALLERGENS.map((a) => (
+              <label
+                key={a}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  border: "1px solid #e5e7eb",
+                  borderRadius: 10,
+                  padding: "8px 10px",
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={Boolean(working.allergens?.[a])}
+                  onChange={() => toggleAllergen(editingId ? setEdit : setNewDish, a)}
+                />
+                <span style={{ fontSize: 14 }}>{a}</span>
+              </label>
+            ))}
+          </div>
+
+          <div style={{ marginTop: 10 }}>
+            <textarea
+              style={area}
+              placeholder='“May contain” / cross-contact notes (e.g., “prepared near sesame seeds”)'
+              value={working.mayContain}
+              onChange={(e) =>
+                (editingId ? setEdit : setNewDish)((p) => ({ ...p, mayContain: e.target.value }))
+              }
+            />
+          </div>
+        </div>
+
         <div style={{ marginTop: 12, display: "flex", gap: 10, justifyContent: "flex-end" }}>
           {editingId ? (
             <>
@@ -238,47 +346,65 @@ const DishesSection = ({ site, user, goBack }) => {
           <div style={{ color: "#6b7280" }}>No dishes yet.</div>
         ) : (
           <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
-            {dishes.map((d) => (
-              <li
-                key={d.id}
-                style={{
-                  borderBottom: "1px solid #f1f5f9",
-                  padding: "12px 0",
-                  display: "flex",
-                  gap: 12,
-                  justifyContent: "space-between",
-                  alignItems: "flex-start",
-                  flexWrap: "wrap",
-                }}
-              >
-                <div style={{ minWidth: 260, flex: 1 }}>
-                  <div style={{ fontWeight: 700 }}>{d.name}</div>
-                  {d.description && (
-                    <div style={{ fontSize: 13, color: "#6b7280", marginTop: 2 }}>
-                      {d.description}
-                    </div>
-                  )}
-                  {Array.isArray(d.ingredients) && d.ingredients.length > 0 && (
-                    <div style={{ fontSize: 13, color: "#6b7280", marginTop: 6 }}>
-                      Ingredients:{" "}
-                      {d.ingredients
-                        .map((i) => {
-                          const s = stockMap[i.stockItemId];
-                          const n = s ? s.name : "(missing)";
-                          const qty = i.qty ? ` — ${i.qty}${i.unit || ""}` : "";
-                          return `${n}${qty}`;
-                        })
-                        .join(", ")}
-                    </div>
-                  )}
-                </div>
+            {dishes.map((d) => {
+              const allergens = normaliseAllergens(d.allergens);
+              const activeAllergens = Object.entries(allergens)
+                .filter(([, v]) => v)
+                .map(([k]) => k);
 
-                <div style={{ display: "flex", gap: 8 }}>
-                  <button onClick={() => startEdit(d)} style={grayBtn}>Edit</button>
-                  <button onClick={() => delDish(d.id)} style={redBtn}>Delete</button>
-                </div>
-              </li>
-            ))}
+              return (
+                <li
+                  key={d.id}
+                  style={{
+                    borderBottom: "1px solid #f1f5f9",
+                    padding: "12px 0",
+                    display: "flex",
+                    gap: 12,
+                    justifyContent: "space-between",
+                    alignItems: "flex-start",
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <div style={{ minWidth: 260, flex: 1 }}>
+                    <div style={{ fontWeight: 700 }}>{d.name}</div>
+                    {d.description && (
+                      <div style={{ fontSize: 13, color: "#6b7280", marginTop: 2 }}>
+                        {d.description}
+                      </div>
+                    )}
+
+                    {Array.isArray(d.ingredients) && d.ingredients.length > 0 && (
+                      <div style={{ fontSize: 13, color: "#6b7280", marginTop: 6 }}>
+                        Ingredients:{" "}
+                        {d.ingredients
+                          .map((i) => {
+                            const s = stockMap[i.stockItemId];
+                            const n = s ? s.name : "(missing)";
+                            const qty = i.qty ? ` — ${i.qty}${i.unit || ""}` : "";
+                            return `${n}${qty}`;
+                          })
+                          .join(", ")}
+                      </div>
+                    )}
+
+                    <div style={{ fontSize: 13, color: "#374151", marginTop: 8 }}>
+                      <span style={{ fontWeight: 600 }}>Allergens:</span>{" "}
+                      {activeAllergens.length > 0 ? activeAllergens.join(", ") : "None declared"}
+                    </div>
+                    {d.mayContain && (
+                      <div style={{ fontSize: 12, color: "#6b7280", marginTop: 4 }}>
+                        <span style={{ fontWeight: 600 }}>Notes:</span> {d.mayContain}
+                      </div>
+                    )}
+                  </div>
+
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button onClick={() => startEdit(d)} style={grayBtn}>Edit</button>
+                    <button onClick={() => delDish(d.id)} style={redBtn}>Delete</button>
+                  </div>
+                </li>
+              );
+            })}
           </ul>
         )}
       </div>
