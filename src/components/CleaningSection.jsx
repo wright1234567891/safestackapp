@@ -6,7 +6,6 @@ import {
   addDoc,
   onSnapshot,
   query,
-  orderBy,
   where,
   deleteDoc,
   doc,
@@ -117,9 +116,15 @@ const CleaningSection = ({ goBack, site, user, cleaningRecords = [], setCleaning
   useEffect(() => {
     if (!site) return;
     const ref = collection(db, "cleaningRecords");
-    const qy = query(ref, where("site", "==", site), orderBy("createdAt", "desc"));
+    const qy = query(ref, where("site", "==", site)); // removed orderBy
     const unsub = onSnapshot(qy, (snap) => {
       const recs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      // Client-side sort by createdAt (newest first)
+      recs.sort((a, b) => {
+        const ta = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : 0;
+        const tb = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : 0;
+        return tb - ta;
+      });
       setCleaningRecords(recs);
     });
     return () => unsub();
