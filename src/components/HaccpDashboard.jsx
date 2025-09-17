@@ -88,6 +88,15 @@ const latestRecord = (eq) => {
   return arr[arr.length - 1];
 };
 
+// Normalizers
+const asArray = (v) => (Array.isArray(v) ? v : v ? [v] : []);
+const getCcpStockIds = (ccp) =>
+  asArray(ccp.stockItemIds).concat(asArray(ccp.stockIds), asArray(ccp.ingredientIds));
+const getDishStockIds = (dish) =>
+  (Array.isArray(dish.ingredients) ? dish.ingredients : [])
+    .map((i) => i.stockItemId ?? i.stockId)
+    .filter(Boolean);
+
 // -------------------------------
 // Component
 // -------------------------------
@@ -95,12 +104,12 @@ const HaccpDashboard = ({ site, goBack }) => {
   const [ccps, setCCPs] = useState([]);
   const [equipment, setEquipment] = useState([]);
   const [stock, setStock] = useState([]);
-  const [dishes, setDishes] = useState([]); // 👈 NEW
+  const [dishes, setDishes] = useState([]);
 
   // UI
   const [qText, setQText] = useState("");
   const [onlyShow, setOnlyShow] = useState("ALL"); // ALL | OK | ALERT
-  const [viewMode, setViewMode] = useState("CCP"); // "CCP" | "DISH"  👈 NEW
+  const [viewMode, setViewMode] = useState("CCP"); // "CCP" | "DISH"
 
   // Styles
   const wrap = {
@@ -187,7 +196,6 @@ const HaccpDashboard = ({ site, goBack }) => {
     return () => unsub();
   }, [site]);
 
-  // 👇 NEW: Dishes listener
   useEffect(() => {
     if (!site) return;
     const qDish = query(collection(db, "dishes"), where("site", "==", site));
@@ -205,8 +213,8 @@ const HaccpDashboard = ({ site, goBack }) => {
     const stockById = Object.fromEntries(stock.map((s) => [s.id, s]));
 
     return ccps.map((c) => {
-      const eqIds = c.equipmentIds || [];
-      const siIds = c.stockItemIds || [];
+      const eqIds = asArray(c.equipmentIds);
+      const siIds = getCcpStockIds(c);
 
       const linkedEquip = eqIds.map((id) => eqById[id]).filter(Boolean);
 
@@ -265,35 +273,47 @@ const HaccpDashboard = ({ site, goBack }) => {
   }, [rowsByCCP, qText, onlyShow]);
 
   // -------------------------------
-  // NEW: Derived rows By Dish (infer CCPs via ingredient stock links)
+  // Derived rows By Dish (now supports dishIds + multiple field names)
   // -------------------------------
   const rowsByDish = useMemo(() => {
     if (!dishes.length) return [];
 
     const eqById = Object.fromEntries(equipment.map((e) => [e.id, e]));
-    const ccpById = Object.fromEntries(ccps.map((c) => [c.id, c]));
 
-    // Pre-build: stockItemId -> CCPs that reference it
-    const stockToCCPs = new Map();
+    // Build reverse indexes
+    const stockToCCPs = new Map(); // stockId -> array of CCPs
+    const dishToCCPs = new Map();  // dishId  -> array of CCPs
+
     ccps.forEach((c) => {
-      (c.stockItemIds || []).forEach((sid) => {
+      // stock links (accept variants)
+      const stockIds = getCcpStockIds(c);
+      stockIds.forEach((sid) => {
+        if (!sid) return;
         if (!stockToCCPs.has(sid)) stockToCCPs.set(sid, []);
         stockToCCPs.get(sid).push(c);
+      });
+
+      // explicit dish links (if you used these in CCP editor)
+      asArray(c.dishIds).forEach((did) => {
+        if (!did) return;
+        if (!dishToCCPs.has(did)) dishToCCPs.set(did, []);
+        dishToCCPs.get(did).push(c);
       });
     });
 
     return dishes.map((d) => {
-      const ing = Array.isArray(d.ingredients) ? d.ingredients : [];
-      const stockIds = ing.map((i) => i.stockItemId).filter(Boolean);
-
-      // All CCPs that reference any ingredient stock item
-      const ccpsForDish = [
-        ...new Set(stockIds.flatMap((sid) => stockToCCPs.get(sid) || [])),
+      const ingStockIds = getDishStockIds(d);
+      const fromStock = [
+        ...new Set(ingStockIds.flatMap((sid) => stockToCCPs.get(sid) || [])),
       ];
+      const fromDishId = dishToCCPs.get(d.id) || [];
+
+      // Merge & de-duplicate CCPs
+      const ccpsForDish = Array.from(new Set([...fromStock, ...fromDishId]));
 
       // Compute latest evidence and status per CCP
       const detailed = ccpsForDish.map((c) => {
-        const linkedEquip = (c.equipmentIds || [])
+        const linkedEquip = asArray(c.equipmentIds)
           .map((id) => eqById[id])
           .filter(Boolean);
 
@@ -338,7 +358,7 @@ const HaccpDashboard = ({ site, goBack }) => {
         id: d.id,
         name: d.name || "(Dish)",
         description: d.description || "",
-        ingredients: ing,
+        ingredients: Array.isArray(d.ingredients) ? d.ingredients : [],
         ccpDetails: detailed,
         status: overallAlert ? "ALERT" : "OK",
       };
@@ -348,14 +368,14 @@ const HaccpDashboard = ({ site, goBack }) => {
   const filteredDish = useMemo(() => {
     const t = qText.toLowerCase();
     return rowsByDish.filter((r) => {
-      const ingredientNames = (r.ingredients || [])
-        .map((i) => i.stockItemId)
+      const ingredientIds = (r.ingredients || [])
+        .map((i) => i.stockItemId ?? i.stockId ?? "")
         .filter(Boolean)
         .join(", ");
       const matchesText =
         r.name.toLowerCase().includes(t) ||
         r.description.toLowerCase().includes(t) ||
-        ingredientNames.toLowerCase().includes(t) ||
+        ingredientIds.toLowerCase().includes(t) ||
         r.ccpDetails.some(
           (c) =>
             c.name.toLowerCase().includes(t) ||
@@ -467,12 +487,12 @@ const HaccpDashboard = ({ site, goBack }) => {
               <span style={chip("#ecfeff", "#0891b2")}>
                 <FaTools />
                 Equip linked:{" "}
-                <strong>{[...new Set(ccps.flatMap((c) => c.equipmentIds || []))].length}</strong>
+                <strong>{[...new Set(ccps.flatMap((c) => asArray(c.equipmentIds)))].length}</strong>
               </span>
               <span style={chip("#f5f3ff", "#6d28d9")}>
                 <FaBoxOpen />
                 Stock linked:{" "}
-                <strong>{[...new Set(ccps.flatMap((c) => c.stockItemIds || []))].length}</strong>
+                <strong>{[...new Set(ccps.flatMap((c) => getCcpStockIds(c)))].length}</strong>
               </span>
             </>
           ) : (
@@ -584,7 +604,7 @@ const HaccpDashboard = ({ site, goBack }) => {
         <div style={card}>
           <div style={sectionHeader}>
             <FaUtensils color="#f59e0b" />
-            Dishes & Applicable CCPs (via ingredients)
+            Dishes & Applicable CCPs (via ingredients or explicit links)
           </div>
 
           <div style={{ border: "1px solid #e5e7eb", borderRadius: 12, overflow: "hidden" }}>
@@ -610,7 +630,7 @@ const HaccpDashboard = ({ site, goBack }) => {
                       </td>
                       <td style={{ padding: "10px 12px", borderBottom: "1px solid #f1f5f9" }}>
                         {r.ccpDetails.length === 0 ? (
-                          <span style={subtle}>No CCPs linked via ingredients</span>
+                          <span style={subtle}>No CCPs linked</span>
                         ) : (
                           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                             {r.ccpDetails.map((c) => (
@@ -677,8 +697,9 @@ const HaccpDashboard = ({ site, goBack }) => {
           </div>
 
           <div style={{ ...subtle, marginTop: 10 }}>
-            A dish inherits CCPs if any of its ingredients (stock items) are referenced by a CCP. You can also
-            add a `dishIds` array to CCPs later for explicit linking if you want.
+            A dish inherits CCPs if:
+            <br />• Any of its ingredient stock items are referenced by a CCP (<code>stockItemIds</code> / <code>stockIds</code> / <code>ingredientIds</code>), or
+            <br />• The CCP explicitly lists the dish in <code>dishIds</code>.
           </div>
         </div>
       )}

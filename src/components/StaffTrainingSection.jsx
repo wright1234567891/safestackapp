@@ -11,7 +11,6 @@ import {
   serverTimestamp,
   query,
   where,
-  orderBy,
 } from "firebase/firestore";
 
 // ===== Shared inline styles (to match your app) =====
@@ -105,23 +104,37 @@ const StaffTrainingSection = ({ site, user, goBack }) => {
   // ===== Firestore listeners =====
   useEffect(() => {
     if (!site) return;
-    const qStaff = query(collection(db, "staff"), where("site", "==", site), orderBy("name"));
-    const unsub = onSnapshot(qStaff, (snap) =>
-      setStaff(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
+    const qStaff = query(collection(db, "staff"), where("site", "==", site));
+    const unsub = onSnapshot(
+      qStaff,
+      (snap) => {
+        const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        // sort by name (case-insensitive)
+        list.sort((a, b) => (a.name || "").toLowerCase().localeCompare((b.name || "").toLowerCase()));
+        setStaff(list);
+      },
+      (err) => console.error("staff listener error:", err)
     );
     return () => unsub();
   }, [site]);
 
   useEffect(() => {
     if (!site) return;
-    const qTrain = query(collection(db, "trainingRecords"), where("site", "==", site), orderBy("completedOn", "desc"));
-    const unsub = onSnapshot(qTrain, (snap) =>
-      setTraining(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
+    const qTrain = query(collection(db, "trainingRecords"), where("site", "==", site));
+    const unsub = onSnapshot(
+      qTrain,
+      (snap) => {
+        const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        // sort by completedOn desc (string yyyy-mm-dd works lexicographically)
+        list.sort((a, b) => (b.completedOn || "").localeCompare(a.completedOn || ""));
+        setTraining(list);
+      },
+      (err) => console.error("training listener error:", err)
     );
     return () => unsub();
   }, [site]);
 
-  const staffMap = useMemo(() => Object.fromEntries(staff.map(s => [s.id, s])), [staff]);
+  const staffMap = useMemo(() => Object.fromEntries(staff.map((s) => [s.id, s])), [staff]);
 
   // ===== Staff CRUD =====
   const saveNewStaff = async () => {
@@ -227,7 +240,7 @@ const StaffTrainingSection = ({ site, user, goBack }) => {
   // ===== Derived listings =====
   const filteredTraining = training.filter((t) => {
     if (filterStaffId && t.staffId !== filterStaffId) return false;
-    if (searchCourse && !t.course.toLowerCase().includes(searchCourse.toLowerCase())) return false;
+    if (searchCourse && !(t.course || "").toLowerCase().includes(searchCourse.toLowerCase())) return false;
     return true;
   });
 
