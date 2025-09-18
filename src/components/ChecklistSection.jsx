@@ -34,21 +34,51 @@ const normalize = (el) => {
   el.style.backgroundColor = "#fff";
 };
 
+const freqChip = (f) => {
+  const base = {
+    display: "inline-block",
+    padding: "4px 10px",
+    borderRadius: "999px",
+    fontSize: 12,
+    fontWeight: 700,
+    marginLeft: 8,
+  };
+  switch ((f || "Ad hoc").toLowerCase()) {
+    case "daily":
+      return { ...base, background: "#ecfeff", color: "#075985" };
+    case "weekly":
+      return { ...base, background: "#f5f3ff", color: "#5b21b6" };
+    case "monthly":
+      return { ...base, background: "#fef3c7", color: "#92400e" };
+    default:
+      return { ...base, background: "#e5e7eb", color: "#111827" }; // Ad hoc / missing
+  }
+};
+
 const ChecklistSection = ({ goBack, site, user }) => {
   const [checklists, setChecklists] = useState([]);
   const [completed, setCompleted] = useState([]);
 
-  // Authoring state
+  // Authoring state (Create)
   const [adding, setAdding] = useState(false);
   const [titleSet, setTitleSet] = useState(false);
   const [checklistTitle, setChecklistTitle] = useState("");
+  const [newFrequency, setNewFrequency] = useState("Daily");
   const [items, setItems] = useState([]);
   const [newItem, setNewItem] = useState("");
 
+  // Editing state (Edit existing)
+  const [editingId, setEditingId] = useState(null);
+  const [editTitle, setEditTitle] = useState("");
+  const [editFrequency, setEditFrequency] = useState("Ad hoc");
+  const [editItems, setEditItems] = useState([]);
+  const [editNewItem, setEditNewItem] = useState("");
+
   // keep focus steady on the “new question” field
   const newItemRef = useRef(null);
+  const editNewItemRef = useRef(null);
 
-  // Working state
+  // Working state (Run / View)
   const [selectedChecklist, setSelectedChecklist] = useState(null);
   const [viewingCompleted, setViewingCompleted] = useState(null);
 
@@ -74,9 +104,7 @@ const ChecklistSection = ({ goBack, site, user }) => {
         const checklistSnapshot = await getDocs(qChecklist);
         setChecklists(checklistSnapshot.docs.map((d) => ({ id: d.id, ...d.data() })));
       } catch (err) {
-        // If index is missing, Firestore throws "failed-precondition".
-        // Fallback: fetch without orderBy and sort on the client.
-        console.warn("Checklist query fell back (likely missing index):", err);
+        // Fallback without orderBy and client-side sort
         try {
           const qChecklistFallback = query(
             checklistCollectionRef,
@@ -91,8 +119,8 @@ const ChecklistSection = ({ goBack, site, user }) => {
           });
           setChecklists(rows);
         } catch (err2) {
-          console.error("Error fetching checklists (fallback):", err2);
-          setChecklists([]); // avoid stale UI
+          console.error("Error fetching checklists:", err2);
+          setChecklists([]);
         }
       }
 
@@ -105,7 +133,6 @@ const ChecklistSection = ({ goBack, site, user }) => {
         const completedSnapshot = await getDocs(qCompleted);
         setCompleted(completedSnapshot.docs.map((d) => ({ id: d.id, ...d.data() })));
       } catch (err) {
-        console.warn("Completed query fell back (likely missing index):", err);
         try {
           const qCompletedFallback = query(
             completedCollectionRef,
@@ -120,7 +147,7 @@ const ChecklistSection = ({ goBack, site, user }) => {
           });
           setCompleted(rows);
         } catch (err2) {
-          console.error("Error fetching completed (fallback):", err2);
+          console.error("Error fetching completed:", err2);
           setCompleted([]);
         }
       }
@@ -128,13 +155,7 @@ const ChecklistSection = ({ goBack, site, user }) => {
 
     fetchData();
     // reset transient states when switching sites
-    setAdding(false);
-    setTitleSet(false);
-    setChecklistTitle("");
-    setItems([]);
-    setSelectedChecklist(null);
-    setViewingCompleted(null);
-    setNewItem("");
+    resetView();
   }, [site]); // 👈 re-run when site changes
 
   const siteChecklists = checklists; // already filtered by query
@@ -146,9 +167,14 @@ const ChecklistSection = ({ goBack, site, user }) => {
       requestAnimationFrame(() => newItemRef.current?.focus());
     }
   }, [adding, titleSet]);
+  useEffect(() => {
+    if (editingId) {
+      requestAnimationFrame(() => editNewItemRef.current?.focus());
+    }
+  }, [editingId]);
 
-  // ---------- Authoring ----------
-  const addItem = () => {
+  // ---------- Authoring (Create) ----------
+  const addItemAuthor = () => {
     if (!newItem.trim()) return;
     setItems((prev) => [
       ...prev,
@@ -157,17 +183,14 @@ const ChecklistSection = ({ goBack, site, user }) => {
     setNewItem("");
     requestAnimationFrame(() => newItemRef.current?.focus());
   };
-
-  const handleAnswerChange = (index, value) => {
+  const updateItemAuthor = (index, text) => {
     const updated = [...items];
-    updated[index].answer = value;
-    if (value === "Yes") updated[index].corrective = "";
+    updated[index] = { ...updated[index], text };
     setItems(updated);
   };
-
-  const handleCorrectiveChange = (index, value) => {
+  const removeItemAuthor = (index) => {
     const updated = [...items];
-    updated[index].corrective = value;
+    updated.splice(index, 1);
     setItems(updated);
   };
 
@@ -180,8 +203,8 @@ const ChecklistSection = ({ goBack, site, user }) => {
     const record = {
       site,
       title: checklistTitle.trim(),
+      frequency: newFrequency || "Ad hoc",
       questions: items,
-      // Keep as Timestamp.now() so the field exists immediately (avoids blink)
       createdAt: Timestamp.now(),
       person: user || "Unknown",
     };
@@ -189,7 +212,9 @@ const ChecklistSection = ({ goBack, site, user }) => {
     try {
       const docRef = await addDoc(checklistCollectionRef, record);
       setChecklists((prev) => [{ id: docRef.id, ...record }, ...prev]);
+      // Reset create state
       setChecklistTitle("");
+      setNewFrequency("Daily");
       setItems([]);
       setTitleSet(false);
       setAdding(false);
@@ -198,27 +223,113 @@ const ChecklistSection = ({ goBack, site, user }) => {
     }
   };
 
-  const deleteChecklist = async (cl) => {
-    if (!window.confirm(`Delete checklist "${cl.title}"? This cannot be undone.`)) return;
+  // ---------- Editing (Edit existing) ----------
+  const startEditChecklist = (cl) => {
+    setEditingId(cl.id);
+    setEditTitle(cl.title || "");
+    setEditFrequency(cl.frequency || "Ad hoc");
+    // Clone to avoid mutating original
+    setEditItems((Array.isArray(cl.questions) ? cl.questions : []).map((q) => ({ ...q })));
+    // Leave other modes
+    setAdding(false);
+    setTitleSet(false);
+    setSelectedChecklist(null);
+    setViewingCompleted(null);
+  };
+
+  const addEditItem = () => {
+    if (!editNewItem.trim()) return;
+    setEditItems((prev) => [
+      ...prev,
+      { text: editNewItem.trim(), answer: null, corrective: "" },
+    ]);
+    setEditNewItem("");
+    requestAnimationFrame(() => editNewItemRef.current?.focus());
+  };
+  const updateEditItem = (index, text) => {
+    const updated = [...editItems];
+    updated[index] = { ...updated[index], text };
+    setEditItems(updated);
+  };
+  const removeEditItem = (index) => {
+    const updated = [...editItems];
+    updated.splice(index, 1);
+    setEditItems(updated);
+  };
+
+  const saveEditChecklist = async () => {
+    if (!editingId) return;
+    if (!editTitle.trim() || editItems.length === 0) {
+      alert("Checklist must have a title and at least one question");
+      return;
+    }
     try {
-      await deleteDoc(doc(db, "checklists", cl.id));
-      setChecklists((prev) => prev.filter((c) => c.id !== cl.id));
-    } catch (error) {
-      console.error("Error deleting checklist:", error);
+      await updateDoc(doc(db, "checklists", editingId), {
+        title: editTitle.trim(),
+        frequency: editFrequency || "Ad hoc",
+        questions: editItems,
+        updatedAt: Timestamp.now(),
+        updatedBy: user || "Unknown",
+      });
+      // Reflect in local state
+      setChecklists((prev) =>
+        prev.map((c) =>
+          c.id === editingId
+            ? {
+                ...c,
+                title: editTitle.trim(),
+                frequency: editFrequency || "Ad hoc",
+                questions: editItems,
+              }
+            : c
+        )
+      );
+      // Exit edit mode
+      setEditingId(null);
+      setEditTitle("");
+      setEditFrequency("Ad hoc");
+      setEditItems([]);
+      setEditNewItem("");
+    } catch (err) {
+      console.error("Error saving checklist edits:", err);
     }
   };
 
+  const cancelEdit = () => {
+    setEditingId(null);
+    setEditTitle("");
+    setEditFrequency("Ad hoc");
+    setEditItems([]);
+    setEditNewItem("");
+  };
+
+  // ---------- Running (complete answers) ----------
   const openChecklist = (cl) => {
-    const freshQuestions = cl.questions.map((q) => ({
+    const freshQuestions = (cl.questions || []).map((q) => ({
       ...q,
       answer: null,
       corrective: "",
     }));
     setSelectedChecklist(cl);
     setItems(freshQuestions);
+    // leave other modes
+    setAdding(false);
+    setTitleSet(false);
+    setEditingId(null);
   };
 
-  // ---------- Completing ----------
+  const handleAnswerChange = (index, value) => {
+    const updated = [...items];
+    updated[index].answer = value;
+    if (value === "Yes") updated[index].corrective = "";
+    setItems(updated);
+  };
+  const handleCorrectiveChange = (index, value) => {
+    const updated = [...items];
+    updated[index].corrective = value;
+    setItems(updated);
+  };
+
   const saveAnswers = async () => {
     if (!selectedChecklist) return;
 
@@ -232,8 +343,9 @@ const ChecklistSection = ({ goBack, site, user }) => {
         title: selectedChecklist.title,
         person: user || "Unknown",
         questions: items,
-        site,            // keep site on record
+        site,
         createdAt: now,
+        frequency: selectedChecklist.frequency || "Ad hoc",
       };
 
       const docRef = await addDoc(completedCollectionRef, completedEntry);
@@ -243,6 +355,16 @@ const ChecklistSection = ({ goBack, site, user }) => {
       setItems([]);
     } catch (error) {
       console.error("Error saving answers:", error);
+    }
+  };
+
+  const deleteChecklist = async (cl) => {
+    if (!window.confirm(`Delete checklist "${cl.title}"? This cannot be undone.`)) return;
+    try {
+      await deleteDoc(doc(db, "checklists", cl.id));
+      setChecklists((prev) => prev.filter((c) => c.id !== cl.id));
+    } catch (error) {
+      console.error("Error deleting checklist:", error);
     }
   };
 
@@ -262,13 +384,22 @@ const ChecklistSection = ({ goBack, site, user }) => {
   };
 
   const resetView = () => {
-    setSelectedChecklist(null);
-    setViewingCompleted(null);
-    setItems([]);
+    // Create
     setAdding(false);
     setTitleSet(false);
     setChecklistTitle("");
+    setNewFrequency("Daily");
+    setItems([]);
     setNewItem("");
+    // Run/View
+    setSelectedChecklist(null);
+    setViewingCompleted(null);
+    // Edit
+    setEditingId(null);
+    setEditTitle("");
+    setEditFrequency("Ad hoc");
+    setEditItems([]);
+    setEditNewItem("");
   };
 
   // ---------- Export ----------
@@ -370,7 +501,7 @@ const ChecklistSection = ({ goBack, site, user }) => {
     document.body.removeChild(element);
   };
 
-  // ---------- UI pieces ----------
+  // ---------- UI primitives ----------
   const Button = ({
     children,
     onClick,
@@ -452,7 +583,9 @@ const ChecklistSection = ({ goBack, site, user }) => {
     </h2>
   );
 
-  const renderChecklistItems = (editable = true) =>
+  // ---------- Render helpers ----------
+  // For RUN/VIEW — shows Yes/No + corrective
+  const renderChecklistItemsRun = (editable = true) =>
     items.map((item, index) => {
       const yesActive = item.answer === "Yes";
       const noActive = item.answer === "No";
@@ -508,6 +641,38 @@ const ChecklistSection = ({ goBack, site, user }) => {
       );
     });
 
+  // For CREATE/EDIT — text inputs for questions
+  const renderAuthoringItems = (list, onUpdate, onRemove) =>
+    list.map((item, index) => {
+      return (
+        <Card key={index} hoverable={false} style={{ margin: "10px 0" }}>
+          <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+            <input
+              type="text"
+              value={item.text}
+              onChange={(e) => onUpdate(index, e.target.value)}
+              placeholder={`Question ${index + 1}`}
+              style={{
+                padding: "12px 14px",
+                fontSize: "15px",
+                borderRadius: "10px",
+                border: "1px solid #e5e7eb",
+                outline: "none",
+                flex: 1,
+              }}
+            />
+            <Button
+              kind="danger"
+              onClick={() => onRemove(index)}
+              style={{ padding: "10px 12px" }}
+            >
+              Remove
+            </Button>
+          </div>
+        </Card>
+      );
+    });
+
   // ---------- Main Render ----------
   return (
     <div
@@ -540,19 +705,20 @@ const ChecklistSection = ({ goBack, site, user }) => {
             {site} — Checklists
           </h1>
           <div style={{ fontSize: 13, color: "#6b7280", marginTop: 4 }}>
-            Create, complete, and export your venue checklists
+            Create, edit, complete, and export your venue checklists
           </div>
         </div>
 
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
           <Button onClick={goBack}>Back</Button>
-          {isManager && (
+          {isManager && !editingId && (
             <Button
               kind="primary"
               onClick={() => {
                 setAdding(true);
                 setSelectedChecklist(null);
                 setViewingCompleted(null);
+                setEditingId(null);
               }}
             >
               + Add Checklist
@@ -567,7 +733,7 @@ const ChecklistSection = ({ goBack, site, user }) => {
       </div>
 
       {/* MAIN VIEW */}
-      {!adding && !selectedChecklist && !viewingCompleted && (
+      {!adding && !selectedChecklist && !viewingCompleted && !editingId && (
         <>
           <SectionTitle>Your Checklists</SectionTitle>
 
@@ -591,43 +757,64 @@ const ChecklistSection = ({ goBack, site, user }) => {
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+              gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
               gap: 14,
             }}
           >
             {siteChecklists.map((cl) => (
               <Card key={cl.id} onClick={() => openChecklist(cl)}>
-                <div style={{ paddingRight: 64 }}>
+                <div style={{ paddingRight: 104 }}>
                   <div
-                    style={{ fontWeight: 700, color: "#111", marginBottom: 6 }}
+                    style={{ fontWeight: 700, color: "#111", marginBottom: 6, display: "flex", alignItems: "center", flexWrap: "wrap", gap: 6 }}
                   >
                     {cl.title}
+                    <span style={freqChip(cl.frequency)}>{cl.frequency || "Ad hoc"}</span>
                   </div>
                   <div style={{ fontSize: 13, color: "#6b7280" }}>
-                    {cl.questions.length} question
-                    {cl.questions.length !== 1 ? "s" : ""}
+                    {Array.isArray(cl.questions) ? cl.questions.length : 0} question
+                    {Array.isArray(cl.questions) && cl.questions.length !== 1 ? "s" : ""}
                   </div>
                 </div>
 
                 {isManager && (
-                  <Button
-                    kind="danger"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      deleteChecklist(cl);
-                    }}
-                    style={{
-                      position: "absolute",
-                      top: 12,
-                      right: 12,
-                      padding: "6px 10px",
-                      borderRadius: 8,
-                      fontSize: 12,
-                      fontWeight: 700,
-                    }}
-                  >
-                    Delete
-                  </Button>
+                  <>
+                    <Button
+                      kind="subtle"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        startEditChecklist(cl);
+                      }}
+                      style={{
+                        position: "absolute",
+                        top: 12,
+                        right: 74,
+                        padding: "6px 10px",
+                        borderRadius: 8,
+                        fontSize: 12,
+                        fontWeight: 700,
+                      }}
+                    >
+                      Edit
+                    </Button>
+                    <Button
+                      kind="danger"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        deleteChecklist(cl);
+                      }}
+                      style={{
+                        position: "absolute",
+                        top: 12,
+                        right: 12,
+                        padding: "6px 10px",
+                        borderRadius: 8,
+                        fontSize: 12,
+                        fontWeight: 700,
+                      }}
+                    >
+                      Delete
+                    </Button>
+                  </>
                 )}
               </Card>
             ))}
@@ -653,9 +840,16 @@ const ChecklistSection = ({ goBack, site, user }) => {
                           fontWeight: 700,
                           color: "#111",
                           marginBottom: 4,
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 6,
+                          flexWrap: "wrap",
                         }}
                       >
                         {c.title}
+                        {c.frequency && (
+                          <span style={freqChip(c.frequency)}>{c.frequency}</span>
+                        )}
                       </div>
                       <div style={{ fontSize: 13, color: "#6b7280" }}>
                         By {c.person} • {formatTimestamp(c.createdAt)}
@@ -690,26 +884,48 @@ const ChecklistSection = ({ goBack, site, user }) => {
       )}
 
       {/* ADD CHECKLIST — TITLE STEP */}
-      {adding && !titleSet && (
+      {adding && !titleSet && !editingId && (
         <Card hoverable={false}>
           <SectionTitle>New Checklist</SectionTitle>
           <div style={{ color: "#6b7280", marginBottom: 10 }}>
-            Give your checklist a clear, descriptive title.
+            Give your checklist a clear, descriptive title and frequency.
           </div>
-          <input
-            type="text"
-            value={checklistTitle}
-            onChange={(e) => setChecklistTitle(e.target.value)}
-            placeholder="e.g. Opening Checks"
-            style={{
-              padding: "12px 14px",
-              fontSize: "15px",
-              width: "100%",
-              borderRadius: "10px",
-              border: "1px solid #e5e7eb",
-              outline: "none",
-            }}
-          />
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <input
+              type="text"
+              value={checklistTitle}
+              onChange={(e) => setChecklistTitle(e.target.value)}
+              placeholder="e.g. Opening Checks"
+              style={{
+                padding: "12px 14px",
+                fontSize: "15px",
+                flex: 2,
+                minWidth: 260,
+                borderRadius: "10px",
+                border: "1px solid #e5e7eb",
+                outline: "none",
+              }}
+            />
+            <select
+              value={newFrequency}
+              onChange={(e) => setNewFrequency(e.target.value)}
+              style={{
+                padding: "12px 14px",
+                fontSize: "15px",
+                flex: 1,
+                minWidth: 180,
+                borderRadius: "10px",
+                border: "1px solid #e5e7eb",
+                outline: "none",
+                background: "#fff",
+              }}
+            >
+              <option>Daily</option>
+              <option>Weekly</option>
+              <option>Monthly</option>
+              <option>Ad hoc</option>
+            </select>
+          </div>
           <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
             <Button
               kind="primary"
@@ -722,16 +938,18 @@ const ChecklistSection = ({ goBack, site, user }) => {
         </Card>
       )}
 
-      {/* ADD CHECKLIST — QUESTIONS STEP */}
-      {adding && titleSet && (
+      {/* ADD CHECKLIST — QUESTIONS STEP (Authoring items) */}
+      {adding && titleSet && !editingId && (
         <Card hoverable={false}>
-          <SectionTitle>{checklistTitle}</SectionTitle>
+          <SectionTitle>
+            {checklistTitle}
+            <span style={freqChip(newFrequency)}>{newFrequency}</span>
+          </SectionTitle>
           <div style={{ color: "#6b7280", marginBottom: 10 }}>
-            Add your questions, mark expected answers when you use the
-            checklist, and include corrective actions if needed.
+            Add your questions. You can remove or edit them before saving.
           </div>
 
-          {renderChecklistItems()}
+          {renderAuthoringItems(items, updateItemAuthor, removeItemAuthor)}
 
           <div
             style={{
@@ -750,7 +968,7 @@ const ChecklistSection = ({ goBack, site, user }) => {
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
                   e.preventDefault();
-                  addItem();
+                  addItemAuthor();
                 }
               }}
               placeholder="New question"
@@ -763,7 +981,7 @@ const ChecklistSection = ({ goBack, site, user }) => {
                 flex: 1,
               }}
             />
-            <Button kind="subtle" onClick={addItem}>
+            <Button kind="subtle" onClick={addItemAuthor}>
               + Add Question
             </Button>
           </div>
@@ -777,11 +995,104 @@ const ChecklistSection = ({ goBack, site, user }) => {
         </Card>
       )}
 
-      {/* RUN CHECKLIST */}
-      {selectedChecklist && (
+      {/* EDIT CHECKLIST — full edit (title, frequency, questions) */}
+      {editingId && !adding && !selectedChecklist && !viewingCompleted && (
         <Card hoverable={false}>
-          <SectionTitle>{selectedChecklist.title}</SectionTitle>
-          {renderChecklistItems(true)}
+          <SectionTitle>Edit Checklist</SectionTitle>
+          <div style={{ color: "#6b7280", marginBottom: 10 }}>
+            Update the title, frequency, and questions below.
+          </div>
+
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
+            <input
+              type="text"
+              value={editTitle}
+              onChange={(e) => setEditTitle(e.target.value)}
+              placeholder="Checklist title"
+              style={{
+                padding: "12px 14px",
+                fontSize: "15px",
+                flex: 2,
+                minWidth: 260,
+                borderRadius: "10px",
+                border: "1px solid #e5e7eb",
+                outline: "none",
+              }}
+            />
+            <select
+              value={editFrequency}
+              onChange={(e) => setEditFrequency(e.target.value)}
+              style={{
+                padding: "12px 14px",
+                fontSize: "15px",
+                flex: 1,
+                minWidth: 180,
+                borderRadius: "10px",
+                border: "1px solid #e5e7eb",
+                outline: "none",
+                background: "#fff",
+              }}
+            >
+              <option>Daily</option>
+              <option>Weekly</option>
+              <option>Monthly</option>
+              <option>Ad hoc</option>
+            </select>
+          </div>
+
+          {renderAuthoringItems(editItems, updateEditItem, removeEditItem)}
+
+          <div
+            style={{
+              display: "flex",
+              gap: 10,
+              marginTop: 10,
+              alignItems: "center",
+            }}
+          >
+            <input
+              ref={editNewItemRef}
+              type="text"
+              value={editNewItem}
+              onChange={(e) => setEditNewItem(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  addEditItem();
+                }
+              }}
+              placeholder="New question"
+              style={{
+                padding: "12px 14px",
+                fontSize: "15px",
+                borderRadius: "10px",
+                border: "1px solid #e5e7eb",
+                outline: "none",
+                flex: 1,
+              }}
+            />
+            <Button kind="subtle" onClick={addEditItem}>
+              + Add Question
+            </Button>
+          </div>
+
+          <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
+            <Button kind="success" onClick={saveEditChecklist}>
+              Save Changes
+            </Button>
+            <Button onClick={cancelEdit}>Cancel</Button>
+          </div>
+        </Card>
+      )}
+
+      {/* RUN CHECKLIST */}
+      {selectedChecklist && !adding && !editingId && (
+        <Card hoverable={false}>
+          <SectionTitle>
+            {selectedChecklist.title}
+            <span style={freqChip(selectedChecklist.frequency)}>{selectedChecklist.frequency || "Ad hoc"}</span>
+          </SectionTitle>
+          {renderChecklistItemsRun(true)}
           <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
             <Button kind="success" onClick={saveAnswers}>
               Submit Answers
@@ -792,15 +1103,18 @@ const ChecklistSection = ({ goBack, site, user }) => {
       )}
 
       {/* VIEW COMPLETED */}
-      {viewingCompleted && (
+      {viewingCompleted && !adding && !editingId && (
         <Card hoverable={false}>
           <SectionTitle>
             {viewingCompleted.title}{" "}
-            <span style={{ color: "#6b7280", fontWeight: 500 }}>
+            {viewingCompleted.frequency && (
+              <span style={freqChip(viewingCompleted.frequency)}>{viewingCompleted.frequency}</span>
+            )}
+            <span style={{ color: "#6b7280", fontWeight: 500, marginLeft: 8 }}>
               (Completed by {viewingCompleted.person})
             </span>
           </SectionTitle>
-          {renderChecklistItems(false)}
+          {renderChecklistItemsRun(false)}
           <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
             <Button onClick={resetView}>Back</Button>
             <Button
