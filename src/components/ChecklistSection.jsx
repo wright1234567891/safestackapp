@@ -340,6 +340,8 @@ const ChecklistSection = ({ goBack, site, user }) => {
 
       const now = Timestamp.now();
       const completedEntry = {
+        // 👇 ADDED: this links completions to a source checklist for SitePage overview
+        checklistId: selectedChecklist.id,
         title: selectedChecklist.title,
         person: user || "Unknown",
         questions: items,
