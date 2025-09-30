@@ -52,7 +52,7 @@ const freqChip = (f) => {
     case "monthly":
       return { ...base, background: "#fef3c7", color: "#92400e" };
     default:
-      return { ...base, background: "#e5e7eb", color: "#111827" }; // Ad hoc / missing
+      return { ...base, background: "#e5e7eb", color: "#111827" };
   }
 };
 
@@ -100,7 +100,6 @@ const ChecklistSection = ({ goBack, site, user }) => {
 
     const fetchData = async () => {
       try {
-        // Try the preferred query (requires composite index: site + createdAt desc)
         const qChecklist = query(
           checklistCollectionRef,
           where("site", "==", site),
@@ -109,7 +108,6 @@ const ChecklistSection = ({ goBack, site, user }) => {
         const checklistSnapshot = await getDocs(qChecklist);
         setChecklists(checklistSnapshot.docs.map((d) => ({ id: d.id, ...d.data() })));
       } catch (err) {
-        // Fallback without orderBy and client-side sort
         try {
           const qChecklistFallback = query(
             checklistCollectionRef,
@@ -159,12 +157,11 @@ const ChecklistSection = ({ goBack, site, user }) => {
     };
 
     fetchData();
-    // reset transient states when switching sites
     resetView();
-  }, [site]); // 👈 re-run when site changes
+  }, [site]);
 
-  const siteChecklists = checklists; // already filtered by query
-  const siteCompleted = completed;   // already filtered by query
+  const siteChecklists = checklists;
+  const siteCompleted = completed;
 
   // ---------- Focus helpers ----------
   useEffect(() => {
@@ -233,7 +230,6 @@ const ChecklistSection = ({ goBack, site, user }) => {
     setEditingId(cl.id);
     setEditTitle(cl.title || "");
     setEditFrequency(cl.frequency || "Ad hoc");
-    // Clone to avoid mutating original
     setEditItems((Array.isArray(cl.questions) ? cl.questions : []).map((q) => ({ ...q })));
     // Leave other modes
     setAdding(false);
@@ -277,7 +273,6 @@ const ChecklistSection = ({ goBack, site, user }) => {
         updatedAt: Timestamp.now(),
         updatedBy: user || "Unknown",
       });
-      // Reflect in local state
       setChecklists((prev) =>
         prev.map((c) =>
           c.id === editingId
@@ -290,7 +285,6 @@ const ChecklistSection = ({ goBack, site, user }) => {
             : c
         )
       );
-      // Exit edit mode
       setEditingId(null);
       setEditTitle("");
       setEditFrequency("Ad hoc");
@@ -324,7 +318,6 @@ const ChecklistSection = ({ goBack, site, user }) => {
       if (!snap.empty) {
         const d = snap.docs[0];
         const data = d.data();
-        // Only adopt if structure looks right
         if (Array.isArray(data.questions)) {
           setItems(data.questions.map((q) => ({ ...q })));
           setDraftId(d.id);
@@ -342,13 +335,13 @@ const ChecklistSection = ({ goBack, site, user }) => {
 
   const saveDraft = async () => {
     if (!selectedChecklist) return;
-    const payload = {
+
+    const basePayload = {
       site,
       checklistId: selectedChecklist.id,
       title: selectedChecklist.title,
       person: user || "Unknown",
       questions: items,
-      createdAt: draftId ? undefined : Timestamp.now(),
       updatedAt: Timestamp.now(),
       frequency: selectedChecklist.frequency || "Ad hoc",
       status: "draft",
@@ -356,9 +349,14 @@ const ChecklistSection = ({ goBack, site, user }) => {
 
     try {
       if (draftId) {
-        await updateDoc(doc(db, "checklistDrafts", draftId), payload);
+        // Update existing draft (no createdAt)
+        await updateDoc(doc(db, "checklistDrafts", draftId), basePayload);
       } else {
-        const ref = await addDoc(draftsCollectionRef, payload);
+        // Create new draft (add createdAt only here)
+        const ref = await addDoc(draftsCollectionRef, {
+          ...basePayload,
+          createdAt: Timestamp.now(),
+        });
         setDraftId(ref.id);
       }
       alert("Draft saved.");
@@ -380,7 +378,6 @@ const ChecklistSection = ({ goBack, site, user }) => {
 
   // ---------- Running (complete answers) ----------
   const openChecklist = async (cl) => {
-    // Start with a fresh copy of the template
     const freshQuestions = (cl.questions || []).map((q) => ({
       ...q,
       answer: null,
@@ -394,7 +391,6 @@ const ChecklistSection = ({ goBack, site, user }) => {
     setViewingCompleted(null);
     setDraftId(null);
 
-    // Try to load the latest draft for this user/checklist and override if found
     await loadLatestDraft(cl);
   };
 
@@ -414,8 +410,7 @@ const ChecklistSection = ({ goBack, site, user }) => {
     if (!selectedChecklist) return;
 
     try {
-      // DO NOT overwrite the template's questions with answers.
-      // Optionally stamp last completed metadata on the template:
+      // keep the template clean; just stamp metadata
       await updateDoc(doc(db, "checklists", selectedChecklist.id), {
         lastCompletedAt: Timestamp.now(),
         lastCompletedBy: user || "Unknown",
@@ -435,7 +430,6 @@ const ChecklistSection = ({ goBack, site, user }) => {
       const docRef = await addDoc(completedCollectionRef, completedEntry);
       setCompleted((prev) => [{ id: docRef.id, ...completedEntry }, ...prev]);
 
-      // If a draft existed for this run, remove it
       if (draftId) {
         await deleteDoc(doc(db, "checklistDrafts", draftId));
         setDraftId(null);
@@ -725,7 +719,7 @@ const ChecklistSection = ({ goBack, site, user }) => {
                 padding: "10px 12px",
                 borderRadius: "10px",
                 width: "100%",
-                border: "1px solid "#e5e7eb",
+                border: "1px solid #e5e7eb",
                 outline: "none",
                 fontSize: "14px",
               }}
