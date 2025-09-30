@@ -69,6 +69,52 @@ const tinyDraftChip = {
   display: "inline-block",
 };
 
+// NEW: Utilities for new schema with sensible defaults (backward-compatible)
+const withQuestionDefaults = (q) => {
+  return {
+    text: q?.text ?? "",
+    answer: q?.answer ?? null,
+    corrective: q?.corrective ?? "",
+    correctiveOn: q?.correctiveOn ?? "no", // default to old behavior (corrective on No)
+    followUps: {
+      yes: {
+        enabled: q?.followUps?.yes?.enabled ?? false,
+        text: q?.followUps?.yes?.text ?? "",
+        correctiveOn: q?.followUps?.yes?.correctiveOn ?? "no",
+      },
+      no: {
+        enabled: q?.followUps?.no?.enabled ?? false,
+        text: q?.followUps?.no?.text ?? "",
+        correctiveOn: q?.followUps?.no?.correctiveOn ?? "no",
+      },
+    },
+    followUpAnswers: {
+      yes: {
+        answer: q?.followUpAnswers?.yes?.answer ?? null,
+        corrective: q?.followUpAnswers?.yes?.corrective ?? "",
+      },
+      no: {
+        answer: q?.followUpAnswers?.no?.answer ?? null,
+        corrective: q?.followUpAnswers?.no?.corrective ?? "",
+      },
+    },
+  };
+};
+
+const needsCorrective = (rule, ans) => {
+  if (!ans) return false;
+  switch (rule) {
+    case "yes":
+      return ans === "Yes";
+    case "no":
+      return ans === "No";
+    case "both":
+      return ans === "Yes" || ans === "No";
+    default:
+      return false; // "none"
+  }
+};
+
 // ---------- Component ----------
 const ChecklistSection = ({ goBack, site, user }) => {
   const [checklists, setChecklists] = useState([]);
@@ -232,20 +278,36 @@ const ChecklistSection = ({ goBack, site, user }) => {
   }, [editingId]);
 
   // ---------- Authoring (Create) ----------
+  const newQuestion = (text = "") =>
+    withQuestionDefaults({
+      text,
+      answer: null,
+      corrective: "",
+      correctiveOn: "no",
+      followUps: {
+        yes: { enabled: false, text: "", correctiveOn: "no" },
+        no: { enabled: false, text: "", correctiveOn: "no" },
+      },
+      followUpAnswers: {
+        yes: { answer: null, corrective: "" },
+        no: { answer: null, corrective: "" },
+      },
+    });
+
   const addItemAuthor = () => {
     if (!newItem.trim()) return;
-    setItems((prev) => [
-      ...prev,
-      { text: newItem.trim(), answer: null, corrective: "" },
-    ]);
+    setItems((prev) => [...prev, newQuestion(newItem.trim())]);
     setNewItem("");
     requestAnimationFrame(() => newItemRef.current?.focus());
   };
-  const updateItemAuthor = (index, text) => {
+
+  const updateItemAuthor = (index, updater) => {
     const updated = [...items];
-    updated[index] = { ...updated[index], text };
+    const current = withQuestionDefaults(updated[index]);
+    updated[index] = typeof updater === "function" ? updater(current) : updater;
     setItems(updated);
   };
+
   const removeItemAuthor = (index) => {
     const updated = [...items];
     updated.splice(index, 1);
@@ -262,7 +324,7 @@ const ChecklistSection = ({ goBack, site, user }) => {
       site,
       title: checklistTitle.trim(),
       frequency: newFrequency || "Ad hoc",
-      questions: items,
+      questions: items.map(withQuestionDefaults),
       createdAt: Timestamp.now(),
       person: personName,
     };
@@ -287,7 +349,7 @@ const ChecklistSection = ({ goBack, site, user }) => {
     setEditTitle(cl.title || "");
     setEditFrequency(cl.frequency || "Ad hoc");
     setEditItems(
-      (Array.isArray(cl.questions) ? cl.questions : []).map((q) => ({ ...q }))
+      (Array.isArray(cl.questions) ? cl.questions : []).map(withQuestionDefaults)
     );
     setAdding(false);
     setTitleSet(false);
@@ -298,18 +360,18 @@ const ChecklistSection = ({ goBack, site, user }) => {
 
   const addEditItem = () => {
     if (!editNewItem.trim()) return;
-    setEditItems((prev) => [
-      ...prev,
-      { text: editNewItem.trim(), answer: null, corrective: "" },
-    ]);
+    setEditItems((prev) => [...prev, newQuestion(editNewItem.trim())]);
     setEditNewItem("");
     requestAnimationFrame(() => editNewItemRef.current?.focus());
   };
-  const updateEditItem = (index, text) => {
+
+  const updateEditItem = (index, updater) => {
     const updated = [...editItems];
-    updated[index] = { ...updated[index], text };
+    const current = withQuestionDefaults(updated[index]);
+    updated[index] = typeof updater === "function" ? updater(current) : updater;
     setEditItems(updated);
   };
+
   const removeEditItem = (index) => {
     const updated = [...editItems];
     updated.splice(index, 1);
@@ -326,7 +388,7 @@ const ChecklistSection = ({ goBack, site, user }) => {
       await updateDoc(doc(db, "checklists", editingId), {
         title: editTitle.trim(),
         frequency: editFrequency || "Ad hoc",
-        questions: editItems,
+        questions: editItems.map(withQuestionDefaults),
         updatedAt: Timestamp.now(),
         updatedBy: personName,
       });
@@ -337,7 +399,7 @@ const ChecklistSection = ({ goBack, site, user }) => {
                 ...c,
                 title: editTitle.trim(),
                 frequency: editFrequency || "Ad hoc",
-                questions: editItems,
+                questions: editItems.map(withQuestionDefaults),
               }
             : c
         )
@@ -361,6 +423,10 @@ const ChecklistSection = ({ goBack, site, user }) => {
   };
 
   // ---------- Draft helpers ----------
+  const refreshDraftsForPerson = async () => {
+    await refreshDrafts();
+  };
+
   const loadLatestDraft = async (cl) => {
     try {
       const qDraft = query(
@@ -376,7 +442,7 @@ const ChecklistSection = ({ goBack, site, user }) => {
         const d = snap.docs[0];
         const data = d.data();
         if (Array.isArray(data.questions)) {
-          setItems(data.questions.map((q) => ({ ...q })));
+          setItems(data.questions.map(withQuestionDefaults));
           setDraftId(d.id);
         } else {
           setDraftId(null);
@@ -398,7 +464,7 @@ const ChecklistSection = ({ goBack, site, user }) => {
       checklistId: selectedChecklist.id,
       title: selectedChecklist.title,
       person: personName,
-      questions: items,
+      questions: items.map(withQuestionDefaults),
       frequency: selectedChecklist.frequency || "Ad hoc",
       status: "draft",
     };
@@ -419,7 +485,7 @@ const ChecklistSection = ({ goBack, site, user }) => {
         });
         setDraftId(ref.id);
       }
-      await refreshDrafts();
+      await refreshDraftsForPerson();
       alert("Draft saved.");
     } catch (e) {
       console.error("Error saving draft:", e);
@@ -433,7 +499,7 @@ const ChecklistSection = ({ goBack, site, user }) => {
         await deleteDoc(doc(db, "checklistDrafts", draftId));
         setDraftId(null);
       }
-      await refreshDrafts();
+      await refreshDraftsForPerson();
     } catch (e) {
       console.error("Error discarding draft:", e);
     }
@@ -441,11 +507,18 @@ const ChecklistSection = ({ goBack, site, user }) => {
 
   // ---------- Running (complete answers) ----------
   const openChecklist = async (cl) => {
-    const freshQuestions = (cl.questions || []).map((q) => ({
-      ...q,
-      answer: null,
-      corrective: "",
-    }));
+    // Ensure defaults for runtime
+    const freshQuestions = (cl.questions || []).map((q) =>
+      withQuestionDefaults({
+        ...q,
+        answer: null,
+        corrective: "",
+        followUpAnswers: {
+          yes: { answer: null, corrective: "" },
+          no: { answer: null, corrective: "" },
+        },
+      })
+    );
     setSelectedChecklist(cl);
     setItems(freshQuestions);
     setAdding(false);
@@ -468,7 +541,7 @@ const ChecklistSection = ({ goBack, site, user }) => {
         frequency: draft.frequency || "Ad hoc",
       });
     }
-    setItems((draft.questions || []).map((q) => ({ ...q })));
+    setItems((draft.questions || []).map(withQuestionDefaults));
     setAdding(false);
     setTitleSet(false);
     setEditingId(null);
@@ -478,13 +551,56 @@ const ChecklistSection = ({ goBack, site, user }) => {
 
   const handleAnswerChange = (index, value) => {
     const updated = [...items];
-    updated[index].answer = value;
-    if (value === "Yes") updated[index].corrective = "";
+    const item = withQuestionDefaults(updated[index]);
+    item.answer = value;
+
+    // If switching answer, clear follow-up answers for the other branch (to avoid stale data)
+    if (value === "Yes") {
+      item.followUpAnswers.no = { answer: null, corrective: "" };
+    } else if (value === "No") {
+      item.followUpAnswers.yes = { answer: null, corrective: "" };
+    } else if (value === "N/A") {
+      item.followUpAnswers.yes = { answer: null, corrective: "" };
+      item.followUpAnswers.no = { answer: null, corrective: "" };
+    }
+
+    // Optional: auto-clear main corrective if not required
+    if (!needsCorrective(item.correctiveOn, value)) {
+      item.corrective = "";
+    }
+    updated[index] = item;
     setItems(updated);
   };
+
   const handleCorrectiveChange = (index, value) => {
     const updated = [...items];
-    updated[index].corrective = value;
+    const item = withQuestionDefaults(updated[index]);
+    item.corrective = value;
+    updated[index] = item;
+    setItems(updated);
+  };
+
+  // Follow-up handlers
+  const handleFollowUpAnswer = (index, branch /* "yes"|"no" */, value) => {
+    const updated = [...items];
+    const item = withQuestionDefaults(updated[index]);
+    const fa = { ...(item.followUpAnswers?.[branch] ?? { answer: null, corrective: "" }) };
+    fa.answer = value;
+    if (!needsCorrective(item.followUps[branch].correctiveOn, value)) {
+      fa.corrective = "";
+    }
+    item.followUpAnswers = { ...item.followUpAnswers, [branch]: fa };
+    updated[index] = item;
+    setItems(updated);
+  };
+
+  const handleFollowUpCorrective = (index, branch, value) => {
+    const updated = [...items];
+    const item = withQuestionDefaults(updated[index]);
+    const fa = { ...(item.followUpAnswers?.[branch] ?? { answer: null, corrective: "" }) };
+    fa.corrective = value;
+    item.followUpAnswers = { ...item.followUpAnswers, [branch]: fa };
+    updated[index] = item;
     setItems(updated);
   };
 
@@ -492,6 +608,7 @@ const ChecklistSection = ({ goBack, site, user }) => {
     if (!selectedChecklist) return;
 
     try {
+      // stamp metadata on the template
       await updateDoc(doc(db, "checklists", selectedChecklist.id), {
         lastCompletedAt: Timestamp.now(),
         lastCompletedBy: personName,
@@ -502,7 +619,7 @@ const ChecklistSection = ({ goBack, site, user }) => {
         checklistId: selectedChecklist.id,
         title: selectedChecklist.title,
         person: personName,
-        questions: items,
+        questions: items.map(withQuestionDefaults),
         site,
         createdAt: now,
         frequency: selectedChecklist.frequency || "Ad hoc",
@@ -511,11 +628,12 @@ const ChecklistSection = ({ goBack, site, user }) => {
       const docRef = await addDoc(completedCollectionRef, completedEntry);
       setCompleted((prev) => [{ id: docRef.id, ...completedEntry }, ...prev]);
 
+      // clean up draft for this run
       if (draftId) {
         await deleteDoc(doc(db, "checklistDrafts", draftId));
         setDraftId(null);
       }
-      await refreshDrafts();
+      await refreshDraftsForPerson();
 
       setSelectedChecklist(null);
       setItems([]);
@@ -532,6 +650,7 @@ const ChecklistSection = ({ goBack, site, user }) => {
       await deleteDoc(doc(db, "checklists", cl.id));
       setChecklists((prev) => prev.filter((c) => c.id !== cl.id));
 
+      // If there was a draft for this checklist, also remove it locally
       if (draftMap[cl.id]) {
         try {
           await deleteDoc(doc(db, "checklistDrafts", draftMap[cl.id].id));
@@ -564,7 +683,7 @@ const ChecklistSection = ({ goBack, site, user }) => {
 
   const viewCompleted = (c) => {
     setViewingCompleted(c);
-    setItems(c.questions.map((q) => ({ ...q })));
+    setItems(c.questions.map(withQuestionDefaults));
     setSelectedChecklist(null);
     setDraftId(null);
   };
@@ -590,6 +709,43 @@ const ChecklistSection = ({ goBack, site, user }) => {
   };
 
   // ---------- Export ----------
+  // Recursively write a question and (if present) its relevant follow-up
+  const writeQuestionBlock = (container, q, idx) => {
+    const qEl = document.createElement("p");
+    qEl.style.margin = "0 0 8px 0";
+    const ans = q.answer || "N/A";
+    const corrMain =
+      needsCorrective(q.correctiveOn, q.answer) && q.corrective
+        ? ` — Corrective: ${q.corrective}`
+        : "";
+    qEl.innerText = `${idx + 1}. ${q.text} — Answer: ${ans}${corrMain}`;
+    container.appendChild(qEl);
+
+    if (q.answer === "Yes" && q.followUps?.yes?.enabled && q.followUps.yes.text) {
+      const f = q.followUps.yes;
+      const fa = q.followUpAnswers?.yes ?? {};
+      const sub = document.createElement("p");
+      sub.style.margin = "0 0 6px 18px";
+      const fCorr =
+        needsCorrective(f.correctiveOn, fa.answer) && fa.corrective
+          ? ` — Corrective: ${fa.corrective}`
+          : "";
+      sub.innerText = `↳ ${f.text} — Answer: ${fa.answer || "N/A"}${fCorr}`;
+      container.appendChild(sub);
+    } else if (q.answer === "No" && q.followUps?.no?.enabled && q.followUps.no.text) {
+      const f = q.followUps.no;
+      const fa = q.followUpAnswers?.no ?? {};
+      const sub = document.createElement("p");
+      sub.style.margin = "0 0 6px 18px";
+      const fCorr =
+        needsCorrective(f.correctiveOn, fa.answer) && fa.corrective
+          ? ` — Corrective: ${fa.corrective}`
+          : "";
+      sub.innerText = `↳ ${f.text} — Answer: ${fa.answer || "N/A"}${fCorr}`;
+      container.appendChild(sub);
+    }
+  };
+
   const exportChecklistToPDF = async (
     title,
     questions,
@@ -616,12 +772,7 @@ const ChecklistSection = ({ goBack, site, user }) => {
     element.appendChild(subTitleEl);
 
     questions.forEach((q, idx) => {
-      const qEl = document.createElement("p");
-      qEl.style.margin = "0 0 8px 0";
-      qEl.innerText = `${idx + 1}. ${q.text} — Answer: ${q.answer || "N/A"}${
-        q.answer === "No" && q.corrective ? ` — Corrective: ${q.corrective}` : ""
-      }`;
-      element.appendChild(qEl);
+      writeQuestionBlock(element, withQuestionDefaults(q), idx);
     });
 
     document.body.appendChild(element);
@@ -664,13 +815,8 @@ const ChecklistSection = ({ goBack, site, user }) => {
       subTitle.style.margin = "16px 0 8px 0";
       element.appendChild(subTitle);
 
-      c.questions.forEach((q, idx) => {
-        const qEl = document.createElement("p");
-        qEl.style.margin = "0 0 6px 0";
-        qEl.innerText = `${idx + 1}. ${q.text} — Answer: ${q.answer || "N/A"}${
-          q.answer === "No" && q.corrective ? ` — Corrective: ${q.corrective}` : ""
-        }`;
-        element.appendChild(qEl);
+      (c.questions || []).forEach((q, idx) => {
+        writeQuestionBlock(element, withQuestionDefaults(q), idx);
       });
 
       element.appendChild(document.createElement("hr"));
@@ -772,55 +918,110 @@ const ChecklistSection = ({ goBack, site, user }) => {
     </h2>
   );
 
-  // ---------- Render helpers ----------
-  const renderChecklistItemsRun = (editable = true) =>
-    items.map((item, index) => {
-      const yesActive = item.answer === "Yes";
-      const noActive = item.answer === "No";
+  // ---------- Small UI helpers ----------
+  const CorrectiveRuleSelect = ({ value, onChange }) => (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      style={{
+        padding: "8px 10px",
+        fontSize: "13px",
+        borderRadius: "8px",
+        border: "1px solid #e5e7eb",
+        background: "#fff",
+      }}
+    >
+      <option value="none">Corrective: None</option>
+      <option value="yes">Corrective: On Yes</option>
+      <option value="no">Corrective: On No</option>
+      <option value="both">Corrective: Yes or No</option>
+    </select>
+  );
 
+  const AnswerButtons = ({ active, onPick }) => (
+    <div style={{ display: "flex", gap: 8 }}>
+      <Button
+        kind={active === "Yes" ? "success" : "subtle"}
+        onClick={() => onPick("Yes")}
+        style={{ border: active === "Yes" ? "1px solid #059669" : "1px solid #e5e7eb" }}
+      >
+        Yes
+      </Button>
+      <Button
+        kind={active === "No" ? "danger" : "subtle"}
+        onClick={() => onPick("No")}
+        style={{ border: active === "No" ? "1px solid #ef4444" : "1px solid #e5e7eb" }}
+      >
+        No
+      </Button>
+      <Button
+        kind={active === "N/A" ? "neutral" : "subtle"}
+        onClick={() => onPick("N/A")}
+        style={{ border: active === "N/A" ? "1px solid #9ca3af" : "1px solid #e5e7eb" }}
+      >
+        N/A
+      </Button>
+    </div>
+  );
+
+  // ---------- Render helpers ----------
+  const renderFollowUpRun = (item, index, branch, editable) => {
+    const cfg = item.followUps?.[branch];
+    if (!cfg?.enabled || !cfg?.text) return null;
+
+    const ans = item.followUpAnswers?.[branch]?.answer ?? null;
+    const correctiveVal = item.followUpAnswers?.[branch]?.corrective ?? "";
+
+    return (
+      <div style={{ marginTop: 10, paddingLeft: 14, borderLeft: "3px solid #e5e7eb" }}>
+        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+          <div style={{ flex: 1, color: "#111" }}>↳ {cfg.text}</div>
+          <AnswerButtons
+            active={ans}
+            onPick={editable ? (value) => handleFollowUpAnswer(index, branch, value) : () => {}}
+          />
+        </div>
+        {needsCorrective(cfg.correctiveOn, ans) && (
+          <input
+            type="text"
+            placeholder="Corrective action"
+            value={correctiveVal}
+            onChange={
+              editable ? (e) => handleFollowUpCorrective(index, branch, e.target.value) : undefined
+            }
+            readOnly={!editable}
+            style={{
+              marginTop: "10px",
+              padding: "10px 12px",
+              borderRadius: "10px",
+              width: "100%",
+              border: "1px solid #e5e7eb",
+              outline: "none",
+              fontSize: "14px",
+            }}
+          />
+        )}
+      </div>
+    );
+  };
+
+  const renderChecklistItemsRun = (editable = true) =>
+    items.map((itemRaw, index) => {
+      const item = withQuestionDefaults(itemRaw);
+      const ans = item.answer;
       return (
         <Card key={index} hoverable={false} style={{ margin: "10px 0" }}>
           <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
             <div style={{ flex: 1, color: "#111" }}>{item.text}</div>
-
-            <div style={{ display: "flex", gap: 8 }}>
-              <Button
-                kind={yesActive ? "success" : "subtle"}
-                onClick={
-                  editable ? () => handleAnswerChange(index, "Yes") : undefined
-                }
-                style={{
-                  border: yesActive
-                    ? "1px solid #059669"
-                    : "1px solid #e5e7eb",
-                }}
-              >
-                Yes
-              </Button>
-              <Button
-                kind={noActive ? "danger" : "subtle"}
-                onClick={
-                  editable ? () => handleAnswerChange(index, "No") : undefined
-                }
-                style={{
-                  border: noActive ? "1px solid #ef4444" : "1px solid #e5e7eb",
-                }}
-              >
-                No
-              </Button>
-            </div>
+            <AnswerButtons active={ans} onPick={editable ? (v) => handleAnswerChange(index, v) : () => {}} />
           </div>
 
-          {item.answer === "No" && (
+          {needsCorrective(item.correctiveOn, ans) && (
             <input
               type="text"
               placeholder="Corrective action"
               value={item.corrective}
-              onChange={
-                editable
-                  ? (e) => handleCorrectiveChange(index, e.target.value)
-                  : undefined
-              }
+              onChange={editable ? (e) => handleCorrectiveChange(index, e.target.value) : undefined}
               readOnly={!editable}
               style={{
                 marginTop: "12px",
@@ -833,38 +1034,179 @@ const ChecklistSection = ({ goBack, site, user }) => {
               }}
             />
           )}
+
+          {/* Follow-up branching */}
+          {ans === "Yes" && renderFollowUpRun(item, index, "yes", editable)}
+          {ans === "No" && renderFollowUpRun(item, index, "no", editable)}
         </Card>
       );
     });
 
   const renderAuthoringItems = (list, onUpdate, onRemove) =>
-    list.map((item, index) => (
-      <Card key={index} hoverable={false} style={{ margin: "10px 0" }}>
-        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-          <input
-            type="text"
-            value={item.text}
-            onChange={(e) => onUpdate(index, e.target.value)}
-            placeholder={`Question ${index + 1}`}
+    list.map((raw, index) => {
+      const item = withQuestionDefaults(raw);
+      return (
+        <Card key={index} hoverable={false} style={{ margin: "10px 0" }}>
+          <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+            <input
+              type="text"
+              value={item.text}
+              onChange={(e) => onUpdate(index, { ...item, text: e.target.value })}
+              placeholder={`Question ${index + 1}`}
+              style={{
+                padding: "12px 14px",
+                fontSize: "15px",
+                borderRadius: "10px",
+                border: "1px solid #e5e7eb",
+                outline: "none",
+                flex: 1,
+                minWidth: 240,
+              }}
+            />
+            <CorrectiveRuleSelect
+              value={item.correctiveOn}
+              onChange={(val) => onUpdate(index, { ...item, correctiveOn: val })}
+            />
+            <Button kind="danger" onClick={() => onRemove(index)} style={{ padding: "10px 12px" }}>
+              Remove
+            </Button>
+          </div>
+
+          {/* Follow-up config */}
+          <div
             style={{
-              padding: "12px 14px",
-              fontSize: "15px",
-              borderRadius: "10px",
+              marginTop: 10,
+              padding: "10px",
+              background: "#f9fafb",
               border: "1px solid #e5e7eb",
-              outline: "none",
-              flex: 1,
+              borderRadius: 10,
             }}
-          />
-          <Button
-            kind="danger"
-            onClick={() => onRemove(index)}
-            style={{ padding: "10px 12px" }}
           >
-            Remove
-          </Button>
-        </div>
-      </Card>
-    ));
+            <div style={{ fontSize: 13, color: "#374151", fontWeight: 700, marginBottom: 8 }}>
+              Follow-up (optional)
+            </div>
+
+            {/* On YES */}
+            <div style={{ display: "grid", gridTemplateColumns: "auto 1fr auto", gap: 8, alignItems: "center", marginBottom: 8 }}>
+              <label style={{ fontSize: 13, color: "#111", minWidth: 80 }}>On Yes:</label>
+              <input
+                type="text"
+                value={item.followUps.yes.text}
+                onChange={(e) =>
+                  onUpdate(index, {
+                    ...item,
+                    followUps: {
+                      ...item.followUps,
+                      yes: { ...item.followUps.yes, text: e.target.value },
+                    },
+                  })
+                }
+                placeholder="Follow-up question to ask when answer is Yes"
+                style={{
+                  padding: "10px 12px",
+                  borderRadius: 10,
+                  border: "1px solid #e5e7eb",
+                  outline: "none",
+                }}
+              />
+              <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                <input
+                  id={`yes-enabled-${index}`}
+                  type="checkbox"
+                  checked={item.followUps.yes.enabled}
+                  onChange={(e) =>
+                    onUpdate(index, {
+                      ...item,
+                      followUps: {
+                        ...item.followUps,
+                        yes: { ...item.followUps.yes, enabled: e.target.checked },
+                      },
+                    })
+                  }
+                />
+                <label htmlFor={`yes-enabled-${index}`} style={{ fontSize: 12 }}>
+                  Enable
+                </label>
+              </div>
+              <div />
+              <div style={{ gridColumn: "2 / span 2" }}>
+                <CorrectiveRuleSelect
+                  value={item.followUps.yes.correctiveOn}
+                  onChange={(val) =>
+                    onUpdate(index, {
+                      ...item,
+                      followUps: {
+                        ...item.followUps,
+                        yes: { ...item.followUps.yes, correctiveOn: val },
+                      },
+                    })
+                  }
+                />
+              </div>
+            </div>
+
+            {/* On NO */}
+            <div style={{ display: "grid", gridTemplateColumns: "auto 1fr auto", gap: 8, alignItems: "center" }}>
+              <label style={{ fontSize: 13, color: "#111", minWidth: 80 }}>On No:</label>
+              <input
+                type="text"
+                value={item.followUps.no.text}
+                onChange={(e) =>
+                  onUpdate(index, {
+                    ...item,
+                    followUps: {
+                      ...item.followUps,
+                      no: { ...item.followUps.no, text: e.target.value },
+                    },
+                  })
+                }
+                placeholder="Follow-up question to ask when answer is No"
+                style={{
+                  padding: "10px 12px",
+                  borderRadius: 10,
+                  border: "1px solid #e5e7eb",
+                  outline: "none",
+                }}
+              />
+              <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                <input
+                  id={`no-enabled-${index}`}
+                  type="checkbox"
+                  checked={item.followUps.no.enabled}
+                  onChange={(e) =>
+                    onUpdate(index, {
+                      ...item,
+                      followUps: {
+                        ...item.followUps,
+                        no: { ...item.followUps.no, enabled: e.target.checked },
+                      },
+                    })
+                  }
+                />
+                <label htmlFor={`no-enabled-${index}`} style={{ fontSize: 12 }}>
+                  Enable
+                </label>
+              </div>
+              <div />
+              <div style={{ gridColumn: "2 / span 2" }}>
+                <CorrectiveRuleSelect
+                  value={item.followUps.no.correctiveOn}
+                  onChange={(val) =>
+                    onUpdate(index, {
+                      ...item,
+                      followUps: {
+                        ...item.followUps,
+                        no: { ...item.followUps.no, correctiveOn: val },
+                      },
+                    })
+                  }
+                />
+              </div>
+            </div>
+          </div>
+        </Card>
+      );
+    });
 
   // ---------- Main Render ----------
   return (
@@ -1215,7 +1557,7 @@ const ChecklistSection = ({ goBack, site, user }) => {
             <span style={freqChip(newFrequency)}>{newFrequency}</span>
           </SectionTitle>
           <div style={{ color: "#6b7280", marginBottom: 10 }}>
-            Add your questions. You can remove or edit them before saving.
+            Add your questions, set corrective rules, and optional follow-ups.
           </div>
 
           {renderAuthoringItems(items, updateItemAuthor, removeItemAuthor)}
@@ -1262,7 +1604,7 @@ const ChecklistSection = ({ goBack, site, user }) => {
         <Card hoverable={false}>
           <SectionTitle>Edit Checklist</SectionTitle>
           <div style={{ color: "#6b7280", marginBottom: 10 }}>
-            Update the title, frequency, and questions below.
+            Update the title, frequency, questions, corrective rules, and follow-ups.
           </div>
 
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
