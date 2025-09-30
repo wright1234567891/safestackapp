@@ -19,8 +19,9 @@ import html2canvas from "html2canvas";
 
 // ---------- Helpers ----------
 const formatTimestamp = (ts) => {
-  if (!ts?.toDate) return "";
-  return ts.toDate().toLocaleString();
+  if (!ts) return "";
+  const d = ts?.toDate ? ts.toDate() : ts instanceof Date ? ts : null;
+  return d ? d.toLocaleString() : "";
 };
 
 // Subtle shadow + elevation helpers
@@ -56,9 +57,26 @@ const freqChip = (f) => {
   }
 };
 
+const tinyDraftChip = {
+  marginLeft: 6,
+  padding: "2px 8px",
+  borderRadius: 999,
+  fontSize: 11,
+  fontWeight: 800,
+  background: "#fff7ed",
+  color: "#9a3412",
+  border: "1px solid #fed7aa",
+  display: "inline-block",
+};
+
+// ---------- Component ----------
 const ChecklistSection = ({ goBack, site, user }) => {
   const [checklists, setChecklists] = useState([]);
   const [completed, setCompleted] = useState([]);
+
+  // DRAFTS
+  const [drafts, setDrafts] = useState([]); // list of draft docs
+  const [draftMap, setDraftMap] = useState({}); // checklistId -> draft
 
   // Authoring state (Create)
   const [adding, setAdding] = useState(false);
@@ -75,7 +93,6 @@ const ChecklistSection = ({ goBack, site, user }) => {
   const [editItems, setEditItems] = useState([]);
   const [editNewItem, setEditNewItem] = useState("");
 
-  // keep focus steady on the “new question” field
   const newItemRef = useRef(null);
   const editNewItemRef = useRef(null);
 
@@ -83,11 +100,12 @@ const ChecklistSection = ({ goBack, site, user }) => {
   const [selectedChecklist, setSelectedChecklist] = useState(null);
   const [viewingCompleted, setViewingCompleted] = useState(null);
 
-  // Draft state for the currently opened checklist
+  // Track a draft id while running a checklist
   const [draftId, setDraftId] = useState(null);
 
-  // Adjust if user is an object in your app; this mirrors your current approach.
-  const isManager = ["Chris", "Chloe"].includes(user);
+  // Adjust to your auth model if user is an object
+  const personName = typeof user === "string" ? user : user?.displayName || "Unknown";
+  const isManager = ["Chris", "Chloe"].includes(personName);
 
   // Firestore refs
   const checklistCollectionRef = collection(db, "checklists");
@@ -99,6 +117,7 @@ const ChecklistSection = ({ goBack, site, user }) => {
     if (!site) return;
 
     const fetchData = async () => {
+      // Checklists
       try {
         const qChecklist = query(
           checklistCollectionRef,
@@ -107,12 +126,9 @@ const ChecklistSection = ({ goBack, site, user }) => {
         );
         const checklistSnapshot = await getDocs(qChecklist);
         setChecklists(checklistSnapshot.docs.map((d) => ({ id: d.id, ...d.data() })));
-      } catch (err) {
+      } catch {
         try {
-          const qChecklistFallback = query(
-            checklistCollectionRef,
-            where("site", "==", site)
-          );
+          const qChecklistFallback = query(checklistCollectionRef, where("site", "==", site));
           const snap = await getDocs(qChecklistFallback);
           const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
           rows.sort((a, b) => {
@@ -127,6 +143,7 @@ const ChecklistSection = ({ goBack, site, user }) => {
         }
       }
 
+      // Completed
       try {
         const qCompleted = query(
           completedCollectionRef,
@@ -135,12 +152,9 @@ const ChecklistSection = ({ goBack, site, user }) => {
         );
         const completedSnapshot = await getDocs(qCompleted);
         setCompleted(completedSnapshot.docs.map((d) => ({ id: d.id, ...d.data() })));
-      } catch (err) {
+      } catch {
         try {
-          const qCompletedFallback = query(
-            completedCollectionRef,
-            where("site", "==", site)
-          );
+          const qCompletedFallback = query(completedCollectionRef, where("site", "==", site));
           const snap = await getDocs(qCompletedFallback);
           const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
           rows.sort((a, b) => {
@@ -154,11 +168,35 @@ const ChecklistSection = ({ goBack, site, user }) => {
           setCompleted([]);
         }
       }
+
+      // Drafts (NEW)
+      try {
+        const qDrafts = query(
+          draftsCollectionRef,
+          where("site", "==", site),
+          where("person", "==", personName),
+          orderBy("updatedAt", "desc")
+        );
+        const snap = await getDocs(qDrafts);
+        const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        setDrafts(list);
+        // Build a quick lookup by checklistId
+        const m = {};
+        list.forEach((d) => {
+          if (d.checklistId) m[d.checklistId] = d;
+        });
+        setDraftMap(m);
+      } catch (e) {
+        console.warn("Error fetching drafts:", e?.message);
+        setDrafts([]);
+        setDraftMap({});
+      }
     };
 
     fetchData();
     resetView();
-  }, [site]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [site, personName]);
 
   const siteChecklists = checklists;
   const siteCompleted = completed;
@@ -178,10 +216,7 @@ const ChecklistSection = ({ goBack, site, user }) => {
   // ---------- Authoring (Create) ----------
   const addItemAuthor = () => {
     if (!newItem.trim()) return;
-    setItems((prev) => [
-      ...prev,
-      { text: newItem.trim(), answer: null, corrective: "" },
-    ]);
+    setItems((prev) => [...prev, { text: newItem.trim(), answer: null, corrective: "" }]);
     setNewItem("");
     requestAnimationFrame(() => newItemRef.current?.focus());
   };
@@ -208,7 +243,7 @@ const ChecklistSection = ({ goBack, site, user }) => {
       frequency: newFrequency || "Ad hoc",
       questions: items,
       createdAt: Timestamp.now(),
-      person: user || "Unknown",
+      person: personName,
     };
 
     try {
@@ -231,7 +266,6 @@ const ChecklistSection = ({ goBack, site, user }) => {
     setEditTitle(cl.title || "");
     setEditFrequency(cl.frequency || "Ad hoc");
     setEditItems((Array.isArray(cl.questions) ? cl.questions : []).map((q) => ({ ...q })));
-    // Leave other modes
     setAdding(false);
     setTitleSet(false);
     setSelectedChecklist(null);
@@ -241,10 +275,7 @@ const ChecklistSection = ({ goBack, site, user }) => {
 
   const addEditItem = () => {
     if (!editNewItem.trim()) return;
-    setEditItems((prev) => [
-      ...prev,
-      { text: editNewItem.trim(), answer: null, corrective: "" },
-    ]);
+    setEditItems((prev) => [...prev, { text: editNewItem.trim(), answer: null, corrective: "" }]);
     setEditNewItem("");
     requestAnimationFrame(() => editNewItemRef.current?.focus());
   };
@@ -271,17 +302,12 @@ const ChecklistSection = ({ goBack, site, user }) => {
         frequency: editFrequency || "Ad hoc",
         questions: editItems,
         updatedAt: Timestamp.now(),
-        updatedBy: user || "Unknown",
+        updatedBy: personName,
       });
       setChecklists((prev) =>
         prev.map((c) =>
           c.id === editingId
-            ? {
-                ...c,
-                title: editTitle.trim(),
-                frequency: editFrequency || "Ad hoc",
-                questions: editItems,
-              }
+            ? { ...c, title: editTitle.trim(), frequency: editFrequency || "Ad hoc", questions: editItems }
             : c
         )
       );
@@ -310,7 +336,7 @@ const ChecklistSection = ({ goBack, site, user }) => {
         draftsCollectionRef,
         where("site", "==", site),
         where("checklistId", "==", cl.id),
-        where("person", "==", user || "Unknown"),
+        where("person", "==", personName),
         orderBy("updatedAt", "desc"),
         limit(1)
       );
@@ -335,13 +361,13 @@ const ChecklistSection = ({ goBack, site, user }) => {
 
   const saveDraft = async () => {
     if (!selectedChecklist) return;
-
-    const basePayload = {
+    const payload = {
       site,
       checklistId: selectedChecklist.id,
       title: selectedChecklist.title,
-      person: user || "Unknown",
+      person: personName,
       questions: items,
+      createdAt: draftId ? undefined : Timestamp.now(),
       updatedAt: Timestamp.now(),
       frequency: selectedChecklist.frequency || "Ad hoc",
       status: "draft",
@@ -349,16 +375,26 @@ const ChecklistSection = ({ goBack, site, user }) => {
 
     try {
       if (draftId) {
-        // Update existing draft (no createdAt)
-        await updateDoc(doc(db, "checklistDrafts", draftId), basePayload);
+        await updateDoc(doc(db, "checklistDrafts", draftId), payload);
       } else {
-        // Create new draft (add createdAt only here)
-        const ref = await addDoc(draftsCollectionRef, {
-          ...basePayload,
-          createdAt: Timestamp.now(),
-        });
+        const ref = await addDoc(draftsCollectionRef, payload);
         setDraftId(ref.id);
       }
+      // Refresh the draft list/badges
+      const qDrafts = query(
+        draftsCollectionRef,
+        where("site", "==", site),
+        where("person", "==", personName),
+        orderBy("updatedAt", "desc")
+      );
+      const snap = await getDocs(qDrafts);
+      const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      setDrafts(list);
+      const m = {};
+      list.forEach((d) => {
+        if (d.checklistId) m[d.checklistId] = d;
+      });
+      setDraftMap(m);
       alert("Draft saved.");
     } catch (e) {
       console.error("Error saving draft:", e);
@@ -367,10 +403,26 @@ const ChecklistSection = ({ goBack, site, user }) => {
   };
 
   const discardDraft = async () => {
-    if (!draftId) return;
     try {
-      await deleteDoc(doc(db, "checklistDrafts", draftId));
+      if (draftId) {
+        await deleteDoc(doc(db, "checklistDrafts", draftId));
+      }
       setDraftId(null);
+      // Also update global list/badges
+      const qDrafts = query(
+        draftsCollectionRef,
+        where("site", "==", site),
+        where("person", "==", personName),
+        orderBy("updatedAt", "desc")
+      );
+      const snap = await getDocs(qDrafts);
+      const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      setDrafts(list);
+      const m = {};
+      list.forEach((d) => {
+        if (d.checklistId) m[d.checklistId] = d;
+      });
+      setDraftMap(m);
     } catch (e) {
       console.error("Error discarding draft:", e);
     }
@@ -378,11 +430,7 @@ const ChecklistSection = ({ goBack, site, user }) => {
 
   // ---------- Running (complete answers) ----------
   const openChecklist = async (cl) => {
-    const freshQuestions = (cl.questions || []).map((q) => ({
-      ...q,
-      answer: null,
-      corrective: "",
-    }));
+    const freshQuestions = (cl.questions || []).map((q) => ({ ...q, answer: null, corrective: "" }));
     setSelectedChecklist(cl);
     setItems(freshQuestions);
     setAdding(false);
@@ -391,7 +439,29 @@ const ChecklistSection = ({ goBack, site, user }) => {
     setViewingCompleted(null);
     setDraftId(null);
 
+    // Try to load the latest draft for this user/checklist and override if found
     await loadLatestDraft(cl);
+  };
+
+  const resumeDraft = async (draft) => {
+    // Find the source checklist (for title/frequency)
+    const cl = siteChecklists.find((c) => c.id === draft.checklistId);
+    if (cl) {
+      setSelectedChecklist(cl);
+    } else {
+      // Fall back to a minimal shell so you can still submit
+      setSelectedChecklist({
+        id: draft.checklistId,
+        title: draft.title || "Checklist",
+        frequency: draft.frequency || "Ad hoc",
+      });
+    }
+    setItems((draft.questions || []).map((q) => ({ ...q })));
+    setAdding(false);
+    setTitleSet(false);
+    setEditingId(null);
+    setViewingCompleted(null);
+    setDraftId(draft.id);
   };
 
   const handleAnswerChange = (index, value) => {
@@ -410,17 +480,17 @@ const ChecklistSection = ({ goBack, site, user }) => {
     if (!selectedChecklist) return;
 
     try {
-      // keep the template clean; just stamp metadata
+      // Do not overwrite the template questions; just stamp metadata
       await updateDoc(doc(db, "checklists", selectedChecklist.id), {
         lastCompletedAt: Timestamp.now(),
-        lastCompletedBy: user || "Unknown",
+        lastCompletedBy: personName,
       });
 
       const now = Timestamp.now();
       const completedEntry = {
         checklistId: selectedChecklist.id,
         title: selectedChecklist.title,
-        person: user || "Unknown",
+        person: personName,
         questions: items,
         site,
         createdAt: now,
@@ -430,10 +500,26 @@ const ChecklistSection = ({ goBack, site, user }) => {
       const docRef = await addDoc(completedCollectionRef, completedEntry);
       setCompleted((prev) => [{ id: docRef.id, ...completedEntry }, ...prev]);
 
+      // If a draft existed for this run, remove it
       if (draftId) {
         await deleteDoc(doc(db, "checklistDrafts", draftId));
         setDraftId(null);
       }
+      // Refresh draft list/badges
+      const qDrafts = query(
+        draftsCollectionRef,
+        where("site", "==", site),
+        where("person", "==", personName),
+        orderBy("updatedAt", "desc")
+      );
+      const snap = await getDocs(qDrafts);
+      const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      setDrafts(list);
+      const m = {};
+      list.forEach((d) => {
+        if (d.checklistId) m[d.checklistId] = d;
+      });
+      setDraftMap(m);
 
       setSelectedChecklist(null);
       setItems([]);
@@ -448,6 +534,18 @@ const ChecklistSection = ({ goBack, site, user }) => {
     try {
       await deleteDoc(doc(db, "checklists", cl.id));
       setChecklists((prev) => prev.filter((c) => c.id !== cl.id));
+
+      // If there was a draft for this checklist, also remove it locally
+      if (draftMap[cl.id]) {
+        try {
+          await deleteDoc(doc(db, "checklistDrafts", draftMap[cl.id].id));
+        } catch {}
+        const updatedDrafts = drafts.filter((d) => d.checklistId !== cl.id);
+        setDrafts(updatedDrafts);
+        const m = {};
+        updatedDrafts.forEach((d) => (m[d.checklistId] = d));
+        setDraftMap(m);
+      }
     } catch (error) {
       console.error("Error deleting checklist:", error);
     }
@@ -491,12 +589,7 @@ const ChecklistSection = ({ goBack, site, user }) => {
   };
 
   // ---------- Export ----------
-  const exportChecklistToPDF = async (
-    title,
-    questions,
-    completedBy = user,
-    ts = Timestamp.now()
-  ) => {
+  const exportChecklistToPDF = async (title, questions, completedBy = personName, ts = Timestamp.now()) => {
     const element = document.createElement("div");
     element.style.padding = "24px";
     element.style.backgroundColor = "#fff";
@@ -557,9 +650,7 @@ const ChecklistSection = ({ goBack, site, user }) => {
 
     siteCompleted.forEach((c, cIdx) => {
       const subTitle = document.createElement("h3");
-      subTitle.innerText = `${cIdx + 1}. ${c.title} (Completed by ${c.person} at ${formatTimestamp(
-        c.createdAt
-      )})`;
+      subTitle.innerText = `${cIdx + 1}. ${c.title} (Completed by ${c.person} at ${formatTimestamp(c.createdAt)})`;
       subTitle.style.margin = "16px 0 8px 0";
       element.appendChild(subTitle);
 
@@ -590,14 +681,7 @@ const ChecklistSection = ({ goBack, site, user }) => {
   };
 
   // ---------- UI primitives ----------
-  const Button = ({
-    children,
-    onClick,
-    kind = "neutral",
-    style = {},
-    tabIndex = 0,
-    type = "button",
-  }) => {
+  const Button = ({ children, onClick, kind = "neutral", style = {}, tabIndex = 0, type = "button" }) => {
     const palette = {
       neutral: { bg: "#f3f4f6", hover: "#e5e7eb", color: "#111" },
       primary: { bg: "#2563eb", hover: "#1d4ed8", color: "#fff" },
@@ -672,7 +756,6 @@ const ChecklistSection = ({ goBack, site, user }) => {
   );
 
   // ---------- Render helpers ----------
-  // For RUN/VIEW — shows Yes/No + corrective
   const renderChecklistItemsRun = (editable = true) =>
     items.map((item, index) => {
       const yesActive = item.answer === "Yes";
@@ -683,30 +766,24 @@ const ChecklistSection = ({ goBack, site, user }) => {
           <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
             <div style={{ flex: 1, color: "#111" }}>{item.text}</div>
 
-            {/* Toggle buttons for Yes/No */}
             <div style={{ display: "flex", gap: 8 }}>
               <Button
                 kind={yesActive ? "success" : "subtle"}
                 onClick={editable ? () => handleAnswerChange(index, "Yes") : undefined}
-                style={{
-                  border: yesActive ? "1px solid #059669" : "1px solid #e5e7eb",
-                }}
+                style={{ border: yesActive ? "1px solid #059669" : "1px solid #e5e7eb" }}
               >
                 Yes
               </Button>
               <Button
                 kind={noActive ? "danger" : "subtle"}
                 onClick={editable ? () => handleAnswerChange(index, "No") : undefined}
-                style={{
-                  border: noActive ? "1px solid #ef4444" : "1px solid #e5e7eb",
-                }}
+                style={{ border: noActive ? "1px solid #ef4444" : "1px solid #e5e7eb" }}
               >
                 No
               </Button>
             </div>
           </div>
 
-          {/* Corrective input when "No" */}
           {item.answer === "No" && (
             <input
               type="text"
@@ -729,37 +806,30 @@ const ChecklistSection = ({ goBack, site, user }) => {
       );
     });
 
-  // For CREATE/EDIT — text inputs for questions
   const renderAuthoringItems = (list, onUpdate, onRemove) =>
-    list.map((item, index) => {
-      return (
-        <Card key={index} hoverable={false} style={{ margin: "10px 0" }}>
-          <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-            <input
-              type="text"
-              value={item.text}
-              onChange={(e) => onUpdate(index, e.target.value)}
-              placeholder={`Question ${index + 1}`}
-              style={{
-                padding: "12px 14px",
-                fontSize: "15px",
-                borderRadius: "10px",
-                border: "1px solid #e5e7eb",
-                outline: "none",
-                flex: 1,
-              }}
-            />
-            <Button
-              kind="danger"
-              onClick={() => onRemove(index)}
-              style={{ padding: "10px 12px" }}
-            >
-              Remove
-            </Button>
-          </div>
-        </Card>
-      );
-    });
+    list.map((item, index) => (
+      <Card key={index} hoverable={false} style={{ margin: "10px 0" }}>
+        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+          <input
+            type="text"
+            value={item.text}
+            onChange={(e) => onUpdate(index, e.target.value)}
+            placeholder={`Question ${index + 1}`}
+            style={{
+              padding: "12px 14px",
+              fontSize: "15px",
+              borderRadius: "10px",
+              border: "1px solid #e5e7eb",
+              outline: "none",
+              flex: 1,
+            }}
+          />
+          <Button kind="danger" onClick={() => onRemove(index)} style={{ padding: "10px 12px" }}>
+            Remove
+          </Button>
+        </div>
+      </Card>
+    ));
 
   // ---------- Main Render ----------
   return (
@@ -782,14 +852,7 @@ const ChecklistSection = ({ goBack, site, user }) => {
         }}
       >
         <div style={{ textAlign: "left" }}>
-          <h1
-            style={{
-              fontSize: "28px",
-              color: "#111",
-              fontWeight: 700,
-              margin: 0,
-            }}
-          >
+          <h1 style={{ fontSize: "28px", color: "#111", fontWeight: 700, margin: 0 }}>
             {site} — Checklists
           </h1>
           <div style={{ fontSize: 13, color: "#6b7280", marginTop: 4 }}>
@@ -824,72 +887,61 @@ const ChecklistSection = ({ goBack, site, user }) => {
       {/* MAIN VIEW */}
       {!adding && !selectedChecklist && !viewingCompleted && !editingId && (
         <>
-          <SectionTitle>Your Checklists</SectionTitle>
-
-          {siteChecklists.length === 0 && (
-            <Card hoverable={false} style={{ textAlign: "center" }}>
-              <div style={{ color: "#6b7280" }}>
-                No checklists yet for this site.
-              </div>
-              {isManager && (
-                <Button
-                  kind="primary"
-                  onClick={() => setAdding(true)}
-                  style={{ marginTop: 12 }}
-                >
-                  Create your first checklist
-                </Button>
-              )}
-            </Card>
-          )}
-
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
-              gap: 14,
-            }}
-          >
-            {siteChecklists.map((cl) => (
-              <Card key={cl.id} onClick={() => openChecklist(cl)}>
-                <div style={{ paddingRight: 104 }}>
-                  <div
-                    style={{ fontWeight: 700, color: "#111", marginBottom: 6, display: "flex", alignItems: "center", flexWrap: "wrap", gap: 6 }}
-                  >
-                    {cl.title}
-                    <span style={freqChip(cl.frequency)}>{cl.frequency || "Ad hoc"}</span>
-                  </div>
-                  <div style={{ fontSize: 13, color: "#6b7280" }}>
-                    {Array.isArray(cl.questions) ? cl.questions.length : 0} question
-                    {Array.isArray(cl.questions) && cl.questions.length !== 1 ? "s" : ""}
-                  </div>
-                </div>
-
-                {isManager && (
-                  <>
+          {/* Your Drafts (NEW) */}
+          {drafts.length > 0 && (
+            <>
+              <SectionTitle>Your Drafts</SectionTitle>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+                  gap: 14,
+                }}
+              >
+                {drafts.map((d) => (
+                  <Card key={d.id}>
+                    <div style={{ paddingRight: 104 }}>
+                      <div style={{ fontWeight: 700, color: "#111", marginBottom: 6 }}>
+                        {d.title || "Checklist draft"}
+                        <span style={{ ...tinyDraftChip, marginLeft: 8 }}>Draft</span>
+                      </div>
+                      <div style={{ fontSize: 13, color: "#6b7280" }}>
+                        Updated: {formatTimestamp(d.updatedAt)}
+                      </div>
+                    </div>
                     <Button
                       kind="subtle"
                       onClick={(e) => {
                         e.stopPropagation();
-                        startEditChecklist(cl);
+                        resumeDraft(d);
                       }}
                       style={{
                         position: "absolute",
                         top: 12,
-                        right: 74,
+                        right: 90,
                         padding: "6px 10px",
                         borderRadius: 8,
                         fontSize: 12,
                         fontWeight: 700,
                       }}
                     >
-                      Edit
+                      Resume
                     </Button>
                     <Button
                       kind="danger"
-                      onClick={(e) => {
+                      onClick={async (e) => {
                         e.stopPropagation();
-                        deleteChecklist(cl);
+                        if (!window.confirm("Delete this draft?")) return;
+                        try {
+                          await deleteDoc(doc(db, "checklistDrafts", d.id));
+                          const updated = drafts.filter((x) => x.id !== d.id);
+                          setDrafts(updated);
+                          const m = {};
+                          updated.forEach((x) => (m[x.checklistId] = x));
+                          setDraftMap(m);
+                        } catch (err) {
+                          console.error("Error deleting draft:", err);
+                        }
                       }}
                       style={{
                         position: "absolute",
@@ -903,17 +955,113 @@ const ChecklistSection = ({ goBack, site, user }) => {
                     >
                       Delete
                     </Button>
-                  </>
-                )}
-              </Card>
-            ))}
+                  </Card>
+                ))}
+              </div>
+            </>
+          )}
+
+          <SectionTitle style={{ marginTop: drafts.length ? 24 : 0 }}>
+            Your Checklists
+          </SectionTitle>
+
+          {siteChecklists.length === 0 && (
+            <Card hoverable={false} style={{ textAlign: "center" }}>
+              <div style={{ color: "#6b7280" }}>No checklists yet for this site.</div>
+              {isManager && (
+                <Button kind="primary" onClick={() => setAdding(true)} style={{ marginTop: 12 }}>
+                  Create your first checklist
+                </Button>
+              )}
+            </Card>
+          )}
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+              gap: 14,
+            }}
+          >
+            {siteChecklists.map((cl) => {
+              const hasDraft = !!draftMap[cl.id];
+              return (
+                <Card key={cl.id} onClick={() => openChecklist(cl)}>
+                  <div style={{ paddingRight: 140 }}>
+                    <div
+                      style={{
+                        fontWeight: 700,
+                        color: "#111",
+                        marginBottom: 6,
+                        display: "flex",
+                        alignItems: "center",
+                        flexWrap: "wrap",
+                        gap: 6,
+                      }}
+                    >
+                      {cl.title}
+                      <span style={freqChip(cl.frequency)}>{cl.frequency || "Ad hoc"}</span>
+                      {hasDraft && <span style={tinyDraftChip}>Draft</span>}
+                    </div>
+                    <div style={{ fontSize: 13, color: "#6b7280" }}>
+                      {Array.isArray(cl.questions) ? cl.questions.length : 0} question
+                      {Array.isArray(cl.questions) && cl.questions.length !== 1 ? "s" : ""}
+                    </div>
+                    {hasDraft && (
+                      <div style={{ fontSize: 12, color: "#9a3412", marginTop: 6 }}>
+                        Last draft update: {formatTimestamp(draftMap[cl.id]?.updatedAt)}
+                      </div>
+                    )}
+                  </div>
+
+                  {isManager && (
+                    <>
+                      <Button
+                        kind="subtle"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          startEditChecklist(cl);
+                        }}
+                        style={{
+                          position: "absolute",
+                          top: 12,
+                          right: 96,
+                          padding: "6px 10px",
+                          borderRadius: 8,
+                          fontSize: 12,
+                          fontWeight: 700,
+                        }}
+                      >
+                        Edit
+                      </Button>
+                      <Button
+                        kind="danger"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          deleteChecklist(cl);
+                        }}
+                        style={{
+                          position: "absolute",
+                          top: 12,
+                          right: 12,
+                          padding: "6px 10px",
+                          borderRadius: 8,
+                          fontSize: 12,
+                          fontWeight: 700,
+                        }}
+                      >
+                        Delete
+                      </Button>
+                    </>
+                  )}
+                </Card>
+              );
+            })}
           </div>
 
           {siteCompleted.length > 0 && (
             <>
-              <SectionTitle style={{ marginTop: 24 }}>
-                Completed Checklists
-              </SectionTitle>
+              <SectionTitle style={{ marginTop: 24 }}>Completed Checklists</SectionTitle>
               <div
                 style={{
                   display: "grid",
@@ -936,9 +1084,7 @@ const ChecklistSection = ({ goBack, site, user }) => {
                         }}
                       >
                         {c.title}
-                        {c.frequency && (
-                          <span style={freqChip(c.frequency)}>{c.frequency}</span>
-                        )}
+                        {c.frequency && <span style={freqChip(c.frequency)}>{c.frequency}</span>}
                       </div>
                       <div style={{ fontSize: 13, color: "#6b7280" }}>
                         By {c.person} • {formatTimestamp(c.createdAt)}
@@ -1016,10 +1162,7 @@ const ChecklistSection = ({ goBack, site, user }) => {
             </select>
           </div>
           <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
-            <Button
-              kind="primary"
-              onClick={() => checklistTitle.trim() !== "" && setTitleSet(true)}
-            >
+            <Button kind="primary" onClick={() => checklistTitle.trim() !== "" && setTitleSet(true)}>
               Start Adding Questions
             </Button>
             <Button onClick={resetView}>Cancel</Button>
@@ -1027,7 +1170,7 @@ const ChecklistSection = ({ goBack, site, user }) => {
         </Card>
       )}
 
-      {/* ADD CHECKLIST — QUESTIONS STEP (Authoring items) */}
+      {/* ADD CHECKLIST — QUESTIONS STEP */}
       {adding && titleSet && !editingId && (
         <Card hoverable={false}>
           <SectionTitle>
@@ -1040,14 +1183,7 @@ const ChecklistSection = ({ goBack, site, user }) => {
 
           {renderAuthoringItems(items, updateItemAuthor, removeItemAuthor)}
 
-          <div
-            style={{
-              display: "flex",
-              gap: 10,
-              marginTop: 10,
-              alignItems: "center",
-            }}
-          >
+          <div style={{ display: "flex", gap: 10, marginTop: 10, alignItems: "center" }}>
             <input
               ref={newItemRef}
               type="text"
@@ -1084,7 +1220,7 @@ const ChecklistSection = ({ goBack, site, user }) => {
         </Card>
       )}
 
-      {/* EDIT CHECKLIST — full edit (title, frequency, questions) */}
+      {/* EDIT CHECKLIST */}
       {editingId && !adding && !selectedChecklist && !viewingCompleted && (
         <Card hoverable={false}>
           <SectionTitle>Edit Checklist</SectionTitle>
@@ -1131,14 +1267,7 @@ const ChecklistSection = ({ goBack, site, user }) => {
 
           {renderAuthoringItems(editItems, updateEditItem, removeEditItem)}
 
-          <div
-            style={{
-              display: "flex",
-              gap: 10,
-              marginTop: 10,
-              alignItems: "center",
-            }}
-          >
+          <div style={{ display: "flex", gap: 10, marginTop: 10, alignItems: "center" }}>
             <input
               ref={editNewItemRef}
               type="text"
