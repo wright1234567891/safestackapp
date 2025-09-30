@@ -38,6 +38,18 @@ const sites = [
   "Pop up Locations",
 ];
 
+/** ======== ADJUST IF YOUR COLLECTIONS/FIELDS DIFFER ======== */
+const COLLECTIONS = {
+  completedChecklists: "completed",      // { site, createdAt, questions:[{answer}] }
+  temperatureLogs: "temperatureLogs",    // { site, createdAt, inRange:boolean }
+  cleaningLogs: "cleaningLogs",          // { site, createdAt, status: "done"|"missed" }
+};
+const FIELDS = {
+  temp: { passKey: "inRange" },          // boolean
+  cleaning: { statusKey: "status", passValue: "done" },
+};
+/** ========================================================== */
+
 // ---- Small date helpers ----
 const toDate = (ts) => (ts?.toDate ? ts.toDate() : ts instanceof Date ? ts : null);
 const isSameDay = (a, b) =>
@@ -58,6 +70,13 @@ const withinLastDays = (d, days) => {
 
 const sameMonth = (a, b) =>
   a && b && a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth();
+
+const isToday = (d) => {
+  const dd = toDate(d);
+  if (!dd) return false;
+  const now = new Date();
+  return isSameDay(dd, now);
+};
 
 // Simple chip style
 const chip = (bg, fg) => ({
@@ -140,25 +159,30 @@ const SitePage = ({ user, onLogout }) => {
   // Local states
   const [checklists, setChecklists] = useState([]);
   const [completed, setCompleted] = useState([]);
+
+  // NEW: raw logs for temps/cleaning (site-scoped; we filter to "today" in mem)
+  const [tempLogs, setTempLogs] = useState([]);
+  const [cleanLogs, setCleanLogs] = useState([]);
+
+  // You already had these for sections; keeping them for child props usage
   const [tempChecks, setTempChecks] = useState([]);
   const [cleaningRecords, setCleaningRecords] = useState([]);
 
-  // Overview mode toggle
+  // Overview mode toggle (for scheduled checklist progress)
   const [overviewMode, setOverviewMode] = useState("ALL");
 
   const isMobile = useIsMobile();
 
-  // --- Live subscriptions for checklist overview (per selectedSite) ---
+  // --- Live subscriptions for site data ---
   useEffect(() => {
     if (!selectedSite) return;
 
-    // Checklists
+    // Checklists (templates)
     const qCL = query(collection(db, "checklists"), where("site", "==", selectedSite));
     const unsubCL = onSnapshot(
       qCL,
       (snap) => {
         const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-        // recent first (if no createdAt, keep order stable)
         rows.sort((a, b) => {
           const ta = a.createdAt?.toMillis?.() ?? 0;
           const tb = b.createdAt?.toMillis?.() ?? 0;
@@ -169,8 +193,8 @@ const SitePage = ({ user, onLogout }) => {
       () => setChecklists([])
     );
 
-    // Completed (no orderBy to avoid index requirements; sort in memory)
-    const qDone = query(collection(db, "completed"), where("site", "==", selectedSite));
+    // Completed checklist runs
+    const qDone = query(collection(db, COLLECTIONS.completedChecklists), where("site", "==", selectedSite));
     const unsubDone = onSnapshot(
       qDone,
       (snap) => {
@@ -185,13 +209,37 @@ const SitePage = ({ user, onLogout }) => {
       () => setCompleted([])
     );
 
+    // NEW: Temperature logs for this site
+    const qTemps = query(collection(db, COLLECTIONS.temperatureLogs), where("site", "==", selectedSite));
+    const unsubTemps = onSnapshot(
+      qTemps,
+      (snap) => {
+        const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        setTempLogs(rows);
+      },
+      () => setTempLogs([])
+    );
+
+    // NEW: Cleaning logs for this site
+    const qClean = query(collection(db, COLLECTIONS.cleaningLogs), where("site", "==", selectedSite));
+    const unsubClean = onSnapshot(
+      qClean,
+      (snap) => {
+        const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        setCleanLogs(rows);
+      },
+      () => setCleanLogs([])
+    );
+
     return () => {
       unsubCL();
       unsubDone();
+      unsubTemps();
+      unsubClean();
     };
   }, [selectedSite]);
 
-  // --- Compute “due” vs “done” by frequency ---
+  // --- Compute “due” vs “done” by frequency (scheduled checklist progress) ---
   const overview = useMemo(() => {
     const today = new Date();
 
@@ -221,7 +269,7 @@ const SitePage = ({ user, onLogout }) => {
     };
 
     for (const cl of checklists) {
-      const freq = (cl.frequency || "Ad hoc").toString().trim().toLowerCase(); // <- TRIM FIX
+      const freq = (cl.frequency || "Ad hoc").toString().trim().toLowerCase();
       if (!["daily", "weekly", "monthly"].includes(freq)) continue;
 
       const latest = getLatestForChecklist(cl);
@@ -271,11 +319,71 @@ const SitePage = ({ user, onLogout }) => {
     return { buckets, totalDue, totalDone, percent, label };
   }, [checklists, completed, overviewMode]);
 
+  /** ======= NEW: compute today's pass/fail across Checklists + Temps + Cleaning ======= */
+  const todayCompliance = useMemo(() => {
+    // Checklists: Yes + N/A = pass; No = fail (only count today's runs)
+    let clPass = 0;
+    let clTotal = 0;
+    completed.forEach((run) => {
+      const t = run.completedAt || run.createdAt;
+      if (!isToday(t)) return;
+      const qs = Array.isArray(run.questions) ? run.questions : [];
+      qs.forEach((q) => {
+        const ans = (q?.answer || "").toString().trim().toLowerCase();
+        if (ans) {
+          if (ans === "yes" || ans === "y" || ans === "n/a" || ans === "na") clPass += 1;
+          clTotal += 1;
+        }
+      });
+    });
+
+    // Temps: inRange boolean
+    let tPass = 0;
+    let tTotal = 0;
+    tempLogs.forEach((log) => {
+      if (!isToday(log.createdAt)) return;
+      if (typeof log[FIELDS.temp.passKey] === "boolean") {
+        if (log[FIELDS.temp.passKey]) tPass += 1;
+        tTotal += 1;
+      }
+    });
+
+    // Cleaning: status "done" vs anything else
+    let cPass = 0;
+    let cTotal = 0;
+    cleanLogs.forEach((log) => {
+      if (!isToday(log.createdAt)) return;
+      const status = (log?.[FIELDS.cleaning.statusKey] || "").toString().trim().toLowerCase();
+      if (status) {
+        if (status === String(FIELDS.cleaning.passValue).toLowerCase()) cPass += 1;
+        cTotal += 1;
+      }
+    });
+
+    const totalPass = clPass + tPass + cPass;
+    const total = clTotal + tTotal + cTotal;
+    const pct = total ? Math.round((totalPass / total) * 100) : 100;
+
+    const pctCl = clTotal ? Math.round((clPass / clTotal) * 100) : 0;
+    const pctT  = tTotal  ? Math.round((tPass  / tTotal)  * 100) : 0;
+    const pctC  = cTotal  ? Math.round((cPass  / cTotal)  * 100) : 0;
+
+    return {
+      totalPass, total, pct,
+      cl: { pass: clPass, total: clTotal, pct: pctCl },
+      t:  { pass: tPass,  total: tTotal,  pct: pctT },
+      c:  { pass: cPass,  total: cTotal,  pct: pctC },
+    };
+  }, [completed, tempLogs, cleanLogs]);
+  /** ================================================================================ */
+
   const resetSite = () => {
     setSelectedSite(null);
     setActiveSection(null);
     setChecklists([]);
     setCompleted([]);
+    setTempLogs([]);
+    setCleanLogs([]);
   };
 
   // Section routing
@@ -515,7 +623,7 @@ const SitePage = ({ user, onLogout }) => {
         {selectedSite}
       </h1>
 
-      {/* ==== Checklist Overview Card with Toggle ==== */}
+      {/* ==== Integrated Overview: Combined Compliance (today) + Scheduled Progress ==== */}
       <div
         className="overview-card"
         style={{
@@ -526,11 +634,48 @@ const SitePage = ({ user, onLogout }) => {
           boxShadow: "0 2px 6px rgba(0,0,0,0.08)",
         }}
       >
+        {/* LEFT: Combined today donut */}
         <div className="overview-left">
-          <Donut percent={percent} label={label} size={isMobile ? 110 : 130} stroke={isMobile ? 10 : 12} />
+          <Donut
+            percent={todayCompliance.pct}
+            label={`Overall today (${todayCompliance.total ? `${todayCompliance.totalPass}/${todayCompliance.total}` : "0/0"})`}
+            size={isMobile ? 110 : 130}
+            stroke={isMobile ? 10 : 12}
+          />
         </div>
 
-        <div className="overview-right" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        {/* RIGHT: Breakdown + scheduled toggle */}
+        <div className="overview-right" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          {/* Combined Today breakdown */}
+          <div style={{ fontWeight: 800, fontSize: 16, color: "#111" }}>Today’s Compliance</div>
+          <div style={{ display: "grid", gap: 8 }}>
+            <BreakdownRow
+              color="#2563eb"
+              label="Checklists"
+              pct={todayCompliance.cl.pct}
+              detail={`${todayCompliance.cl.pass}/${todayCompliance.cl.total} pass`}
+              hint="Yes + N/A count as pass"
+            />
+            <BreakdownRow
+              color="#ef4444"
+              label="Temperatures"
+              pct={todayCompliance.t.pct}
+              detail={`${todayCompliance.t.pass}/${todayCompliance.t.total} pass`}
+              hint="In-range entries"
+            />
+            <BreakdownRow
+              color="#10b981"
+              label="Cleaning"
+              pct={todayCompliance.c.pct}
+              detail={`${todayCompliance.c.pass}/${todayCompliance.c.total} pass`}
+              hint="Done vs missed"
+            />
+          </div>
+
+          {/* Divider */}
+          <div style={{ height: 1, background: "#e5e7eb", margin: "6px 0" }} />
+
+          {/* Scheduled Checklist Progress (your original toggle) */}
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
             <div style={{ fontWeight: 800, fontSize: 16, color: "#111" }}>Checklist Overview</div>
             <div style={{ display: "flex", gap: 8 }}>
@@ -564,10 +709,8 @@ const SitePage = ({ user, onLogout }) => {
             )}
           </div>
 
-          {/* tiny sanity line to help verify numbers */}
-          <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 6 }}>
-            Detected: {buckets.daily.total + buckets.weekly.total + buckets.monthly.total} scheduled •
-            Completed matched: {buckets.daily.done + buckets.weekly.done + buckets.monthly.done}
+          <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 2 }}>
+            Scheduled progress: {Math.round(percent)}% ({totalDone}/{totalDue || 0}) • {label}
           </div>
         </div>
       </div>
@@ -670,5 +813,18 @@ const SitePage = ({ user, onLogout }) => {
     </div>
   );
 };
+
+function BreakdownRow({ label, pct, detail, hint, color = "#2563eb" }) {
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "120px 1fr 70px", gap: 10, alignItems: "center" }}>
+      <div style={{ color: "#111", fontWeight: 700 }}>{label}</div>
+      <div style={{ height: 10, background: "#e5e7eb", borderRadius: 999, overflow: "hidden" }}>
+        <div style={{ width: `${pct}%`, height: "100%", background: color, transition: "width 0.6s ease" }} />
+      </div>
+      <div style={{ textAlign: "right", color: "#111", fontWeight: 700 }}>{pct}%</div>
+      <div style={{ gridColumn: "1 / span 3", fontSize: 11, color: "#6b7280" }}>{detail} • {hint}</div>
+    </div>
+  );
+}
 
 export default SitePage;
