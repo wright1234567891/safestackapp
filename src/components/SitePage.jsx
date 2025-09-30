@@ -17,7 +17,7 @@ import {
 } from "react-icons/fa";
 
 import { db } from "../firebase";
-import { collection, onSnapshot, query, where, orderBy } from "firebase/firestore";
+import { collection, onSnapshot, query, where } from "firebase/firestore";
 
 import EquipmentManager from "./EquipmentManager";
 import ChecklistSection from "./ChecklistSection";
@@ -45,6 +45,7 @@ const isSameDay = (a, b) =>
   a.getFullYear() === b.getFullYear() &&
   a.getMonth() === b.getMonth() &&
   a.getDate() === b.getDate();
+
 const withinLastDays = (d, days) => {
   const now = new Date();
   const end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999); // end of today
@@ -54,7 +55,9 @@ const withinLastDays = (d, days) => {
   const dd = toDate(d);
   return dd ? dd >= from && dd <= end : false;
 };
-const sameMonth = (a, b) => a && b && a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth();
+
+const sameMonth = (a, b) =>
+  a && b && a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth();
 
 // Simple chip style
 const chip = (bg, fg) => ({
@@ -121,17 +124,26 @@ const useIsMobile = (breakpoint = 520) => {
   return isMobile;
 };
 
+// normalize titles for fuzzy match fallback
+const norm = (s = "") =>
+  s
+    .toString()
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, " ")     // collapse spaces
+    .replace(/[^\w\s]/g, ""); // strip punctuation
+
 const SitePage = ({ user, onLogout }) => {
   const [selectedSite, setSelectedSite] = useState(null);
   const [activeSection, setActiveSection] = useState(null);
 
-  // Existing local states
+  // Local states
   const [checklists, setChecklists] = useState([]);
   const [completed, setCompleted] = useState([]);
   const [tempChecks, setTempChecks] = useState([]);
   const [cleaningRecords, setCleaningRecords] = useState([]);
 
-  // NEW: Overview mode toggle (ALL | DAILY | WEEKLY | MONTHLY)
+  // Overview mode toggle
   const [overviewMode, setOverviewMode] = useState("ALL");
 
   const isMobile = useIsMobile();
@@ -140,51 +152,42 @@ const SitePage = ({ user, onLogout }) => {
   useEffect(() => {
     if (!selectedSite) return;
 
-    const qCL = query(
-      collection(db, "checklists"),
-      where("site", "==", selectedSite),
-      orderBy("createdAt", "desc")
-    );
+    // Checklists
+    const qCL = query(collection(db, "checklists"), where("site", "==", selectedSite));
     const unsubCL = onSnapshot(
       qCL,
-      (snap) => setChecklists(snap.docs.map((d) => ({ id: d.id, ...d.data() }))),
+      (snap) => {
+        const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        // recent first (if no createdAt, keep order stable)
+        rows.sort((a, b) => {
+          const ta = a.createdAt?.toMillis?.() ?? 0;
+          const tb = b.createdAt?.toMillis?.() ?? 0;
+          return tb - ta;
+        });
+        setChecklists(rows);
+      },
       () => setChecklists([])
     );
 
-    // Completed with fallback (so donut still updates if index is missing)
-    const qDone = query(
-      collection(db, "completed"),
-      where("site", "==", selectedSite),
-      orderBy("createdAt", "desc")
-    );
-
-    let fallbackUnsub = null;
-
+    // Completed (no orderBy to avoid index requirements; sort in memory)
+    const qDone = query(collection(db, "completed"), where("site", "==", selectedSite));
     const unsubDone = onSnapshot(
       qDone,
-      (snap) => setCompleted(snap.docs.map((d) => ({ id: d.id, ...d.data() }))),
-      (err) => {
-        console.warn("completed query failed, using fallback:", err?.message);
-        const qFallback = query(
-          collection(db, "completed"),
-          where("site", "==", selectedSite)
-        );
-        fallbackUnsub = onSnapshot(qFallback, (snap2) => {
-          const rows = snap2.docs.map((d) => ({ id: d.id, ...d.data() }));
-          rows.sort((a, b) => {
-            const ta = a.completedAt?.toMillis?.() ?? a.createdAt?.toMillis?.() ?? 0;
-            const tb = b.completedAt?.toMillis?.() ?? b.createdAt?.toMillis?.() ?? 0;
-            return tb - ta;
-          });
-          setCompleted(rows);
+      (snap) => {
+        const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        rows.sort((a, b) => {
+          const ta = a.completedAt?.toMillis?.() ?? a.createdAt?.toMillis?.() ?? 0;
+          const tb = b.completedAt?.toMillis?.() ?? b.createdAt?.toMillis?.() ?? 0;
+          return tb - ta;
         });
-      }
+        setCompleted(rows);
+      },
+      () => setCompleted([])
     );
 
     return () => {
       unsubCL();
       unsubDone();
-      if (fallbackUnsub) fallbackUnsub();
     };
   }, [selectedSite]);
 
@@ -193,12 +196,14 @@ const SitePage = ({ user, onLogout }) => {
     const today = new Date();
 
     const getLatestForChecklist = (cl) => {
-      const title = (cl.title || "").trim().toLowerCase();
+      const t = norm(cl.title || "");
+      // Prefer exact link by checklistId
       const matches = completed.filter((c) => {
-        const cid = c.checklistId || c.checklistRef || c.checklist_id; // support alternate field names
-        const ctitle = (c.title || c.checklistTitle || "").trim().toLowerCase();
-        const sameTitle = title && ctitle && ctitle === title;
-        return (cid && cid === cl.id) || (!cid && sameTitle);
+        const cid = c.checklistId || c.checklistRef || c.checklist_id;
+        if (cid && cid === cl.id) return true;
+        // fallback: normalized title equality
+        const ct = norm(c.title || c.checklistTitle || "");
+        return t && ct && ct === t;
       });
       if (!matches.length) return null;
       matches.sort((a, b) => {
@@ -216,7 +221,7 @@ const SitePage = ({ user, onLogout }) => {
     };
 
     for (const cl of checklists) {
-      const freq = (cl.frequency || "Ad hoc").toString().toLowerCase();
+      const freq = (cl.frequency || "Ad hoc").toString().trim().toLowerCase(); // <- TRIM FIX
       if (!["daily", "weekly", "monthly"].includes(freq)) continue;
 
       const latest = getLatestForChecklist(cl);
@@ -289,10 +294,6 @@ const SitePage = ({ user, onLogout }) => {
     return (
       <ChecklistSection
         goBack={() => setActiveSection(null)}
-        checklists={checklists}
-        setChecklists={setChecklists}
-        completed={completed}
-        setCompleted={setCompleted}
         site={selectedSite}
         user={user}
       />
@@ -300,9 +301,7 @@ const SitePage = ({ user, onLogout }) => {
   }
   if (selectedSite && activeSection === "temp") {
     const siteTempChecks = tempChecks.filter(
-      (e) =>
-        e.site === selectedSite &&
-        (e.type === "Fridge" || e.type === "Freezer")
+      (e) => e.site === selectedSite && (e.type === "Fridge" || e.type === "Freezer")
     );
     return (
       <TempSection
@@ -326,9 +325,7 @@ const SitePage = ({ user, onLogout }) => {
     );
   }
   if (selectedSite && activeSection === "cooking") {
-    const cookingEquipment = tempChecks.filter(
-      (e) => e.site === selectedSite && e.type === "Cooking"
-    );
+    const cookingEquipment = tempChecks.filter((e) => e.site === selectedSite && e.type === "Cooking");
     return (
       <CookingSection
         goBack={() => setActiveSection(null)}
@@ -340,57 +337,22 @@ const SitePage = ({ user, onLogout }) => {
     );
   }
   if (selectedSite && activeSection === "stock") {
-    return (
-      <StockSection
-        goBack={() => setActiveSection(null)}
-        site={selectedSite}
-        user={user}
-      />
-    );
+    return <StockSection goBack={() => setActiveSection(null)} site={selectedSite} user={user} />;
   }
   if (selectedSite && activeSection === "reports") {
-    return (
-      <Reports
-        goBack={() => setActiveSection(null)}
-        site={selectedSite}
-        user={user}
-      />
-    );
+    return <Reports goBack={() => setActiveSection(null)} site={selectedSite} user={user} />;
   }
   if (selectedSite && activeSection === "ccp") {
-    return (
-      <CCPSection
-        goBack={() => setActiveSection(null)}
-        site={selectedSite}
-        user={user}
-      />
-    );
+    return <CCPSection goBack={() => setActiveSection(null)} site={selectedSite} user={user} />;
   }
   if (selectedSite && activeSection === "haccpDashboard") {
-    return (
-      <HaccpDashboard
-        goBack={() => setActiveSection(null)}
-        site={selectedSite}
-      />
-    );
+    return <HaccpDashboard goBack={() => setActiveSection(null)} site={selectedSite} />;
   }
   if (selectedSite && activeSection === "dishes") {
-    return (
-      <DishesSection
-        goBack={() => setActiveSection(null)}
-        site={selectedSite}
-        user={user}
-      />
-    );
+    return <DishesSection goBack={() => setActiveSection(null)} site={selectedSite} user={user} />;
   }
   if (selectedSite && activeSection === "training") {
-    return (
-      <StaffTrainingSection
-        goBack={() => setActiveSection(null)}
-        site={selectedSite}
-        user={user}
-      />
-    );
+    return <StaffTrainingSection goBack={() => setActiveSection(null)} site={selectedSite} user={user} />;
   }
 
   // Site selection screen
@@ -432,28 +394,14 @@ const SitePage = ({ user, onLogout }) => {
                 cursor: "pointer",
                 transition: "all 0.2s ease",
               }}
-              onMouseEnter={(e) =>
-                (e.currentTarget.style.backgroundColor = "#f9fafb")
-              }
-              onMouseLeave={(e) =>
-                (e.currentTarget.style.backgroundColor = "#fff")
-              }
+              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#f9fafb")}
+              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#fff")}
             >
               <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
                 <FaMapMarkerAlt size={20} color="#ef4444" />
                 <div>
-                  <div
-                    style={{
-                      fontWeight: "600",
-                      fontSize: "16px",
-                      color: "#111",
-                    }}
-                  >
-                    {site}
-                  </div>
-                  <div style={{ fontSize: "13px", color: "#666" }}>
-                    Tap to enter venue
-                  </div>
+                  <div style={{ fontWeight: "600", fontSize: "16px", color: "#111" }}>{site}</div>
+                  <div style={{ fontSize: "13px", color: "#666" }}>Tap to enter venue</div>
                 </div>
               </div>
               <FaChevronRight size={16} color="#999" />
@@ -473,24 +421,12 @@ const SitePage = ({ user, onLogout }) => {
               cursor: "pointer",
               transition: "all 0.2s ease",
             }}
-            onMouseEnter={(e) =>
-              (e.currentTarget.style.backgroundColor = "#f9fafb")
-            }
-            onMouseLeave={(e) =>
-              (e.currentTarget.style.backgroundColor = "#fff")
-            }
+            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#f9fafb")}
+            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#fff")}
           >
             <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
               <FaPlus size={18} color="#555" />
-              <div
-                style={{
-                  fontWeight: "600",
-                  fontSize: "16px",
-                  color: "#111",
-                }}
-              >
-                Set up a new venue
-              </div>
+              <div style={{ fontWeight: "600", fontSize: "16px", color: "#111" }}>Set up a new venue</div>
             </div>
             <FaChevronRight size={16} color="#999" />
           </div>
@@ -511,12 +447,8 @@ const SitePage = ({ user, onLogout }) => {
             fontWeight: "600",
             transition: "all 0.2s",
           }}
-          onMouseEnter={(e) =>
-            (e.currentTarget.style.backgroundColor = "#ff3f3f")
-          }
-          onMouseLeave={(e) =>
-            (e.currentTarget.style.backgroundColor = "#ff5f5f")
-          }
+          onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#ff3f3f")}
+          onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#ff5f5f")}
         >
           Logout
         </button>
@@ -628,10 +560,14 @@ const SitePage = ({ user, onLogout }) => {
               Monthly: <strong>{buckets.monthly.done}/{buckets.monthly.total}</strong>
             </span>
             {totalDue === 0 && (
-              <span style={chip("#e5e7eb", "#111827")}>
-                No scheduled checklists
-              </span>
+              <span style={chip("#e5e7eb", "#111827")}>No scheduled checklists</span>
             )}
+          </div>
+
+          {/* tiny sanity line to help verify numbers */}
+          <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 6 }}>
+            Detected: {buckets.daily.total + buckets.weekly.total + buckets.monthly.total} scheduled •
+            Completed matched: {buckets.daily.done + buckets.weekly.done + buckets.monthly.done}
           </div>
         </div>
       </div>
@@ -707,12 +643,8 @@ const SitePage = ({ user, onLogout }) => {
             border: "none",
             transition: "all 0.25s",
           }}
-          onMouseEnter={(e) =>
-            (e.currentTarget.style.backgroundColor = "#e0e3e8")
-          }
-          onMouseLeave={(e) =>
-            (e.currentTarget.style.backgroundColor = "#f3f4f6")
-          }
+          onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#e0e3e8")}
+          onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#f3f4f6")}
         >
           Back
         </button>
@@ -729,12 +661,8 @@ const SitePage = ({ user, onLogout }) => {
             border: "none",
             transition: "all 0.25s",
           }}
-          onMouseEnter={(e) =>
-            (e.currentTarget.style.backgroundColor = "#ff3f3f")
-          }
-          onMouseLeave={(e) =>
-            (e.currentTarget.style.backgroundColor = "#ff5f5f")
-          }
+          onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#ff3f3f")}
+          onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#ff5f5f")}
         >
           Logout
         </button>

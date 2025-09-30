@@ -104,13 +104,42 @@ const ChecklistSection = ({ goBack, site, user }) => {
   const [draftId, setDraftId] = useState(null);
 
   // Adjust to your auth model if user is an object
-  const personName = typeof user === "string" ? user : user?.displayName || "Unknown";
+  const personName =
+    typeof user === "string" ? user : user?.displayName || "Unknown";
   const isManager = ["Chris", "Chloe"].includes(personName);
 
   // Firestore refs
   const checklistCollectionRef = collection(db, "checklists");
   const completedCollectionRef = collection(db, "completed");
   const draftsCollectionRef = collection(db, "checklistDrafts");
+
+  // ---------- shared draft refresher ----------
+  const refreshDrafts = async () => {
+    try {
+      const qDrafts = query(
+        draftsCollectionRef,
+        where("site", "==", site),
+        where("person", "==", personName)
+      );
+      const snap = await getDocs(qDrafts);
+      const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      list.sort((a, b) => {
+        const ta = a.updatedAt?.toMillis?.() ?? a.createdAt?.toMillis?.() ?? 0;
+        const tb = b.updatedAt?.toMillis?.() ?? b.createdAt?.toMillis?.() ?? 0;
+        return tb - ta;
+      });
+      setDrafts(list);
+      const m = {};
+      list.forEach((d) => {
+        if (d.checklistId) m[d.checklistId] = d;
+      });
+      setDraftMap(m);
+    } catch (e) {
+      console.warn("Error refreshing drafts:", e?.message);
+      setDrafts([]);
+      setDraftMap({});
+    }
+  };
 
   // ---------- Fetch (site-scoped + reacts to site change) ----------
   useEffect(() => {
@@ -125,10 +154,15 @@ const ChecklistSection = ({ goBack, site, user }) => {
           orderBy("createdAt", "desc")
         );
         const checklistSnapshot = await getDocs(qChecklist);
-        setChecklists(checklistSnapshot.docs.map((d) => ({ id: d.id, ...d.data() })));
+        setChecklists(
+          checklistSnapshot.docs.map((d) => ({ id: d.id, ...d.data() }))
+        );
       } catch {
         try {
-          const qChecklistFallback = query(checklistCollectionRef, where("site", "==", site));
+          const qChecklistFallback = query(
+            checklistCollectionRef,
+            where("site", "==", site)
+          );
           const snap = await getDocs(qChecklistFallback);
           const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
           rows.sort((a, b) => {
@@ -151,10 +185,15 @@ const ChecklistSection = ({ goBack, site, user }) => {
           orderBy("createdAt", "desc")
         );
         const completedSnapshot = await getDocs(qCompleted);
-        setCompleted(completedSnapshot.docs.map((d) => ({ id: d.id, ...d.data() })));
+        setCompleted(
+          completedSnapshot.docs.map((d) => ({ id: d.id, ...d.data() }))
+        );
       } catch {
         try {
-          const qCompletedFallback = query(completedCollectionRef, where("site", "==", site));
+          const qCompletedFallback = query(
+            completedCollectionRef,
+            where("site", "==", site)
+          );
           const snap = await getDocs(qCompletedFallback);
           const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
           rows.sort((a, b) => {
@@ -169,28 +208,7 @@ const ChecklistSection = ({ goBack, site, user }) => {
         }
       }
 
-      // Drafts (NEW)
-      try {
-        const qDrafts = query(
-          draftsCollectionRef,
-          where("site", "==", site),
-          where("person", "==", personName),
-          orderBy("updatedAt", "desc")
-        );
-        const snap = await getDocs(qDrafts);
-        const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-        setDrafts(list);
-        // Build a quick lookup by checklistId
-        const m = {};
-        list.forEach((d) => {
-          if (d.checklistId) m[d.checklistId] = d;
-        });
-        setDraftMap(m);
-      } catch (e) {
-        console.warn("Error fetching drafts:", e?.message);
-        setDrafts([]);
-        setDraftMap({});
-      }
+      await refreshDrafts();
     };
 
     fetchData();
@@ -216,7 +234,10 @@ const ChecklistSection = ({ goBack, site, user }) => {
   // ---------- Authoring (Create) ----------
   const addItemAuthor = () => {
     if (!newItem.trim()) return;
-    setItems((prev) => [...prev, { text: newItem.trim(), answer: null, corrective: "" }]);
+    setItems((prev) => [
+      ...prev,
+      { text: newItem.trim(), answer: null, corrective: "" },
+    ]);
     setNewItem("");
     requestAnimationFrame(() => newItemRef.current?.focus());
   };
@@ -265,7 +286,9 @@ const ChecklistSection = ({ goBack, site, user }) => {
     setEditingId(cl.id);
     setEditTitle(cl.title || "");
     setEditFrequency(cl.frequency || "Ad hoc");
-    setEditItems((Array.isArray(cl.questions) ? cl.questions : []).map((q) => ({ ...q })));
+    setEditItems(
+      (Array.isArray(cl.questions) ? cl.questions : []).map((q) => ({ ...q }))
+    );
     setAdding(false);
     setTitleSet(false);
     setSelectedChecklist(null);
@@ -275,7 +298,10 @@ const ChecklistSection = ({ goBack, site, user }) => {
 
   const addEditItem = () => {
     if (!editNewItem.trim()) return;
-    setEditItems((prev) => [...prev, { text: editNewItem.trim(), answer: null, corrective: "" }]);
+    setEditItems((prev) => [
+      ...prev,
+      { text: editNewItem.trim(), answer: null, corrective: "" },
+    ]);
     setEditNewItem("");
     requestAnimationFrame(() => editNewItemRef.current?.focus());
   };
@@ -307,7 +333,12 @@ const ChecklistSection = ({ goBack, site, user }) => {
       setChecklists((prev) =>
         prev.map((c) =>
           c.id === editingId
-            ? { ...c, title: editTitle.trim(), frequency: editFrequency || "Ad hoc", questions: editItems }
+            ? {
+                ...c,
+                title: editTitle.trim(),
+                frequency: editFrequency || "Ad hoc",
+                questions: editItems,
+              }
             : c
         )
       );
@@ -361,40 +392,34 @@ const ChecklistSection = ({ goBack, site, user }) => {
 
   const saveDraft = async () => {
     if (!selectedChecklist) return;
-    const payload = {
+
+    const base = {
       site,
       checklistId: selectedChecklist.id,
       title: selectedChecklist.title,
       person: personName,
       questions: items,
-      createdAt: draftId ? undefined : Timestamp.now(),
-      updatedAt: Timestamp.now(),
       frequency: selectedChecklist.frequency || "Ad hoc",
       status: "draft",
     };
 
     try {
       if (draftId) {
-        await updateDoc(doc(db, "checklistDrafts", draftId), payload);
+        // UPDATE
+        await updateDoc(doc(db, "checklistDrafts", draftId), {
+          ...base,
+          updatedAt: Timestamp.now(),
+        });
       } else {
-        const ref = await addDoc(draftsCollectionRef, payload);
+        // CREATE
+        const ref = await addDoc(draftsCollectionRef, {
+          ...base,
+          createdAt: Timestamp.now(),
+          updatedAt: Timestamp.now(),
+        });
         setDraftId(ref.id);
       }
-      // Refresh the draft list/badges
-      const qDrafts = query(
-        draftsCollectionRef,
-        where("site", "==", site),
-        where("person", "==", personName),
-        orderBy("updatedAt", "desc")
-      );
-      const snap = await getDocs(qDrafts);
-      const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-      setDrafts(list);
-      const m = {};
-      list.forEach((d) => {
-        if (d.checklistId) m[d.checklistId] = d;
-      });
-      setDraftMap(m);
+      await refreshDrafts();
       alert("Draft saved.");
     } catch (e) {
       console.error("Error saving draft:", e);
@@ -406,23 +431,9 @@ const ChecklistSection = ({ goBack, site, user }) => {
     try {
       if (draftId) {
         await deleteDoc(doc(db, "checklistDrafts", draftId));
+        setDraftId(null);
       }
-      setDraftId(null);
-      // Also update global list/badges
-      const qDrafts = query(
-        draftsCollectionRef,
-        where("site", "==", site),
-        where("person", "==", personName),
-        orderBy("updatedAt", "desc")
-      );
-      const snap = await getDocs(qDrafts);
-      const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-      setDrafts(list);
-      const m = {};
-      list.forEach((d) => {
-        if (d.checklistId) m[d.checklistId] = d;
-      });
-      setDraftMap(m);
+      await refreshDrafts();
     } catch (e) {
       console.error("Error discarding draft:", e);
     }
@@ -430,7 +441,11 @@ const ChecklistSection = ({ goBack, site, user }) => {
 
   // ---------- Running (complete answers) ----------
   const openChecklist = async (cl) => {
-    const freshQuestions = (cl.questions || []).map((q) => ({ ...q, answer: null, corrective: "" }));
+    const freshQuestions = (cl.questions || []).map((q) => ({
+      ...q,
+      answer: null,
+      corrective: "",
+    }));
     setSelectedChecklist(cl);
     setItems(freshQuestions);
     setAdding(false);
@@ -439,17 +454,14 @@ const ChecklistSection = ({ goBack, site, user }) => {
     setViewingCompleted(null);
     setDraftId(null);
 
-    // Try to load the latest draft for this user/checklist and override if found
     await loadLatestDraft(cl);
   };
 
   const resumeDraft = async (draft) => {
-    // Find the source checklist (for title/frequency)
     const cl = siteChecklists.find((c) => c.id === draft.checklistId);
     if (cl) {
       setSelectedChecklist(cl);
     } else {
-      // Fall back to a minimal shell so you can still submit
       setSelectedChecklist({
         id: draft.checklistId,
         title: draft.title || "Checklist",
@@ -480,7 +492,6 @@ const ChecklistSection = ({ goBack, site, user }) => {
     if (!selectedChecklist) return;
 
     try {
-      // Do not overwrite the template questions; just stamp metadata
       await updateDoc(doc(db, "checklists", selectedChecklist.id), {
         lastCompletedAt: Timestamp.now(),
         lastCompletedBy: personName,
@@ -500,26 +511,11 @@ const ChecklistSection = ({ goBack, site, user }) => {
       const docRef = await addDoc(completedCollectionRef, completedEntry);
       setCompleted((prev) => [{ id: docRef.id, ...completedEntry }, ...prev]);
 
-      // If a draft existed for this run, remove it
       if (draftId) {
         await deleteDoc(doc(db, "checklistDrafts", draftId));
         setDraftId(null);
       }
-      // Refresh draft list/badges
-      const qDrafts = query(
-        draftsCollectionRef,
-        where("site", "==", site),
-        where("person", "==", personName),
-        orderBy("updatedAt", "desc")
-      );
-      const snap = await getDocs(qDrafts);
-      const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-      setDrafts(list);
-      const m = {};
-      list.forEach((d) => {
-        if (d.checklistId) m[d.checklistId] = d;
-      });
-      setDraftMap(m);
+      await refreshDrafts();
 
       setSelectedChecklist(null);
       setItems([]);
@@ -530,12 +526,12 @@ const ChecklistSection = ({ goBack, site, user }) => {
   };
 
   const deleteChecklist = async (cl) => {
-    if (!window.confirm(`Delete checklist "${cl.title}"? This cannot be undone.`)) return;
+    if (!window.confirm(`Delete checklist "${cl.title}"? This cannot be undone.`))
+      return;
     try {
       await deleteDoc(doc(db, "checklists", cl.id));
       setChecklists((prev) => prev.filter((c) => c.id !== cl.id));
 
-      // If there was a draft for this checklist, also remove it locally
       if (draftMap[cl.id]) {
         try {
           await deleteDoc(doc(db, "checklistDrafts", draftMap[cl.id].id));
@@ -552,7 +548,12 @@ const ChecklistSection = ({ goBack, site, user }) => {
   };
 
   const deleteCompleted = async (entry) => {
-    if (!window.confirm(`Delete completed checklist "${entry.title}"? This cannot be undone.`)) return;
+    if (
+      !window.confirm(
+        `Delete completed checklist "${entry.title}"? This cannot be undone.`
+      )
+    )
+      return;
     try {
       await deleteDoc(doc(db, "completed", entry.id));
       setCompleted((prev) => prev.filter((c) => c.id !== entry.id));
@@ -589,7 +590,12 @@ const ChecklistSection = ({ goBack, site, user }) => {
   };
 
   // ---------- Export ----------
-  const exportChecklistToPDF = async (title, questions, completedBy = personName, ts = Timestamp.now()) => {
+  const exportChecklistToPDF = async (
+    title,
+    questions,
+    completedBy = personName,
+    ts = Timestamp.now()
+  ) => {
     const element = document.createElement("div");
     element.style.padding = "24px";
     element.style.backgroundColor = "#fff";
@@ -603,7 +609,9 @@ const ChecklistSection = ({ goBack, site, user }) => {
     element.appendChild(titleEl);
 
     const subTitleEl = document.createElement("p");
-    subTitleEl.innerText = `Completed by: ${completedBy} — ${formatTimestamp(ts)}`;
+    subTitleEl.innerText = `Completed by: ${completedBy} — ${formatTimestamp(
+      ts
+    )}`;
     subTitleEl.style.margin = "0 0 16px 0";
     element.appendChild(subTitleEl);
 
@@ -650,7 +658,9 @@ const ChecklistSection = ({ goBack, site, user }) => {
 
     siteCompleted.forEach((c, cIdx) => {
       const subTitle = document.createElement("h3");
-      subTitle.innerText = `${cIdx + 1}. ${c.title} (Completed by ${c.person} at ${formatTimestamp(c.createdAt)})`;
+      subTitle.innerText = `${cIdx + 1}. ${c.title} (Completed by ${
+        c.person
+      } at ${formatTimestamp(c.createdAt)})`;
       subTitle.style.margin = "16px 0 8px 0";
       element.appendChild(subTitle);
 
@@ -681,7 +691,14 @@ const ChecklistSection = ({ goBack, site, user }) => {
   };
 
   // ---------- UI primitives ----------
-  const Button = ({ children, onClick, kind = "neutral", style = {}, tabIndex = 0, type = "button" }) => {
+  const Button = ({
+    children,
+    onClick,
+    kind = "neutral",
+    style = {},
+    tabIndex = 0,
+    type = "button",
+  }) => {
     const palette = {
       neutral: { bg: "#f3f4f6", hover: "#e5e7eb", color: "#111" },
       primary: { bg: "#2563eb", hover: "#1d4ed8", color: "#fff" },
@@ -769,15 +786,25 @@ const ChecklistSection = ({ goBack, site, user }) => {
             <div style={{ display: "flex", gap: 8 }}>
               <Button
                 kind={yesActive ? "success" : "subtle"}
-                onClick={editable ? () => handleAnswerChange(index, "Yes") : undefined}
-                style={{ border: yesActive ? "1px solid #059669" : "1px solid #e5e7eb" }}
+                onClick={
+                  editable ? () => handleAnswerChange(index, "Yes") : undefined
+                }
+                style={{
+                  border: yesActive
+                    ? "1px solid #059669"
+                    : "1px solid #e5e7eb",
+                }}
               >
                 Yes
               </Button>
               <Button
                 kind={noActive ? "danger" : "subtle"}
-                onClick={editable ? () => handleAnswerChange(index, "No") : undefined}
-                style={{ border: noActive ? "1px solid #ef4444" : "1px solid #e5e7eb" }}
+                onClick={
+                  editable ? () => handleAnswerChange(index, "No") : undefined
+                }
+                style={{
+                  border: noActive ? "1px solid #ef4444" : "1px solid #e5e7eb",
+                }}
               >
                 No
               </Button>
@@ -789,7 +816,11 @@ const ChecklistSection = ({ goBack, site, user }) => {
               type="text"
               placeholder="Corrective action"
               value={item.corrective}
-              onChange={editable ? (e) => handleCorrectiveChange(index, e.target.value) : undefined}
+              onChange={
+                editable
+                  ? (e) => handleCorrectiveChange(index, e.target.value)
+                  : undefined
+              }
               readOnly={!editable}
               style={{
                 marginTop: "12px",
@@ -824,7 +855,11 @@ const ChecklistSection = ({ goBack, site, user }) => {
               flex: 1,
             }}
           />
-          <Button kind="danger" onClick={() => onRemove(index)} style={{ padding: "10px 12px" }}>
+          <Button
+            kind="danger"
+            onClick={() => onRemove(index)}
+            style={{ padding: "10px 12px" }}
+          >
             Remove
           </Button>
         </div>
@@ -852,7 +887,9 @@ const ChecklistSection = ({ goBack, site, user }) => {
         }}
       >
         <div style={{ textAlign: "left" }}>
-          <h1 style={{ fontSize: "28px", color: "#111", fontWeight: 700, margin: 0 }}>
+          <h1
+            style={{ fontSize: "28px", color: "#111", fontWeight: 700, margin: 0 }}
+          >
             {site} — Checklists
           </h1>
           <div style={{ fontSize: 13, color: "#6b7280", marginTop: 4 }}>
@@ -887,7 +924,7 @@ const ChecklistSection = ({ goBack, site, user }) => {
       {/* MAIN VIEW */}
       {!adding && !selectedChecklist && !viewingCompleted && !editingId && (
         <>
-          {/* Your Drafts (NEW) */}
+          {/* Drafts */}
           {drafts.length > 0 && (
             <>
               <SectionTitle>Your Drafts</SectionTitle>
@@ -1308,7 +1345,9 @@ const ChecklistSection = ({ goBack, site, user }) => {
         <Card hoverable={false}>
           <SectionTitle>
             {selectedChecklist.title}
-            <span style={freqChip(selectedChecklist.frequency)}>{selectedChecklist.frequency || "Ad hoc"}</span>
+            <span style={freqChip(selectedChecklist.frequency)}>
+              {selectedChecklist.frequency || "Ad hoc"}
+            </span>
           </SectionTitle>
           {renderChecklistItemsRun(true)}
           <div style={{ display: "flex", gap: 10, marginTop: 16, flexWrap: "wrap" }}>
