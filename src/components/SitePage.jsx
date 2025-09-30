@@ -40,7 +40,7 @@ const sites = [
 
 /** ======== ADJUST IF YOUR COLLECTIONS/FIELDS DIFFER ======== */
 const COLLECTIONS = {
-  completedChecklists: "completed",      // { site, createdAt, questions:[{answer}] }
+  completedChecklists: "completed",      // { site, createdAt, questions:[{answer, corrective}], stats? }
   temperatureLogs: "temperatureLogs",    // { site, createdAt, inRange:boolean }
   cleaningLogs: "cleaningLogs",          // { site, createdAt, status: "done"|"missed" }
 };
@@ -152,6 +152,17 @@ const norm = (s = "") =>
     .replace(/\s+/g, " ")     // collapse spaces
     .replace(/[^\w\s]/g, ""); // strip punctuation
 
+// Fallback compute if an older completed entry doesn't have .stats
+// Rule: ANY corrective text -> fail; otherwise pass (answer Yes/No/N/A doesn't matter)
+const computeStatsFromQuestions = (qs = []) => {
+  const total = qs.length;
+  const failCount = qs.filter((q) => (q?.corrective || "").trim().length > 0).length;
+  const passCount = Math.max(0, total - failCount);
+  const naCount = qs.filter((q) => (q?.answer || "").toString().trim().toLowerCase() === "n/a").length;
+  const passRate = total ? Math.round((passCount / total) * 100) : 100;
+  return { total, passCount, failCount, naCount, passRate };
+};
+
 const SitePage = ({ user, onLogout }) => {
   const [selectedSite, setSelectedSite] = useState(null);
   const [activeSection, setActiveSection] = useState(null);
@@ -160,7 +171,7 @@ const SitePage = ({ user, onLogout }) => {
   const [checklists, setChecklists] = useState([]);
   const [completed, setCompleted] = useState([]);
 
-  // NEW: raw logs for temps/cleaning (site-scoped; we filter to "today" in mem)
+  // raw logs for temps/cleaning (site-scoped; we filter to "today" in mem)
   const [tempLogs, setTempLogs] = useState([]);
   const [cleanLogs, setCleanLogs] = useState([]);
 
@@ -209,7 +220,7 @@ const SitePage = ({ user, onLogout }) => {
       () => setCompleted([])
     );
 
-    // NEW: Temperature logs for this site
+    // Temperature logs for this site
     const qTemps = query(collection(db, COLLECTIONS.temperatureLogs), where("site", "==", selectedSite));
     const unsubTemps = onSnapshot(
       qTemps,
@@ -220,7 +231,7 @@ const SitePage = ({ user, onLogout }) => {
       () => setTempLogs([])
     );
 
-    // NEW: Cleaning logs for this site
+    // Cleaning logs for this site
     const qClean = query(collection(db, COLLECTIONS.cleaningLogs), where("site", "==", selectedSite));
     const unsubClean = onSnapshot(
       qClean,
@@ -321,20 +332,18 @@ const SitePage = ({ user, onLogout }) => {
 
   /** ======= NEW: compute today's pass/fail across Checklists + Temps + Cleaning ======= */
   const todayCompliance = useMemo(() => {
-    // Checklists: Yes + N/A = pass; No = fail (only count today's runs)
+    // Checklists (today only):
+    // Use run.stats if available; else compute by rule: ANY corrective text => fail, otherwise pass.
     let clPass = 0;
     let clTotal = 0;
+
     completed.forEach((run) => {
       const t = run.completedAt || run.createdAt;
       if (!isToday(t)) return;
-      const qs = Array.isArray(run.questions) ? run.questions : [];
-      qs.forEach((q) => {
-        const ans = (q?.answer || "").toString().trim().toLowerCase();
-        if (ans) {
-          if (ans === "yes" || ans === "y" || ans === "n/a" || ans === "na") clPass += 1;
-          clTotal += 1;
-        }
-      });
+
+      const s = run.stats || computeStatsFromQuestions(run.questions || []);
+      clPass += s.passCount;
+      clTotal += s.total;
     });
 
     // Temps: inRange boolean
@@ -654,7 +663,7 @@ const SitePage = ({ user, onLogout }) => {
               label="Checklists"
               pct={todayCompliance.cl.pct}
               detail={`${todayCompliance.cl.pass}/${todayCompliance.cl.total} pass`}
-              hint="Yes + N/A count as pass"
+              hint="Fail = any corrective entered"
             />
             <BreakdownRow
               color="#ef4444"
