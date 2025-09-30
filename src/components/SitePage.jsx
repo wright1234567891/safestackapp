@@ -1,4 +1,3 @@
-// src/components/SitePage.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import {
   FaMapMarkerAlt,
@@ -41,18 +40,20 @@ const sites = [
 // ---- Small date helpers ----
 const toDate = (ts) => (ts?.toDate ? ts.toDate() : ts instanceof Date ? ts : null);
 const isSameDay = (a, b) =>
+  a && b &&
   a.getFullYear() === b.getFullYear() &&
   a.getMonth() === b.getMonth() &&
   a.getDate() === b.getDate();
 const withinLastDays = (d, days) => {
   const now = new Date();
-  const from = new Date(now);
-  from.setDate(now.getDate() - (days - 1)); // inclusive window
+  const end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999); // end of today
+  const from = new Date(end);
+  from.setDate(end.getDate() - (days - 1)); // inclusive window
   from.setHours(0, 0, 0, 0);
   const dd = toDate(d);
-  return dd ? dd >= from && dd <= now : false;
+  return dd ? dd >= from && dd <= end : false;
 };
-const sameMonth = (a, b) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth();
+const sameMonth = (a, b) => a && b && a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth();
 
 // Simple chip style
 const chip = (bg, fg) => ({
@@ -101,13 +102,22 @@ const Donut = ({ size = 130, stroke = 12, percent = 0, label = "" }) => {
           fontFamily: "'Inter', sans-serif",
         }}
       >
-        <div style={{ fontSize: 22, fontWeight: 800, color: "#111" }}>
-          {Math.round(clamped)}%
-        </div>
+        <div style={{ fontSize: 22, fontWeight: 800, color: "#111" }}>{Math.round(clamped)}%</div>
         <div style={{ fontSize: 12, color: "#6b7280", textAlign: "center" }}>{label}</div>
       </div>
     </div>
   );
+};
+
+// Small hook to choose mobile/desktop sizes
+const useIsMobile = (breakpoint = 520) => {
+  const [isMobile, setIsMobile] = useState(() => (typeof window !== "undefined" ? window.innerWidth <= breakpoint : false));
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth <= breakpoint);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, [breakpoint]);
+  return isMobile;
 };
 
 const SitePage = ({ user, onLogout }) => {
@@ -122,6 +132,8 @@ const SitePage = ({ user, onLogout }) => {
 
   // NEW: Overview mode toggle (ALL | DAILY | WEEKLY | MONTHLY)
   const [overviewMode, setOverviewMode] = useState("ALL");
+
+  const isMobile = useIsMobile();
 
   // --- Live subscriptions for checklist overview (per selectedSite) ---
   useEffect(() => {
@@ -160,19 +172,21 @@ const SitePage = ({ user, onLogout }) => {
     const today = new Date();
 
     const getLatestForChecklist = (cl) => {
+      // Prefer explicit linking by id if present in completed docs; fall back to title match.
       const title = (cl.title || "").trim().toLowerCase();
-      const matches = completed.filter(
-        (c) =>
-          (c.checklistId && c.checklistId === cl.id) ||
-          (!c.checklistId && (c.title || "").trim().toLowerCase() === title)
-      );
+      const matches = completed.filter((c) => {
+        const cid = c.checklistId || c.checklistRef || c.checklist_id; // support alternate field names
+        const ctitle = (c.title || c.checklistTitle || "").trim().toLowerCase();
+        const sameTitle = title && ctitle && ctitle === title;
+        return (cid && cid === cl.id) || (!cid && sameTitle);
+      });
       if (!matches.length) return null;
       matches.sort((a, b) => {
-        const ta = a.createdAt?.toMillis?.() ?? 0;
-        const tb = b.createdAt?.toMillis?.() ?? 0;
+        const ta = a.completedAt?.toMillis?.() ?? a.createdAt?.toMillis?.() ?? 0;
+        const tb = b.completedAt?.toMillis?.() ?? b.createdAt?.toMillis?.() ?? 0;
         return tb - ta;
       });
-      return matches[0]?.createdAt || null;
+      return matches[0]?.completedAt || matches[0]?.createdAt || null;
     };
 
     const buckets = {
@@ -182,7 +196,7 @@ const SitePage = ({ user, onLogout }) => {
     };
 
     for (const cl of checklists) {
-      const freq = (cl.frequency || "Ad hoc").toLowerCase();
+      const freq = (cl.frequency || "Ad hoc").toString().toLowerCase();
       if (!["daily", "weekly", "monthly"].includes(freq)) continue;
 
       const latest = getLatestForChecklist(cl);
@@ -527,6 +541,16 @@ const SitePage = ({ user, onLogout }) => {
         fontFamily: "'Inter', sans-serif",
       }}
     >
+      {/* Local styles for responsive layout */}
+      <style>{`
+        .overview-card { display:grid; grid-template-columns: auto 1fr; gap:16px; align-items:center; }
+        @media (max-width: 520px) {
+          .overview-card { grid-template-columns: 1fr; }
+          .overview-right { order: 2; }
+          .overview-left { order: 1; display:flex; justify-content:center; }
+        }
+      `}</style>
+
       <h1
         style={{
           fontSize: "30px",
@@ -541,56 +565,33 @@ const SitePage = ({ user, onLogout }) => {
 
       {/* ==== Checklist Overview Card with Toggle ==== */}
       <div
+        className="overview-card"
         style={{
           background: "#fff",
           borderRadius: 16,
           padding: 18,
           marginBottom: 22,
           boxShadow: "0 2px 6px rgba(0,0,0,0.08)",
-          display: "grid",
-          gridTemplateColumns: "auto 1fr",
-          gap: 16,
-          alignItems: "center",
         }}
       >
-        <Donut percent={percent} label={label} />
+        <div className="overview-left">
+          <Donut percent={percent} label={label} size={isMobile ? 110 : 130} stroke={isMobile ? 10 : 12} />
+        </div>
 
-        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
-            <div style={{ fontWeight: 800, fontSize: 16, color: "#111" }}>
-              Checklist Overview
-            </div>
+        <div className="overview-right" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            <div style={{ fontWeight: 800, fontSize: 16, color: "#111" }}>Checklist Overview</div>
             <div style={{ display: "flex", gap: 8 }}>
-              <button
-                onClick={() => setOverviewMode("ALL")}
-                style={toggleBtn(overviewMode === "ALL")}
-                onMouseEnter={(e) => overviewMode !== "ALL" && (e.currentTarget.style.backgroundColor = "#f9fafb")}
-                onMouseLeave={(e) => overviewMode !== "ALL" && (e.currentTarget.style.backgroundColor = "#fff")}
-              >
+              <button onClick={() => setOverviewMode("ALL")} style={toggleBtn(overviewMode === "ALL")}>
                 All
               </button>
-              <button
-                onClick={() => setOverviewMode("DAILY")}
-                style={toggleBtn(overviewMode === "DAILY")}
-                onMouseEnter={(e) => overviewMode !== "DAILY" && (e.currentTarget.style.backgroundColor = "#f9fafb")}
-                onMouseLeave={(e) => overviewMode !== "DAILY" && (e.currentTarget.style.backgroundColor = "#fff")}
-              >
+              <button onClick={() => setOverviewMode("DAILY")} style={toggleBtn(overviewMode === "DAILY")}>
                 Daily
               </button>
-              <button
-                onClick={() => setOverviewMode("WEEKLY")}
-                style={toggleBtn(overviewMode === "WEEKLY")}
-                onMouseEnter={(e) => overviewMode !== "WEEKLY" && (e.currentTarget.style.backgroundColor = "#f9fafb")}
-                onMouseLeave={(e) => overviewMode !== "WEEKLY" && (e.currentTarget.style.backgroundColor = "#fff")}
-              >
+              <button onClick={() => setOverviewMode("WEEKLY")} style={toggleBtn(overviewMode === "WEEKLY")}>
                 Weekly
               </button>
-              <button
-                onClick={() => setOverviewMode("MONTHLY")}
-                style={toggleBtn(overviewMode === "MONTHLY")}
-                onMouseEnter={(e) => overviewMode !== "MONTHLY" && (e.currentTarget.style.backgroundColor = "#f9fafb")}
-                onMouseLeave={(e) => overviewMode !== "MONTHLY" && (e.currentTarget.style.backgroundColor = "#fff")}
-              >
+              <button onClick={() => setOverviewMode("MONTHLY")} style={toggleBtn(overviewMode === "MONTHLY")}>
                 Monthly
               </button>
             </div>
@@ -611,29 +612,6 @@ const SitePage = ({ user, onLogout }) => {
                 No scheduled checklists
               </span>
             )}
-          </div>
-
-          <div style={{ fontSize: 12, color: "#6b7280" }}>
-            Done counts include checklists completed in the correct window (today / last 7 days / this month).  
-            Tip: add <code style={{ background:"#f3f4f6", padding:"0 4px", borderRadius:4 }}>checklistId</code> to completed docs for perfect matching.
-          </div>
-
-          <div style={{ marginTop: 4, display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <button
-              onClick={() => setActiveSection("checklists")}
-              style={{
-                padding: "10px 14px",
-                borderRadius: 10,
-                border: "1px solid #e5e7eb",
-                background: "#fff",
-                cursor: "pointer",
-                fontWeight: 700,
-              }}
-              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#f9fafb")}
-              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#fff")}
-            >
-              Open Checklists
-            </button>
           </div>
         </div>
       </div>
