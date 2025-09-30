@@ -38,17 +38,22 @@ const sites = [
   "Pop up Locations",
 ];
 
-/** ======== ADJUST IF YOUR COLLECTIONS/FIELDS DIFFER ======== */
+/** ========= Collections/fields (adjust if your Cleaning writes elsewhere) ========= */
 const COLLECTIONS = {
-  completedChecklists: "completed",      // { site, createdAt, questions:[{answer, corrective}], stats? }
-  temperatureLogs: "temperatureLogs",    // { site, createdAt, inRange:boolean }
-  cleaningLogs: "cleaningLogs",          // { site, createdAt, status: "done"|"missed" }
+  completedChecklists: "completed",   // { site, createdAt, questions:[{answer, corrective?}] }
+  cleaningLogs: "cleaningLogs",       // { site, createdAt, status: "done"|"missed" }  <-- if you use another coll, change here
 };
-const FIELDS = {
-  temp: { passKey: "inRange" },          // boolean
-  cleaning: { statusKey: "status", passValue: "done" },
+/** ================================================================================ */
+
+/** ========= Temperature limits (tweak to match your policy) =========
+ * Fridge: pass if 0..5°C inclusive
+ * Freezer: pass if <= -18°C
+ */
+const TEMP_LIMITS = {
+  Fridge: { min: 0, max: 5 },
+  Freezer: { max: -18 },
 };
-/** ========================================================== */
+/** ================================================================== */
 
 // ---- Small date helpers ----
 const toDate = (ts) => (ts?.toDate ? ts.toDate() : ts instanceof Date ? ts : null);
@@ -152,17 +157,6 @@ const norm = (s = "") =>
     .replace(/\s+/g, " ")     // collapse spaces
     .replace(/[^\w\s]/g, ""); // strip punctuation
 
-// Fallback compute if an older completed entry doesn't have .stats
-// Rule: ANY corrective text -> fail; otherwise pass (answer Yes/No/N/A doesn't matter)
-const computeStatsFromQuestions = (qs = []) => {
-  const total = qs.length;
-  const failCount = qs.filter((q) => (q?.corrective || "").trim().length > 0).length;
-  const passCount = Math.max(0, total - failCount);
-  const naCount = qs.filter((q) => (q?.answer || "").toString().trim().toLowerCase() === "n/a").length;
-  const passRate = total ? Math.round((passCount / total) * 100) : 100;
-  return { total, passCount, failCount, naCount, passRate };
-};
-
 const SitePage = ({ user, onLogout }) => {
   const [selectedSite, setSelectedSite] = useState(null);
   const [activeSection, setActiveSection] = useState(null);
@@ -171,11 +165,11 @@ const SitePage = ({ user, onLogout }) => {
   const [checklists, setChecklists] = useState([]);
   const [completed, setCompleted] = useState([]);
 
-  // raw logs for temps/cleaning (site-scoped; we filter to "today" in mem)
-  const [tempLogs, setTempLogs] = useState([]);
+  // NEW: subscribe to equipment (fridges/freezers) and cleaning logs
+  const [equipment, setEquipment] = useState([]); // equipment docs with { type, records[] }
   const [cleanLogs, setCleanLogs] = useState([]);
 
-  // You already had these for sections; keeping them for child props usage
+  // These you already use to pass into child sections
   const [tempChecks, setTempChecks] = useState([]);
   const [cleaningRecords, setCleaningRecords] = useState([]);
 
@@ -220,18 +214,18 @@ const SitePage = ({ user, onLogout }) => {
       () => setCompleted([])
     );
 
-    // Temperature logs for this site
-    const qTemps = query(collection(db, COLLECTIONS.temperatureLogs), where("site", "==", selectedSite));
-    const unsubTemps = onSnapshot(
-      qTemps,
+    // 🔁 NEW: Equipment for this site (we'll filter fridges/freezers in-memory)
+    const qEquip = query(collection(db, "equipment"), where("site", "==", selectedSite));
+    const unsubEquip = onSnapshot(
+      qEquip,
       (snap) => {
         const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-        setTempLogs(rows);
+        setEquipment(rows);
       },
-      () => setTempLogs([])
+      () => setEquipment([])
     );
 
-    // Cleaning logs for this site
+    // Cleaning logs (if your CleaningSection writes to a different collection, adjust COLLECTIONS.cleaningLogs)
     const qClean = query(collection(db, COLLECTIONS.cleaningLogs), where("site", "==", selectedSite));
     const unsubClean = onSnapshot(
       qClean,
@@ -245,7 +239,7 @@ const SitePage = ({ user, onLogout }) => {
     return () => {
       unsubCL();
       unsubDone();
-      unsubTemps();
+      unsubEquip();
       unsubClean();
     };
   }, [selectedSite]);
@@ -330,43 +324,64 @@ const SitePage = ({ user, onLogout }) => {
     return { buckets, totalDue, totalDone, percent, label };
   }, [checklists, completed, overviewMode]);
 
-  /** ======= NEW: compute today's pass/fail across Checklists + Temps + Cleaning ======= */
+  /** ======= Combined “today” compliance across Checklists + Temps + Cleaning ======= */
   const todayCompliance = useMemo(() => {
-    // Checklists (today only):
-    // Use run.stats if available; else compute by rule: ANY corrective text => fail, otherwise pass.
+    // 1) Checklists — your rule: any item with a corrective action is a FAIL; otherwise PASS (Yes/No/N/A allowed)
     let clPass = 0;
     let clTotal = 0;
-
     completed.forEach((run) => {
       const t = run.completedAt || run.createdAt;
       if (!isToday(t)) return;
+      const qs = Array.isArray(run.questions) ? run.questions : [];
+      qs.forEach((q) => {
+        // count only items that have an answer at all
+        const hasAnswer = (q?.answer ?? "") !== "";
+        if (!hasAnswer) return;
 
-      const s = run.stats || computeStatsFromQuestions(run.questions || []);
-      clPass += s.passCount;
-      clTotal += s.total;
+        const corrective = (q?.corrective || "").toString().trim();
+        const isPass = corrective.length === 0; // if any corrective text present => fail
+        if (isPass) clPass += 1;
+        clTotal += 1;
+      });
     });
 
-    // Temps: inRange boolean
+    // 2) Temperatures — derive from equipment.records written by TempSection
+    //    Compare records with today's local date string (TempSection uses toLocaleDateString())
+    const todayStr = new Date().toLocaleDateString();
     let tPass = 0;
     let tTotal = 0;
-    tempLogs.forEach((log) => {
-      if (!isToday(log.createdAt)) return;
-      if (typeof log[FIELDS.temp.passKey] === "boolean") {
-        if (log[FIELDS.temp.passKey]) tPass += 1;
-        tTotal += 1;
-      }
-    });
 
-    // Cleaning: status "done" vs anything else
+    equipment
+      .filter((eq) => eq.site === selectedSite && (eq.type === "Fridge" || eq.type === "Freezer"))
+      .forEach((eq) => {
+        const recs = Array.isArray(eq.records) ? eq.records : [];
+        recs.forEach((r) => {
+          if (r?.date !== todayStr) return; // only today
+          const temp = Number(r?.temp);
+          if (Number.isNaN(temp)) return;
+
+          let pass = false;
+          if (eq.type === "Fridge") {
+            const { min, max } = TEMP_LIMITS.Fridge;
+            pass = temp >= min && temp <= max;
+          } else if (eq.type === "Freezer") {
+            const { max } = TEMP_LIMITS.Freezer;
+            pass = temp <= max;
+          }
+          if (pass) tPass += 1;
+          tTotal += 1;
+        });
+      });
+
+    // 3) Cleaning — simple "done" vs the rest (adjust if your schema differs)
     let cPass = 0;
     let cTotal = 0;
     cleanLogs.forEach((log) => {
       if (!isToday(log.createdAt)) return;
-      const status = (log?.[FIELDS.cleaning.statusKey] || "").toString().trim().toLowerCase();
-      if (status) {
-        if (status === String(FIELDS.cleaning.passValue).toLowerCase()) cPass += 1;
-        cTotal += 1;
-      }
+      const status = (log?.status || "").toString().trim().toLowerCase();
+      if (!status) return;
+      if (status === "done") cPass += 1;
+      cTotal += 1;
     });
 
     const totalPass = clPass + tPass + cPass;
@@ -383,7 +398,7 @@ const SitePage = ({ user, onLogout }) => {
       t:  { pass: tPass,  total: tTotal,  pct: pctT },
       c:  { pass: cPass,  total: cTotal,  pct: pctC },
     };
-  }, [completed, tempLogs, cleanLogs]);
+  }, [completed, equipment, cleanLogs, selectedSite]);
   /** ================================================================================ */
 
   const resetSite = () => {
@@ -391,7 +406,7 @@ const SitePage = ({ user, onLogout }) => {
     setActiveSection(null);
     setChecklists([]);
     setCompleted([]);
-    setTempLogs([]);
+    setEquipment([]);
     setCleanLogs([]);
   };
 
@@ -663,14 +678,14 @@ const SitePage = ({ user, onLogout }) => {
               label="Checklists"
               pct={todayCompliance.cl.pct}
               detail={`${todayCompliance.cl.pass}/${todayCompliance.cl.total} pass`}
-              hint="Fail = any corrective entered"
+              hint="Pass = no corrective action entered"
             />
             <BreakdownRow
               color="#ef4444"
               label="Temperatures"
               pct={todayCompliance.t.pct}
               detail={`${todayCompliance.t.pass}/${todayCompliance.t.total} pass`}
-              hint="In-range entries"
+              hint="Fridge 0–5°C, Freezer ≤ -18°C"
             />
             <BreakdownRow
               color="#10b981"
