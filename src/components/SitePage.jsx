@@ -1,3 +1,4 @@
+// src/components/SitePage.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import {
   FaMapMarkerAlt,
@@ -150,20 +151,40 @@ const SitePage = ({ user, onLogout }) => {
       () => setChecklists([])
     );
 
+    // Completed with fallback (so donut still updates if index is missing)
     const qDone = query(
       collection(db, "completed"),
       where("site", "==", selectedSite),
       orderBy("createdAt", "desc")
     );
+
+    let fallbackUnsub = null;
+
     const unsubDone = onSnapshot(
       qDone,
       (snap) => setCompleted(snap.docs.map((d) => ({ id: d.id, ...d.data() }))),
-      () => setCompleted([])
+      (err) => {
+        console.warn("completed query failed, using fallback:", err?.message);
+        const qFallback = query(
+          collection(db, "completed"),
+          where("site", "==", selectedSite)
+        );
+        fallbackUnsub = onSnapshot(qFallback, (snap2) => {
+          const rows = snap2.docs.map((d) => ({ id: d.id, ...d.data() }));
+          rows.sort((a, b) => {
+            const ta = a.completedAt?.toMillis?.() ?? a.createdAt?.toMillis?.() ?? 0;
+            const tb = b.completedAt?.toMillis?.() ?? b.createdAt?.toMillis?.() ?? 0;
+            return tb - ta;
+          });
+          setCompleted(rows);
+        });
+      }
     );
 
     return () => {
       unsubCL();
       unsubDone();
+      if (fallbackUnsub) fallbackUnsub();
     };
   }, [selectedSite]);
 
@@ -172,7 +193,6 @@ const SitePage = ({ user, onLogout }) => {
     const today = new Date();
 
     const getLatestForChecklist = (cl) => {
-      // Prefer explicit linking by id if present in completed docs; fall back to title match.
       const title = (cl.title || "").trim().toLowerCase();
       const matches = completed.filter((c) => {
         const cid = c.checklistId || c.checklistRef || c.checklist_id; // support alternate field names

@@ -11,6 +11,7 @@ import {
   query,
   orderBy,
   where,
+  limit,
 } from "firebase/firestore";
 import { db } from "../firebase";
 import jsPDF from "jspdf";
@@ -82,12 +83,16 @@ const ChecklistSection = ({ goBack, site, user }) => {
   const [selectedChecklist, setSelectedChecklist] = useState(null);
   const [viewingCompleted, setViewingCompleted] = useState(null);
 
+  // Draft state for the currently opened checklist
+  const [draftId, setDraftId] = useState(null);
+
   // Adjust if user is an object in your app; this mirrors your current approach.
   const isManager = ["Chris", "Chloe"].includes(user);
 
   // Firestore refs
   const checklistCollectionRef = collection(db, "checklists");
   const completedCollectionRef = collection(db, "completed");
+  const draftsCollectionRef = collection(db, "checklistDrafts");
 
   // ---------- Fetch (site-scoped + reacts to site change) ----------
   useEffect(() => {
@@ -235,6 +240,7 @@ const ChecklistSection = ({ goBack, site, user }) => {
     setTitleSet(false);
     setSelectedChecklist(null);
     setViewingCompleted(null);
+    setDraftId(null);
   };
 
   const addEditItem = () => {
@@ -303,8 +309,78 @@ const ChecklistSection = ({ goBack, site, user }) => {
     setEditNewItem("");
   };
 
+  // ---------- Draft helpers ----------
+  const loadLatestDraft = async (cl) => {
+    try {
+      const qDraft = query(
+        draftsCollectionRef,
+        where("site", "==", site),
+        where("checklistId", "==", cl.id),
+        where("person", "==", user || "Unknown"),
+        orderBy("updatedAt", "desc"),
+        limit(1)
+      );
+      const snap = await getDocs(qDraft);
+      if (!snap.empty) {
+        const d = snap.docs[0];
+        const data = d.data();
+        // Only adopt if structure looks right
+        if (Array.isArray(data.questions)) {
+          setItems(data.questions.map((q) => ({ ...q })));
+          setDraftId(d.id);
+        } else {
+          setDraftId(null);
+        }
+      } else {
+        setDraftId(null);
+      }
+    } catch (e) {
+      console.warn("Could not load draft:", e?.message);
+      setDraftId(null);
+    }
+  };
+
+  const saveDraft = async () => {
+    if (!selectedChecklist) return;
+    const payload = {
+      site,
+      checklistId: selectedChecklist.id,
+      title: selectedChecklist.title,
+      person: user || "Unknown",
+      questions: items,
+      createdAt: draftId ? undefined : Timestamp.now(),
+      updatedAt: Timestamp.now(),
+      frequency: selectedChecklist.frequency || "Ad hoc",
+      status: "draft",
+    };
+
+    try {
+      if (draftId) {
+        await updateDoc(doc(db, "checklistDrafts", draftId), payload);
+      } else {
+        const ref = await addDoc(draftsCollectionRef, payload);
+        setDraftId(ref.id);
+      }
+      alert("Draft saved.");
+    } catch (e) {
+      console.error("Error saving draft:", e);
+      alert("Could not save draft.");
+    }
+  };
+
+  const discardDraft = async () => {
+    if (!draftId) return;
+    try {
+      await deleteDoc(doc(db, "checklistDrafts", draftId));
+      setDraftId(null);
+    } catch (e) {
+      console.error("Error discarding draft:", e);
+    }
+  };
+
   // ---------- Running (complete answers) ----------
-  const openChecklist = (cl) => {
+  const openChecklist = async (cl) => {
+    // Start with a fresh copy of the template
     const freshQuestions = (cl.questions || []).map((q) => ({
       ...q,
       answer: null,
@@ -312,10 +388,14 @@ const ChecklistSection = ({ goBack, site, user }) => {
     }));
     setSelectedChecklist(cl);
     setItems(freshQuestions);
-    // leave other modes
     setAdding(false);
     setTitleSet(false);
     setEditingId(null);
+    setViewingCompleted(null);
+    setDraftId(null);
+
+    // Try to load the latest draft for this user/checklist and override if found
+    await loadLatestDraft(cl);
   };
 
   const handleAnswerChange = (index, value) => {
@@ -334,13 +414,15 @@ const ChecklistSection = ({ goBack, site, user }) => {
     if (!selectedChecklist) return;
 
     try {
+      // DO NOT overwrite the template's questions with answers.
+      // Optionally stamp last completed metadata on the template:
       await updateDoc(doc(db, "checklists", selectedChecklist.id), {
-        questions: items,
+        lastCompletedAt: Timestamp.now(),
+        lastCompletedBy: user || "Unknown",
       });
 
       const now = Timestamp.now();
       const completedEntry = {
-        // 👇 ADDED: this links completions to a source checklist for SitePage overview
         checklistId: selectedChecklist.id,
         title: selectedChecklist.title,
         person: user || "Unknown",
@@ -353,10 +435,17 @@ const ChecklistSection = ({ goBack, site, user }) => {
       const docRef = await addDoc(completedCollectionRef, completedEntry);
       setCompleted((prev) => [{ id: docRef.id, ...completedEntry }, ...prev]);
 
+      // If a draft existed for this run, remove it
+      if (draftId) {
+        await deleteDoc(doc(db, "checklistDrafts", draftId));
+        setDraftId(null);
+      }
+
       setSelectedChecklist(null);
       setItems([]);
     } catch (error) {
       console.error("Error saving answers:", error);
+      alert("Could not submit answers. Please try again.");
     }
   };
 
@@ -383,6 +472,8 @@ const ChecklistSection = ({ goBack, site, user }) => {
   const viewCompleted = (c) => {
     setViewingCompleted(c);
     setItems(c.questions.map((q) => ({ ...q })));
+    setSelectedChecklist(null);
+    setDraftId(null);
   };
 
   const resetView = () => {
@@ -396,6 +487,7 @@ const ChecklistSection = ({ goBack, site, user }) => {
     // Run/View
     setSelectedChecklist(null);
     setViewingCompleted(null);
+    setDraftId(null);
     // Edit
     setEditingId(null);
     setEditTitle("");
@@ -633,7 +725,7 @@ const ChecklistSection = ({ goBack, site, user }) => {
                 padding: "10px 12px",
                 borderRadius: "10px",
                 width: "100%",
-                border: "1px solid #e5e7eb",
+                border: "1px solid "#e5e7eb",
                 outline: "none",
                 fontSize: "14px",
               }}
@@ -721,6 +813,7 @@ const ChecklistSection = ({ goBack, site, user }) => {
                 setSelectedChecklist(null);
                 setViewingCompleted(null);
                 setEditingId(null);
+                setDraftId(null);
               }}
             >
               + Add Checklist
@@ -1095,10 +1188,18 @@ const ChecklistSection = ({ goBack, site, user }) => {
             <span style={freqChip(selectedChecklist.frequency)}>{selectedChecklist.frequency || "Ad hoc"}</span>
           </SectionTitle>
           {renderChecklistItemsRun(true)}
-          <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
+          <div style={{ display: "flex", gap: 10, marginTop: 16, flexWrap: "wrap" }}>
             <Button kind="success" onClick={saveAnswers}>
               Submit Answers
             </Button>
+            <Button kind="warn" onClick={saveDraft}>
+              Save Draft
+            </Button>
+            {draftId && (
+              <Button kind="danger" onClick={discardDraft}>
+                Discard Draft
+              </Button>
+            )}
             <Button onClick={resetView}>Back</Button>
           </div>
         </Card>
