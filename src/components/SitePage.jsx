@@ -17,7 +17,7 @@ import {
 } from "react-icons/fa";
 
 import { db } from "../firebase";
-import { collection, onSnapshot, query, where } from "firebase/firestore";
+import { collection, onSnapshot } from "firebase/firestore";
 
 import EquipmentManager from "./EquipmentManager";
 import ChecklistSection from "./ChecklistSection";
@@ -41,6 +41,7 @@ const sites = [
 
 // Helpers for id/label compatibility
 const siteLabelForId = (id) => sites.find((s) => s.id === id)?.label ?? id;
+
 /**
  * Returns an array of possible "site" values found in Firestore for this venue.
  * We include both the new id and the old label, because older docs may have stored label strings.
@@ -48,26 +49,22 @@ const siteLabelForId = (id) => sites.find((s) => s.id === id)?.label ?? id;
 const siteKeysForSelected = (selectedSite) => {
   if (!selectedSite) return [];
   const label = siteLabelForId(selectedSite);
-  // Filter out null/undefined and duplicates
   return Array.from(new Set([selectedSite, label].filter(Boolean)));
 };
 
-/** ========= Collections/fields (adjust if your Cleaning writes elsewhere) ========= */
+/** ========= Collections/fields ========= */
 const COLLECTIONS = {
-  completedChecklists: "completed", // { site, createdAt, questions:[{answer, corrective?}] }
-  cleaningLogs: "cleaningLogs",     // { site, createdAt, status: "done"|"missed" }
+  completedChecklists: "completed",
+  cleaningLogs: "cleaningLogs",
 };
-/** ================================================================================ */
+/** ===================================== */
 
-/** ========= Temperature limits (tweak to match your policy) =========
- * Fridge: pass if 0..5°C inclusive
- * Freezer: pass if <= -18°C
- */
+/** ========= Temperature limits ========= */
 const TEMP_LIMITS = {
   Fridge: { min: 0, max: 5 },
   Freezer: { max: -18 },
 };
-/** ================================================================== */
+/** ===================================== */
 
 // ---- Small date helpers ----
 const toDate = (ts) => (ts?.toDate ? ts.toDate() : ts instanceof Date ? ts : null);
@@ -80,9 +77,9 @@ const isSameDay = (a, b) =>
 
 const withinLastDays = (d, days) => {
   const now = new Date();
-  const end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999); // end of today
+  const end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
   const from = new Date(end);
-  from.setDate(end.getDate() - (days - 1)); // inclusive window
+  from.setDate(end.getDate() - (days - 1));
   from.setHours(0, 0, 0, 0);
   const dd = toDate(d);
   return dd ? dd >= from && dd <= end : false;
@@ -171,8 +168,8 @@ const norm = (s = "") =>
     .toString()
     .toLowerCase()
     .trim()
-    .replace(/\s+/g, " ") // collapse spaces
-    .replace(/[^\w\s]/g, ""); // strip punctuation
+    .replace(/\s+/g, " ")
+    .replace(/[^\w\s]/g, "");
 
 const SitePage = ({ user, onLogout }) => {
   const [selectedSite, setSelectedSite] = useState(null);
@@ -183,36 +180,47 @@ const SitePage = ({ user, onLogout }) => {
   const [completed, setCompleted] = useState([]);
 
   // subscribe to equipment (fridges/freezers) and cleaning logs
-  const [equipment, setEquipment] = useState([]); // equipment docs with { type, records[] }
+  const [equipment, setEquipment] = useState([]);
   const [cleanLogs, setCleanLogs] = useState([]);
 
   // pass into child sections
   const [tempChecks, setTempChecks] = useState([]);
   const [cleaningRecords, setCleaningRecords] = useState([]);
 
-  // Overview mode toggle (for scheduled checklist progress)
+  // Overview mode toggle
   const [overviewMode, setOverviewMode] = useState("ALL");
 
   const isMobile = useIsMobile();
 
-  // Derive both possible Firestore "site" values (new id + old label)
   const selectedSiteKeys = useMemo(() => siteKeysForSelected(selectedSite), [selectedSite]);
   const selectedSiteLabel = useMemo(() => (selectedSite ? siteLabelForId(selectedSite) : ""), [selectedSite]);
+
+  // Legacy rule: docs missing `site` are assumed to be Thorganby
+  const assumeMissingSiteAsThisVenue = selectedSite === "thorganby";
+
+  // Filter helper (used for all collections)
+  const filterForSelectedSite = useMemo(() => {
+    const keys = selectedSiteKeys;
+    return (docData) => {
+      const s = docData?.site;
+      if (s && keys.includes(s)) return true; // new docs with site
+      if (!s && assumeMissingSiteAsThisVenue) return true; // legacy docs with no site -> thorganby
+      return false;
+    };
+  }, [selectedSiteKeys, assumeMissingSiteAsThisVenue]);
 
   // --- Live subscriptions for site data ---
   useEffect(() => {
     if (!selectedSite) return;
 
-    // IMPORTANT: Firestore "in" requires 1..10 values.
-    // If keys is empty, don't subscribe.
-    if (!selectedSiteKeys.length) return;
-
-    // Checklists (templates)
-    const qCL = query(collection(db, "checklists"), where("site", "in", selectedSiteKeys));
+    // Checklists (templates) — subscribe to ALL then filter
     const unsubCL = onSnapshot(
-      qCL,
+      collection(db, "checklists"),
       (snap) => {
-        const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        const rows = snap.docs
+          .map((d) => ({ id: d.id, ...d.data() }))
+          .filter(filterForSelectedSite);
+
         rows.sort((a, b) => {
           const ta = a.createdAt?.toMillis?.() ?? 0;
           const tb = b.createdAt?.toMillis?.() ?? 0;
@@ -223,12 +231,14 @@ const SitePage = ({ user, onLogout }) => {
       () => setChecklists([])
     );
 
-    // Completed checklist runs
-    const qDone = query(collection(db, COLLECTIONS.completedChecklists), where("site", "in", selectedSiteKeys));
+    // Completed checklist runs — subscribe to ALL then filter
     const unsubDone = onSnapshot(
-      qDone,
+      collection(db, COLLECTIONS.completedChecklists),
       (snap) => {
-        const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        const rows = snap.docs
+          .map((d) => ({ id: d.id, ...d.data() }))
+          .filter(filterForSelectedSite);
+
         rows.sort((a, b) => {
           const ta = a.completedAt?.toMillis?.() ?? a.createdAt?.toMillis?.() ?? 0;
           const tb = b.completedAt?.toMillis?.() ?? b.createdAt?.toMillis?.() ?? 0;
@@ -239,23 +249,25 @@ const SitePage = ({ user, onLogout }) => {
       () => setCompleted([])
     );
 
-    // Equipment
-    const qEquip = query(collection(db, "equipment"), where("site", "in", selectedSiteKeys));
+    // Equipment — subscribe to ALL then filter
     const unsubEquip = onSnapshot(
-      qEquip,
+      collection(db, "equipment"),
       (snap) => {
-        const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        const rows = snap.docs
+          .map((d) => ({ id: d.id, ...d.data() }))
+          .filter(filterForSelectedSite);
         setEquipment(rows);
       },
       () => setEquipment([])
     );
 
-    // Cleaning logs
-    const qClean = query(collection(db, COLLECTIONS.cleaningLogs), where("site", "in", selectedSiteKeys));
+    // Cleaning logs — subscribe to ALL then filter
     const unsubClean = onSnapshot(
-      qClean,
+      collection(db, COLLECTIONS.cleaningLogs),
       (snap) => {
-        const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        const rows = snap.docs
+          .map((d) => ({ id: d.id, ...d.data() }))
+          .filter(filterForSelectedSite);
         setCleanLogs(rows);
       },
       () => setCleanLogs([])
@@ -267,7 +279,7 @@ const SitePage = ({ user, onLogout }) => {
       unsubEquip();
       unsubClean();
     };
-  }, [selectedSite, selectedSiteKeys]);
+  }, [selectedSite, filterForSelectedSite]);
 
   // --- Compute “due” vs “done” by frequency (scheduled checklist progress) ---
   const overview = useMemo(() => {
@@ -275,11 +287,9 @@ const SitePage = ({ user, onLogout }) => {
 
     const getLatestForChecklist = (cl) => {
       const t = norm(cl.title || "");
-      // Prefer exact link by checklistId
       const matches = completed.filter((c) => {
         const cid = c.checklistId || c.checklistRef || c.checklist_id;
         if (cid && cid === cl.id) return true;
-        // fallback: normalized title equality
         const ct = norm(c.title || c.checklistTitle || "");
         return t && ct && ct === t;
       });
@@ -317,7 +327,6 @@ const SitePage = ({ user, onLogout }) => {
       }
     }
 
-    // Scope by overviewMode
     let totalDue = 0;
     let totalDone = 0;
     let label = "";
@@ -375,7 +384,7 @@ const SitePage = ({ user, onLogout }) => {
     let tTotal = 0;
 
     equipment
-      .filter((eq) => selectedSiteKeys.includes(eq.site) && (eq.type === "Fridge" || eq.type === "Freezer"))
+      .filter((eq) => (eq.type === "Fridge" || eq.type === "Freezer"))
       .forEach((eq) => {
         const recs = Array.isArray(eq.records) ? eq.records : [];
         recs.forEach((r) => {
@@ -423,7 +432,7 @@ const SitePage = ({ user, onLogout }) => {
       t: { pass: tPass, total: tTotal, pct: pctT },
       c: { pass: cPass, total: cTotal, pct: pctC },
     };
-  }, [completed, equipment, cleanLogs, selectedSiteKeys]);
+  }, [completed, equipment, cleanLogs]);
   /** ================================================================================ */
 
   const resetSite = () => {
@@ -451,7 +460,8 @@ const SitePage = ({ user, onLogout }) => {
     return <ChecklistSection goBack={() => setActiveSection(null)} site={selectedSite} user={user} />;
   }
   if (selectedSite && activeSection === "temp") {
-    // Accept both old label and new id
+    // Keep existing behaviour for TempSection input list
+    // (TempSection itself likely writes/reads equipment by site - you pass `site={selectedSite}`)
     const siteTempChecks = tempChecks.filter(
       (e) => selectedSiteKeys.includes(e.site) && (e.type === "Fridge" || e.type === "Freezer")
     );
@@ -510,23 +520,8 @@ const SitePage = ({ user, onLogout }) => {
   // Site selection screen
   if (!selectedSite) {
     return (
-      <div
-        style={{
-          maxWidth: "500px",
-          margin: "0 auto",
-          padding: "40px 20px",
-          fontFamily: "'Inter', sans-serif",
-        }}
-      >
-        <h1
-          style={{
-            fontSize: "30px",
-            fontWeight: "700",
-            marginBottom: "25px",
-            color: "#111",
-            textAlign: "center",
-          }}
-        >
+      <div style={{ maxWidth: "500px", margin: "0 auto", padding: "40px 20px", fontFamily: "'Inter', sans-serif" }}>
+        <h1 style={{ fontSize: "30px", fontWeight: "700", marginBottom: "25px", color: "#111", textAlign: "center" }}>
           Venues
         </h1>
 
@@ -636,14 +631,7 @@ const SitePage = ({ user, onLogout }) => {
   });
 
   return (
-    <div
-      style={{
-        maxWidth: "900px",
-        margin: "0 auto",
-        padding: "40px 20px",
-        fontFamily: "'Inter', sans-serif",
-      }}
-    >
+    <div style={{ maxWidth: "900px", margin: "0 auto", padding: "40px 20px", fontFamily: "'Inter', sans-serif" }}>
       <style>{`
         .overview-card { display:grid; grid-template-columns: auto 1fr; gap:16px; align-items:center; }
         @media (max-width: 520px) {
@@ -653,28 +641,13 @@ const SitePage = ({ user, onLogout }) => {
         }
       `}</style>
 
-      <h1
-        style={{
-          fontSize: "30px",
-          marginBottom: "20px",
-          color: "#111",
-          fontWeight: 600,
-          textAlign: "center",
-        }}
-      >
+      <h1 style={{ fontSize: "30px", marginBottom: "20px", color: "#111", fontWeight: 600, textAlign: "center" }}>
         {selectedSiteLabel}
       </h1>
 
-      {/* ==== Integrated Overview: Combined Compliance (today) + Scheduled Progress ==== */}
       <div
         className="overview-card"
-        style={{
-          background: "#fff",
-          borderRadius: 16,
-          padding: 18,
-          marginBottom: 22,
-          boxShadow: "0 2px 6px rgba(0,0,0,0.08)",
-        }}
+        style={{ background: "#fff", borderRadius: 16, padding: 18, marginBottom: 22, boxShadow: "0 2px 6px rgba(0,0,0,0.08)" }}
       >
         <div className="overview-left">
           <Donut
@@ -724,15 +697,9 @@ const SitePage = ({ user, onLogout }) => {
           </div>
 
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <span style={chip("#ecfeff", "#075985")}>
-              Daily: <strong>{buckets.daily.done}/{buckets.daily.total}</strong>
-            </span>
-            <span style={chip("#f5f3ff", "#5b21b6")}>
-              Weekly: <strong>{buckets.weekly.done}/{buckets.weekly.total}</strong>
-            </span>
-            <span style={chip("#fef3c7", "#92400e")}>
-              Monthly: <strong>{buckets.monthly.done}/{buckets.monthly.total}</strong>
-            </span>
+            <span style={chip("#ecfeff", "#075985")}>Daily: <strong>{buckets.daily.done}/{buckets.daily.total}</strong></span>
+            <span style={chip("#f5f3ff", "#5b21b6")}>Weekly: <strong>{buckets.weekly.done}/{buckets.weekly.total}</strong></span>
+            <span style={chip("#fef3c7", "#92400e")}>Monthly: <strong>{buckets.monthly.done}/{buckets.monthly.total}</strong></span>
             {totalDue === 0 && <span style={chip("#e5e7eb", "#111827")}>No scheduled checklists</span>}
           </div>
 
@@ -742,14 +709,7 @@ const SitePage = ({ user, onLogout }) => {
         </div>
       </div>
 
-      {/* Icon cards */}
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-          gap: "20px",
-        }}
-      >
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "20px" }}>
         {sections.map((sec) => (
           <div
             key={sec.key}
@@ -778,34 +738,15 @@ const SitePage = ({ user, onLogout }) => {
             }}
           >
             <div style={{ marginBottom: "10px" }}>{sec.icon}</div>
-            <div style={{ fontWeight: "600", fontSize: "15px", color: "#111", textAlign: "center" }}>
-              {sec.label}
-            </div>
+            <div style={{ fontWeight: "600", fontSize: "15px", color: "#111", textAlign: "center" }}>{sec.label}</div>
           </div>
         ))}
       </div>
 
-      <div
-        style={{
-          marginTop: "40px",
-          display: "flex",
-          gap: "16px",
-          justifyContent: "center",
-          flexWrap: "wrap",
-        }}
-      >
+      <div style={{ marginTop: "40px", display: "flex", gap: "16px", justifyContent: "center", flexWrap: "wrap" }}>
         <button
           onClick={resetSite}
-          style={{
-            padding: "12px 24px",
-            borderRadius: "10px",
-            cursor: "pointer",
-            backgroundColor: "#f3f4f6",
-            fontSize: "15px",
-            fontWeight: 500,
-            border: "none",
-            transition: "all 0.25s",
-          }}
+          style={{ padding: "12px 24px", borderRadius: "10px", cursor: "pointer", backgroundColor: "#f3f4f6", fontSize: "15px", fontWeight: 500, border: "none", transition: "all 0.25s" }}
           onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#e0e3e8")}
           onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#f3f4f6")}
         >
@@ -813,17 +754,7 @@ const SitePage = ({ user, onLogout }) => {
         </button>
         <button
           onClick={onLogout}
-          style={{
-            padding: "12px 24px",
-            borderRadius: "10px",
-            cursor: "pointer",
-            backgroundColor: "#ff5f5f",
-            fontSize: "15px",
-            color: "#fff",
-            fontWeight: 500,
-            border: "none",
-            transition: "all 0.25s",
-          }}
+          style={{ padding: "12px 24px", borderRadius: "10px", cursor: "pointer", backgroundColor: "#ff5f5f", fontSize: "15px", color: "#fff", fontWeight: 500, border: "none", transition: "all 0.25s" }}
           onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#ff3f3f")}
           onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#ff5f5f")}
         >
@@ -842,9 +773,7 @@ function BreakdownRow({ label, pct, detail, hint, color = "#2563eb" }) {
         <div style={{ width: `${pct}%`, height: "100%", background: color, transition: "width 0.6s ease" }} />
       </div>
       <div style={{ textAlign: "right", color: "#111", fontWeight: 700 }}>{pct}%</div>
-      <div style={{ gridColumn: "1 / span 3", fontSize: 11, color: "#6b7280" }}>
-        {detail} • {hint}
-      </div>
+      <div style={{ gridColumn: "1 / span 3", fontSize: 11, color: "#6b7280" }}>{detail} • {hint}</div>
     </div>
   );
 }
