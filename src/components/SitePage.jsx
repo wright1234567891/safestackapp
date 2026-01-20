@@ -32,10 +32,11 @@ import DishesSection from "./DishesSection";
 import StaffTrainingSection from "./StaffTrainingSection";
 
 const sites = [
-  "Thorganby Site",
-  "Street Food Trailer",
-  "Newsholme Site",
-  "Pop up Locations",
+  { id: "thorganby", label: "Thorganby Site" },
+  { id: "trailer", label: "Street Food Trailer" },
+  { id: "newsholme", label: "Newsholme Site" },
+  { id: "popups", label: "Pop up Locations" },
+  { id: "micklegate", label: "50 Micklegate" },
 ];
 
 /** ========= Collections/fields (adjust if your Cleaning writes elsewhere) ========= */
@@ -511,10 +512,10 @@ const SitePage = ({ user, onLogout }) => {
         </h1>
 
         <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-          {sites.map((site) => (
+          {sites.map((s) => (
             <div
-              key={site}
-              onClick={() => setSelectedSite(site)}
+              key={s.id}
+              onClick={() => setSelectedSite(s.id)}
               style={{
                 display: "flex",
                 alignItems: "center",
@@ -532,7 +533,7 @@ const SitePage = ({ user, onLogout }) => {
               <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
                 <FaMapMarkerAlt size={20} color="#ef4444" />
                 <div>
-                  <div style={{ fontWeight: "600", fontSize: "16px", color: "#111" }}>{site}</div>
+                  <div style={{ fontWeight: "600", fontSize: "16px", color: "#111" }}>{s.label}</div>
                   <div style={{ fontSize: "13px", color: "#666" }}>Tap to enter venue</div>
                 </div>
               </div>
