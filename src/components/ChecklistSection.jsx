@@ -162,7 +162,10 @@ const ChecklistSection = ({ goBack, site, user }) => {
 // Adjust to your auth model if user is an object
 
 const uid = user?.uid || null;
-const personName = user?.displayName || user?.email || "Unknown";
+const personName =
+  typeof user === "string"
+    ? user
+    : user?.displayName || user?.email || "Unknown";
 const [role, setRole] = useState("staff");
 const isManager =
   role === "manager" || ["Chris", "Chloe"].includes(personName);
