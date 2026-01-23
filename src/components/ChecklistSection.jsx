@@ -199,9 +199,47 @@ useEffect(() => {
 }, [uid]);
 
   // Firestore refs
-  const checklistCollectionRef = collection(db, "checklists");
-  const completedCollectionRef = collection(db, "completed");
-  const draftsCollectionRef = collection(db, "checklistDrafts");
+const checklistCollectionRef = collection(db, "checklists"); //
+const templatesCollectionRef = collection(db, "templates"); // 
+const siteTemplatesCollectionRef = collection(db, "siteTemplates"); // 
+
+const completedCollectionRef = collection(db, "completed");
+const draftsCollectionRef = collection(db, "checklistDrafts");
+
+// ---------- Build effective checklists from templates ----------
+const buildChecklistsFromTemplates = (siteTemplateRows, templatesRows) => {
+  const tplMap = new Map(templatesRows.map((t) => [t.id, t]));
+  const enabledLinks = siteTemplateRows.filter((st) => st.enabled !== false);
+
+  return enabledLinks
+    .map((st) => {
+      const tpl = tplMap.get(st.templateId);
+      if (!tpl) return null;
+
+      const overrideTitle = st.overrides?.title;
+      const qOverrides = st.overrides?.questions || {};
+
+      const questions = (tpl.questions || []).map((q) => {
+        const base = withQuestionDefaults(q);
+        const o = qOverrides[base.id];
+        return {
+          ...base,
+          enabled: o?.enabled ?? base.enabled ?? true,
+        };
+      });
+
+      return {
+        id: tpl.id,               // checklistId === templateId
+        site,                     // ✅ now in scope
+        title: overrideTitle || tpl.title,
+        frequency: tpl.frequency || "Ad hoc",
+        questions,
+        _source: "template",
+        _templateId: tpl.id,
+      };
+    })
+    .filter(Boolean);
+};
 
   // ---------- shared draft refresher ----------
   const refreshDrafts = async () => {
@@ -236,37 +274,53 @@ useEffect(() => {
     if (!site) return;
 
     const fetchData = async () => {
-      // Checklists
-      try {
-        const qChecklist = query(
-          checklistCollectionRef,
-          where("site", "==", site),
-          orderBy("createdAt", "desc")
-        );
-        const checklistSnapshot = await getDocs(qChecklist);
-        setChecklists(
-          checklistSnapshot.docs.map((d) => ({ id: d.id, ...d.data() }))
-        );
-      } catch {
-        try {
-          const qChecklistFallback = query(
-            checklistCollectionRef,
-            where("site", "==", site)
-          );
-          const snap = await getDocs(qChecklistFallback);
-          const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-          rows.sort((a, b) => {
-            const ta = a.createdAt?.toMillis?.() ?? 0;
-            const tb = b.createdAt?.toMillis?.() ?? 0;
-            return tb - ta;
-          });
-          setChecklists(rows);
-        } catch (err2) {
-          console.error("Error fetching checklists:", err2);
-          setChecklists([]);
-        }
-      }
+// Checklists (NEW path first: templates + siteTemplates; fallback to legacy checklists)
+try {
+  // 1) See if this site has siteTemplates configured
+  const qSiteTemplates = query(
+    siteTemplatesCollectionRef,
+    where("site", "==", site)
+  );
+  const stSnap = await getDocs(qSiteTemplates);
+  const siteTemplateRows = stSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
 
+  if (siteTemplateRows.length > 0) {
+    // 2) Fetch templates (simple approach: pull all, then filter)
+    // (Later we can optimize with "in" queries or a cache)
+    const tplSnap = await getDocs(templatesCollectionRef);
+    const templatesRows = tplSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+
+    const effective = buildChecklistsFromTemplates(siteTemplateRows, templatesRows);
+    setChecklists(effective);
+  } else {
+    // 3) Fallback to legacy per-site checklists (your current system)
+    const qChecklist = query(
+      checklistCollectionRef,
+      where("site", "==", site),
+      orderBy("createdAt", "desc")
+    );
+    const checklistSnapshot = await getDocs(qChecklist);
+    setChecklists(
+      checklistSnapshot.docs.map((d) => ({ id: d.id, ...d.data() }))
+    );
+  }
+} catch (err) {
+  console.error("Error fetching checklists/templates:", err);
+
+  // Ultimate fallback: try legacy checklists without orderBy (index-safe)
+  try {
+    const qChecklistFallback = query(
+      checklistCollectionRef,
+      where("site", "==", site)
+    );
+    const snap = await getDocs(qChecklistFallback);
+    const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    setChecklists(rows);
+  } catch (err2) {
+    console.error("Error fetching checklists fallback:", err2);
+    setChecklists([]);
+  }
+}
       // Completed
       try {
         const qCompleted = query(
