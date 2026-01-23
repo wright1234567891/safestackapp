@@ -1223,8 +1223,7 @@ const isSiteOverrideMode = !!editingSiteTemplate;
   };
 
   const renderChecklistItemsRun = (editable = true) =>
-  runQuestions.map((itemRaw, index) => {
-      const item = withQuestionDefaults(itemRaw);
+  runQuestions.map((item, index) => {
       const ans = item.answer;
       return (
         <Card key={item.id || index} hoverable={false} style={{ margin: "10px 0" }}>
@@ -1260,9 +1259,8 @@ const isSiteOverrideMode = !!editingSiteTemplate;
     });
 
   const renderAuthoringItems = (list, onUpdate, onRemove) =>
-    list.map((raw, index) => {
-      const item = withQuestionDefaults(raw);
-      return (
+  list.map((item, index) => {
+    return (
         <Card key={item.id || index} hoverable={false} style={{ margin: "10px 0" }}>
           <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
             <input
