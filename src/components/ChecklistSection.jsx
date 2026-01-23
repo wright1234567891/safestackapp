@@ -129,6 +129,7 @@ const needsCorrective = (rule, ans) => {
 const ChecklistSection = ({ goBack, site, user }) => {
   const [checklists, setChecklists] = useState([]);
   const [templates, setTemplates] = useState([]);        //
+  const [siteTemplates, setSiteTemplates] = useState([]); // links for this site
 const [viewingTemplates, setViewingTemplates] = useState(false); // 
   const [completed, setCompleted] = useState([]);
 
@@ -285,6 +286,7 @@ try {
   );
   const stSnap = await getDocs(qSiteTemplates);
   const siteTemplateRows = stSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+setSiteTemplates(siteTemplateRows);
 
   if (siteTemplateRows.length > 0) {
     // 2) Fetch templates (simple approach: pull all, then filter)
@@ -540,6 +542,44 @@ const newQuestion = (text = "") =>
   };
 
   // ---------- Draft helpers ----------
+  // ---------- Site template helpers ----------
+const isTemplateEnabledForSite = (templateId) =>
+  siteTemplates.some(
+    (st) => st.templateId === templateId && st.enabled !== false
+  );
+
+const addTemplateToSite = async (templateId) => {
+  try {
+    await addDoc(siteTemplatesCollectionRef, {
+      site,
+      templateId,
+      enabled: true,
+      createdAt: Timestamp.now(),
+      createdBy: personName,
+    });
+    // refresh
+    const snap = await getDocs(
+      query(siteTemplatesCollectionRef, where("site", "==", site))
+    );
+    setSiteTemplates(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+  } catch (e) {
+    console.error("Error adding template to site:", e);
+  }
+};
+
+const removeTemplateFromSite = async (templateId) => {
+  try {
+    const match = siteTemplates.find((st) => st.templateId === templateId);
+    if (!match) return;
+
+    await deleteDoc(doc(db, "siteTemplates", match.id));
+
+    setSiteTemplates((prev) =>
+      prev.filter((st) => st.templateId !== templateId)
+    );
+  } catch (e) {
+    console.error("Error removing template from site:", e);
+  }
   const refreshDraftsForPerson = async () => {
     await refreshDrafts();
   };
@@ -1434,6 +1474,23 @@ const newQuestion = (text = "") =>
           >
             Edit Template
           </Button>
+          {isTemplateEnabledForSite(tpl.id) ? (
+  <Button
+    kind="warn"
+    onClick={() => removeTemplateFromSite(tpl.id)}
+    style={{ marginTop: 8 }}
+  >
+    Remove from site
+  </Button>
+) : (
+  <Button
+    kind="success"
+    onClick={() => addTemplateToSite(tpl.id)}
+    style={{ marginTop: 8 }}
+  >
+    Add to site
+  </Button>
+)}
         </Card>
       ))}
     </div>
