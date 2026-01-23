@@ -166,13 +166,6 @@ const personName = user?.displayName || user?.email || "Unknown";
 const [role, setRole] = useState("staff");
 const isManager = role === "manager";
 
-// ...
-
-const uid = user?.uid || null;
-const personName = user?.displayName || user?.email || "Unknown";
-const [role, setRole] = useState("staff");
-const isManager = role === "manager";
-
 useEffect(() => {
   let ignore = false;
 
