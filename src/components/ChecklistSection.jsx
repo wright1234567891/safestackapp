@@ -819,44 +819,59 @@ const refreshDraftsForPerson = async () => {
   setRunQuestions(updated);
 };
 
-  const saveAnswers = async () => {
-    if (!selectedChecklist) return;
+const saveAnswers = async () => {
+  if (!selectedChecklist) return;
 
-    try {
-      // stamp metadata on the template
-      await updateDoc(doc(db, "checklists", selectedChecklist.id), {
-        lastCompletedAt: Timestamp.now(),
-        lastCompletedBy: personName,
-      });
+  try {
+    const now = Timestamp.now();
 
-      const now = Timestamp.now();
-      const completedEntry = {
-        checklistId: selectedChecklist.id,
-        title: selectedChecklist.title,
-        person: personName,
-        questions: runQuestions.map(withQuestionDefaults),
-        site,
-        createdAt: now,
-        frequency: selectedChecklist.frequency || "Ad hoc",
-      };
-
-      const docRef = await addDoc(completedCollectionRef, completedEntry);
-      setCompleted((prev) => [{ id: docRef.id, ...completedEntry }, ...prev]);
-
-      // clean up draft for this run
-      if (draftId) {
-        await deleteDoc(doc(db, "checklistDrafts", draftId));
-        setDraftId(null);
+    // ✅ Only stamp metadata on legacy checklists (real docs in "checklists")
+    // Template-sourced checklists are not in "checklists", so this would fail.
+    if (!selectedChecklist._source || selectedChecklist._source !== "template") {
+      try {
+        await updateDoc(doc(db, "checklists", selectedChecklist.id), {
+          lastCompletedAt: now,
+          lastCompletedBy: personName,
+        });
+      } catch (e) {
+        console.warn("Skipping lastCompleted stamp (checklists doc missing?):", e?.message);
       }
-      await refreshDraftsForPerson();
-
-      setSelectedChecklist(null);
-      setRunQuestions([]);
-    } catch (error) {
-      console.error("Error saving answers:", error);
-      alert("Could not submit answers. Please try again.");
     }
-  };
+
+    // ✅ Always save a completed record
+    const completedEntry = {
+      site,
+      createdAt: now,
+      person: personName,
+
+      // keep your existing shape
+      title: selectedChecklist.title,
+      frequency: selectedChecklist.frequency || "Ad hoc",
+      questions: runQuestions.map(withQuestionDefaults),
+
+      // ✅ IMPORTANT: track what this completion was based on
+      source: selectedChecklist._source === "template" ? "template" : "checklist",
+      templateId: selectedChecklist._source === "template" ? selectedChecklist.id : null,
+      checklistId: selectedChecklist._source === "template" ? null : selectedChecklist.id,
+    };
+
+    const docRef = await addDoc(completedCollectionRef, completedEntry);
+    setCompleted((prev) => [{ id: docRef.id, ...completedEntry }, ...prev]);
+
+    // clean up draft for this run
+    if (draftId) {
+      await deleteDoc(doc(db, "checklistDrafts", draftId));
+      setDraftId(null);
+    }
+    await refreshDraftsForPerson();
+
+    setSelectedChecklist(null);
+    setRunQuestions([]);
+  } catch (error) {
+    console.error("Error saving answers:", error);
+    alert("Could not submit answers. Please try again.");
+  }
+};
 
   const deleteChecklist = async (cl) => {
     if (!window.confirm(`Delete checklist "${cl.title}"? This cannot be undone.`))
