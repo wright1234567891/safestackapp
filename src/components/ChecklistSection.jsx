@@ -164,7 +164,8 @@ const ChecklistSection = ({ goBack, site, user }) => {
 const uid = user?.uid || null;
 const personName = user?.displayName || user?.email || "Unknown";
 const [role, setRole] = useState("staff");
-const isManager = role === "manager";
+const isManager =
+  role === "manager" || ["Chris", "Chloe"].includes(personName);
 
 useEffect(() => {
   let ignore = false;
