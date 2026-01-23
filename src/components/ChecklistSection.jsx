@@ -4,6 +4,7 @@ import {
   collection,
   addDoc,
   getDocs,
+  getDoc,
   updateDoc,
   deleteDoc,
   doc,
@@ -158,8 +159,12 @@ const ChecklistSection = ({ goBack, site, user }) => {
   // Track a draft id while running a checklist
   const [draftId, setDraftId] = useState(null);
 
-  // Adjust to your auth model if user is an object
-import { getDoc } from "firebase/firestore";
+// Adjust to your auth model if user is an object
+
+const uid = user?.uid || null;
+const personName = user?.displayName || user?.email || "Unknown";
+const [role, setRole] = useState("staff");
+const isManager = role === "manager";
 
 // ...
 
