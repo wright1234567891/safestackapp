@@ -154,6 +154,7 @@ const [viewQuestions, setViewQuestions] = useState([]);
 
   // Editing state (Edit existing)
   const [editingId, setEditingId] = useState(null);
+  const [editingSource, setEditingSource] = useState("checklists"); // "checklists" | "templates"
   const [editTitle, setEditTitle] = useState("");
   const [editFrequency, setEditFrequency] = useState("Ad hoc");
   const [editItems, setEditItems] = useState([]);
@@ -580,9 +581,12 @@ const removeTemplateFromSite = async (templateId) => {
   } catch (e) {
     console.error("Error removing template from site:", e);
   }
-  const refreshDraftsForPerson = async () => {
-    await refreshDrafts();
-  };
+};
+
+// ---------- Draft helpers ----------
+const refreshDraftsForPerson = async () => {
+  await refreshDrafts();
+};
 
   const loadLatestDraft = async (cl) => {
     try {
