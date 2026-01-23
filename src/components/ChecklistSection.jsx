@@ -139,7 +139,14 @@ const ChecklistSection = ({ goBack, site, user }) => {
   const [titleSet, setTitleSet] = useState(false);
   const [checklistTitle, setChecklistTitle] = useState("");
   const [newFrequency, setNewFrequency] = useState("Daily");
-  const [items, setItems] = useState([]);
+  // Authoring (Create)
+const [authorQuestions, setAuthorQuestions] = useState([]);
+
+// Running (Complete)
+const [runQuestions, setRunQuestions] = useState([]);
+
+// Viewing completed
+const [viewQuestions, setViewQuestions] = useState([]);
   const [newItem, setNewItem] = useState("");
 
   // Editing state (Edit existing)
@@ -335,26 +342,26 @@ const newQuestion = (text = "") =>
 
   const addItemAuthor = () => {
     if (!newItem.trim()) return;
-    setItems((prev) => [...prev, newQuestion(newItem.trim())]);
+    setAuthorQuestions((prev) => [...prev, newQuestion(newItem.trim())]);
     setNewItem("");
     requestAnimationFrame(() => newItemRef.current?.focus());
   };
 
   const updateItemAuthor = (index, updater) => {
-    const updated = [...items];
-    const current = withQuestionDefaults(updated[index]);
-    updated[index] = typeof updater === "function" ? updater(current) : updater;
-    setItems(updated);
-  };
+  const updated = [...authorQuestions];
+  const current = withQuestionDefaults(updated[index]);
+  updated[index] = typeof updater === "function" ? updater(current) : updater;
+  setAuthorQuestions(updated);
+};
 
   const removeItemAuthor = (index) => {
-    const updated = [...items];
-    updated.splice(index, 1);
-    setItems(updated);
-  };
+  const updated = [...authorQuestions];
+  updated.splice(index, 1);
+  setAuthorQuestions(updated);
+};
 
   const saveChecklist = async () => {
-    if (!checklistTitle.trim() || items.length === 0) {
+    if (!checklistTitle.trim() || authorQuestions.length === 0) {
       alert("Checklist must have a title and at least one question");
       return;
     }
@@ -363,7 +370,7 @@ const newQuestion = (text = "") =>
       site,
       title: checklistTitle.trim(),
       frequency: newFrequency || "Ad hoc",
-      questions: items.map(withQuestionDefaults),
+      questions: authorQuestions.map(withQuestionDefaults),
       createdAt: Timestamp.now(),
       person: personName,
     };
@@ -374,7 +381,7 @@ const newQuestion = (text = "") =>
       // Reset create state
       setChecklistTitle("");
       setNewFrequency("Daily");
-      setItems([]);
+      setAuthorQuestions([]);
       setTitleSet(false);
       setAdding(false);
     } catch (error) {
@@ -481,7 +488,7 @@ const newQuestion = (text = "") =>
         const d = snap.docs[0];
         const data = d.data();
         if (Array.isArray(data.questions)) {
-          setItems(data.questions.map(withQuestionDefaults));
+          setRunQuestions(data.questions.map(withQuestionDefaults));
           setDraftId(d.id);
         } else {
           setDraftId(null);
@@ -503,7 +510,7 @@ const newQuestion = (text = "") =>
       checklistId: selectedChecklist.id,
       title: selectedChecklist.title,
       person: personName,
-      questions: items.map(withQuestionDefaults),
+      questions: runQuestions.map(withQuestionDefaults),
       frequency: selectedChecklist.frequency || "Ad hoc",
       status: "draft",
     };
@@ -559,7 +566,7 @@ const newQuestion = (text = "") =>
       })
     );
     setSelectedChecklist(cl);
-    setItems(freshQuestions);
+    setRunQuestions(freshQuestions);
     setAdding(false);
     setTitleSet(false);
     setEditingId(null);
@@ -580,7 +587,7 @@ const newQuestion = (text = "") =>
         frequency: draft.frequency || "Ad hoc",
       });
     }
-    setItems((draft.questions || []).map(withQuestionDefaults));
+    setRunQuestions((draft.questions || []).map(withQuestionDefaults));
     setAdding(false);
     setTitleSet(false);
     setEditingId(null);
@@ -589,7 +596,7 @@ const newQuestion = (text = "") =>
   };
 
   const handleAnswerChange = (index, value) => {
-    const updated = [...items];
+    const updated = [...runQuestions];
     const item = withQuestionDefaults(updated[index]);
     item.answer = value;
 
@@ -608,40 +615,39 @@ const newQuestion = (text = "") =>
       item.corrective = "";
     }
     updated[index] = item;
-    setItems(updated);
+    setRunQuestions(updated);
   };
 
   const handleCorrectiveChange = (index, value) => {
-    const updated = [...items];
-    const item = withQuestionDefaults(updated[index]);
-    item.corrective = value;
-    updated[index] = item;
-    setItems(updated);
-  };
-
+  const updated = [...runQuestions];
+  const item = withQuestionDefaults(updated[index]);
+  item.corrective = value;
+  updated[index] = item;
+  setRunQuestions(updated);
+};
   // Follow-up handlers
   const handleFollowUpAnswer = (index, branch /* "yes"|"no" */, value) => {
-    const updated = [...items];
-    const item = withQuestionDefaults(updated[index]);
-    const fa = { ...(item.followUpAnswers?.[branch] ?? { answer: null, corrective: "" }) };
-    fa.answer = value;
-    if (!needsCorrective(item.followUps[branch].correctiveOn, value)) {
-      fa.corrective = "";
-    }
-    item.followUpAnswers = { ...item.followUpAnswers, [branch]: fa };
-    updated[index] = item;
-    setItems(updated);
-  };
+  const updated = [...runQuestions];
+  const item = withQuestionDefaults(updated[index]);
+  const fa = { ...(item.followUpAnswers?.[branch] ?? { answer: null, corrective: "" }) };
+  fa.answer = value;
+  if (!needsCorrective(item.followUps[branch].correctiveOn, value)) {
+    fa.corrective = "";
+  }
+  item.followUpAnswers = { ...item.followUpAnswers, [branch]: fa };
+  updated[index] = item;
+  setRunQuestions(updated);
+};
 
   const handleFollowUpCorrective = (index, branch, value) => {
-    const updated = [...items];
-    const item = withQuestionDefaults(updated[index]);
-    const fa = { ...(item.followUpAnswers?.[branch] ?? { answer: null, corrective: "" }) };
-    fa.corrective = value;
-    item.followUpAnswers = { ...item.followUpAnswers, [branch]: fa };
-    updated[index] = item;
-    setItems(updated);
-  };
+  const updated = [...runQuestions];
+  const item = withQuestionDefaults(updated[index]);
+  const fa = { ...(item.followUpAnswers?.[branch] ?? { answer: null, corrective: "" }) };
+  fa.corrective = value;
+  item.followUpAnswers = { ...item.followUpAnswers, [branch]: fa };
+  updated[index] = item;
+  setRunQuestions(updated);
+};
 
   const saveAnswers = async () => {
     if (!selectedChecklist) return;
@@ -658,7 +664,7 @@ const newQuestion = (text = "") =>
         checklistId: selectedChecklist.id,
         title: selectedChecklist.title,
         person: personName,
-        questions: items.map(withQuestionDefaults),
+        questions: runQuestions.map(withQuestionDefaults),
         site,
         createdAt: now,
         frequency: selectedChecklist.frequency || "Ad hoc",
@@ -675,7 +681,7 @@ const newQuestion = (text = "") =>
       await refreshDraftsForPerson();
 
       setSelectedChecklist(null);
-      setItems([]);
+      setRunQuestions([]);
     } catch (error) {
       console.error("Error saving answers:", error);
       alert("Could not submit answers. Please try again.");
@@ -722,7 +728,7 @@ const newQuestion = (text = "") =>
 
   const viewCompleted = (c) => {
     setViewingCompleted(c);
-    setItems(c.questions.map(withQuestionDefaults));
+    setViewQuestions(c.questions.map(withQuestionDefaults));
     setSelectedChecklist(null);
     setDraftId(null);
   };
@@ -733,7 +739,9 @@ const newQuestion = (text = "") =>
     setTitleSet(false);
     setChecklistTitle("");
     setNewFrequency("Daily");
-    setItems([]);
+    setAuthorQuestions([]);
+    setRunQuestions([]);
+    setViewQuestions([]);
     setNewItem("");
     // Run/View
     setSelectedChecklist(null);
@@ -1045,7 +1053,7 @@ const newQuestion = (text = "") =>
   };
 
   const renderChecklistItemsRun = (editable = true) =>
-    items.map((itemRaw, index) => {
+  runQuestions.map((itemRaw, index) => {
       const item = withQuestionDefaults(itemRaw);
       const ans = item.answer;
       return (
@@ -1599,7 +1607,7 @@ const newQuestion = (text = "") =>
             Add your questions, set corrective rules, and optional follow-ups.
           </div>
 
-          {renderAuthoringItems(items, updateItemAuthor, removeItemAuthor)}
+          {renderAuthoringItems(authorQuestions, updateItemAuthor, removeItemAuthor)}
 
           <div style={{ display: "flex", gap: 10, marginTop: 10, alignItems: "center" }}>
             <input
@@ -1760,7 +1768,38 @@ const newQuestion = (text = "") =>
               (Completed by {viewingCompleted.person})
             </span>
           </SectionTitle>
-          {renderChecklistItemsRun(false)}
+          {viewQuestions.map((itemRaw, index) => {
+  const item = withQuestionDefaults(itemRaw);
+  const ans = item.answer;
+  return (
+    <Card key={item.id || index} hoverable={false} style={{ margin: "10px 0" }}>
+      <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+        <div style={{ flex: 1, color: "#111" }}>{item.text}</div>
+        <AnswerButtons active={ans} onPick={() => {}} />
+      </div>
+
+      {needsCorrective(item.correctiveOn, ans) && (
+        <input
+          type="text"
+          value={item.corrective}
+          readOnly
+          style={{
+            marginTop: "12px",
+            padding: "10px 12px",
+            borderRadius: "10px",
+            width: "100%",
+            border: "1px solid #e5e7eb",
+            outline: "none",
+            fontSize: "14px",
+          }}
+        />
+      )}
+
+      {ans === "Yes" && renderFollowUpRun(item, index, "yes", false)}
+      {ans === "No" && renderFollowUpRun(item, index, "no", false)}
+    </Card>
+  );
+})}
           <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
             <Button onClick={resetView}>Back</Button>
             <Button
