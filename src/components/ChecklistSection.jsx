@@ -128,6 +128,8 @@ const needsCorrective = (rule, ans) => {
 // ---------- Component ----------
 const ChecklistSection = ({ goBack, site, user }) => {
   const [checklists, setChecklists] = useState([]);
+  const [templates, setTemplates] = useState([]);        //
+const [viewingTemplates, setViewingTemplates] = useState(false); // 
   const [completed, setCompleted] = useState([]);
 
   // DRAFTS
@@ -352,6 +354,14 @@ try {
         }
       }
 
+      // Templates (global)
+try {
+  const tplSnap = await getDocs(templatesCollectionRef);
+  setTemplates(tplSnap.docs.map((d) => ({ id: d.id, ...d.data() })));
+} catch (err) {
+  console.error("Error fetching templates:", err);
+  setTemplates([]);
+}
       await refreshDrafts();
     };
 
@@ -430,7 +440,10 @@ const newQuestion = (text = "") =>
     };
 
     try {
-      const docRef = await addDoc(checklistCollectionRef, record);
+      const docRef = await addDoc(
+  viewingTemplates ? templatesCollectionRef : checklistCollectionRef,
+  record
+);
       setChecklists((prev) => [{ id: docRef.id, ...record }, ...prev]);
       // Reset create state
       setChecklistTitle("");
@@ -446,6 +459,7 @@ const newQuestion = (text = "") =>
   // ---------- Editing (Edit existing) ----------
   const startEditChecklist = (cl) => {
     setEditingId(cl.id);
+    setEditingSource(cl._source === "template" ? "templates" : "checklists");
     setEditTitle(cl.title || "");
     setEditFrequency(cl.frequency || "Ad hoc");
     setEditItems(
@@ -485,13 +499,16 @@ const newQuestion = (text = "") =>
       return;
     }
     try {
-      await updateDoc(doc(db, "checklists", editingId), {
+      await updateDoc(
+  doc(db, editingSource === "templates" ? "templates" : "checklists", editingId),
+  {
         title: editTitle.trim(),
         frequency: editFrequency || "Ad hoc",
         questions: editItems.map(withQuestionDefaults),
         updatedAt: Timestamp.now(),
         updatedBy: personName,
-      });
+      }
+    );
       setChecklists((prev) =>
         prev.map((c) =>
           c.id === editingId
@@ -1342,6 +1359,17 @@ const newQuestion = (text = "") =>
 
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
           <Button onClick={goBack}>Back</Button>
+          {isManager && (
+  <Button
+    kind={viewingTemplates ? "neutral" : "subtle"}
+    onClick={() => {
+      resetView();
+      setViewingTemplates((v) => !v);
+    }}
+  >
+    Templates
+  </Button>
+)}
           {isManager && !editingId && (
             <Button
               kind="primary"
@@ -1353,7 +1381,7 @@ const newQuestion = (text = "") =>
                 setDraftId(null);
               }}
             >
-              + Add Checklist
+              {viewingTemplates ? "+ Add Template" : "+ Add Checklist"}
             </Button>
           )}
           {siteCompleted.length > 0 && (
@@ -1365,7 +1393,53 @@ const newQuestion = (text = "") =>
       </div>
 
       {/* MAIN VIEW */}
-      {!adding && !selectedChecklist && !viewingCompleted && !editingId && (
+
+      {/* TEMPLATES VIEW (Managers) */}
+{viewingTemplates && !adding && !editingId && !selectedChecklist && !viewingCompleted && (
+  <>
+    <SectionTitle>Templates</SectionTitle>
+
+    {templates.length === 0 && (
+      <Card hoverable={false}>
+        <div style={{ color: "#6b7280" }}>No templates yet.</div>
+      </Card>
+    )}
+
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+        gap: 14,
+      }}
+    >
+      {templates.map((tpl) => (
+        <Card key={tpl.id}>
+          <div style={{ fontWeight: 700, color: "#111", marginBottom: 6 }}>
+            {tpl.title}
+            <span style={freqChip(tpl.frequency)}>{tpl.frequency || "Ad hoc"}</span>
+          </div>
+
+          <div style={{ fontSize: 13, color: "#6b7280" }}>
+            {Array.isArray(tpl.questions) ? tpl.questions.length : 0} question
+            {Array.isArray(tpl.questions) && tpl.questions.length !== 1 ? "s" : ""}
+          </div>
+
+          <Button
+            kind="subtle"
+            onClick={() => {
+              startEditChecklist({ ...tpl, _source: "template" });
+              setViewingTemplates(false);
+            }}
+            style={{ marginTop: 10 }}
+          >
+            Edit Template
+          </Button>
+        </Card>
+      ))}
+    </div>
+  </>
+)}
+      {!viewingTemplates && !adding && !selectedChecklist && !viewingCompleted && !editingId && (
         <>
           {/* Drafts */}
           {drafts.length > 0 && (
