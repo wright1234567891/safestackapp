@@ -154,6 +154,7 @@ const [viewQuestions, setViewQuestions] = useState([]);
 
   // Editing state (Edit existing)
   const [editingId, setEditingId] = useState(null);
+  const [editingSiteTemplate, setEditingSiteTemplate] = useState(null); // siteTemplates doc
   const [editingSource, setEditingSource] = useState("checklists"); // "checklists" | "templates"
   const [editTitle, setEditTitle] = useState("");
   const [editFrequency, setEditFrequency] = useState("Ad hoc");
@@ -495,16 +496,45 @@ const newQuestion = (text = "") =>
     setEditItems(updated);
   };
 
-  const saveEditChecklist = async () => {
-    if (!editingId) return;
-    if (!editTitle.trim() || editItems.length === 0) {
-      alert("Checklist must have a title and at least one question");
+const saveEditChecklist = async () => {
+  if (!editingId && !editingSiteTemplate) return;
+
+  // ✅ Site override mode: save overrides to siteTemplates doc
+  if (editingSiteTemplate) {
+    try {
+      const overrides = { questions: {} };
+
+      editItems.forEach((q) => {
+        if (q.enabled === false) {
+          overrides.questions[q.id] = { enabled: false };
+        }
+      });
+
+      await updateDoc(
+        doc(db, "siteTemplates", editingSiteTemplate._siteTemplate.id),
+        { overrides }
+      );
+
+      setEditingSiteTemplate(null);
+      setEditingId(null);
+      return;
+    } catch (err) {
+      console.error("Error saving site overrides:", err);
+      alert("Could not save site overrides.");
       return;
     }
-    try {
-      await updateDoc(
-  doc(db, editingSource === "templates" ? "templates" : "checklists", editingId),
-  {
+  }
+
+  // ✅ Normal edit mode: update template or legacy checklist
+  if (!editTitle.trim() || editItems.length === 0) {
+    alert("Checklist must have a title and at least one question");
+    return;
+  }
+
+  try {
+    await updateDoc(
+      doc(db, editingSource === "templates" ? "templates" : "checklists", editingId),
+      {
         title: editTitle.trim(),
         frequency: editFrequency || "Ad hoc",
         questions: editItems.map(withQuestionDefaults),
@@ -512,29 +542,34 @@ const newQuestion = (text = "") =>
         updatedBy: personName,
       }
     );
-      setChecklists((prev) =>
-        prev.map((c) =>
-          c.id === editingId
-            ? {
-                ...c,
-                title: editTitle.trim(),
-                frequency: editFrequency || "Ad hoc",
-                questions: editItems.map(withQuestionDefaults),
-              }
-            : c
-        )
-      );
-      setEditingId(null);
-      setEditTitle("");
-      setEditFrequency("Ad hoc");
-      setEditItems([]);
-      setEditNewItem("");
-    } catch (err) {
-      console.error("Error saving checklist edits:", err);
-    }
-  };
+
+    // keep local list in sync for legacy checklists view
+    setChecklists((prev) =>
+      prev.map((c) =>
+        c.id === editingId
+          ? {
+              ...c,
+              title: editTitle.trim(),
+              frequency: editFrequency || "Ad hoc",
+              questions: editItems.map(withQuestionDefaults),
+            }
+          : c
+      )
+    );
+
+    setEditingId(null);
+    setEditTitle("");
+    setEditFrequency("Ad hoc");
+    setEditItems([]);
+    setEditNewItem("");
+  } catch (err) {
+    console.error("Error saving checklist/template edits:", err);
+    alert("Could not save changes.");
+  }
+};
 
   const cancelEdit = () => {
+    setEditingSiteTemplate(null);
     setEditingId(null);
     setEditTitle("");
     setEditFrequency("Ad hoc");
@@ -1125,7 +1160,7 @@ const refreshDraftsForPerson = async () => {
       </Button>
     </div>
   );
-
+const isSiteOverrideMode = !!editingSiteTemplate;
   // ---------- Render helpers ----------
   const renderFollowUpRun = (item, index, branch, editable) => {
     const cfg = item.followUps?.[branch];
@@ -1211,9 +1246,10 @@ const refreshDraftsForPerson = async () => {
         <Card key={item.id || index} hoverable={false} style={{ margin: "10px 0" }}>
           <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
             <input
-              type="text"
-              value={item.text}
-              onChange={(e) => onUpdate(index, { ...item, text: e.target.value })}
+  type="text"
+  value={item.text}
+  disabled={isSiteOverrideMode}
+  onChange={(e) => onUpdate(index, { ...item, text: e.target.value })}
               placeholder={`Question ${index + 1}`}
               style={{
                 padding: "12px 14px",
@@ -1230,8 +1266,24 @@ const refreshDraftsForPerson = async () => {
               onChange={(val) => onUpdate(index, { ...item, correctiveOn: val })}
             />
             <Button kind="danger" onClick={() => onRemove(index)} style={{ padding: "10px 12px" }}>
-              Remove
-            </Button>
+  Remove
+</Button>
+
+{isSiteOverrideMode && (
+  <label style={{ fontSize: 13 }}>
+    <input
+      type="checkbox"
+      checked={item.enabled !== false}
+      onChange={(e) =>
+        onUpdate(index, {
+          ...item,
+          enabled: e.target.checked,
+        })
+      }
+    />{" "}
+    Enabled for this site
+  </label>
+)}
           </div>
 
           {/* Follow-up config */}
@@ -1478,6 +1530,20 @@ const refreshDraftsForPerson = async () => {
           >
             Edit Template
           </Button>
+          {isTemplateEnabledForSite(tpl.id) && (
+  <Button
+    kind="neutral"
+    onClick={() => {
+      const st = siteTemplates.find((x) => x.templateId === tpl.id);
+      if (!st) return;
+      setEditingSiteTemplate({ ...tpl, _siteTemplate: st });
+      setViewingTemplates(false);
+    }}
+    style={{ marginTop: 8 }}
+  >
+    Configure for site
+  </Button>
+)}
           {isTemplateEnabledForSite(tpl.id) ? (
   <Button
     kind="warn"
@@ -1835,8 +1901,11 @@ const refreshDraftsForPerson = async () => {
         </Card>
       )}
 
-      {/* EDIT CHECKLIST */}
-      {editingId && !adding && !selectedChecklist && !viewingCompleted && (
+      {/* EDIT CHECKLIST / SITE OVERRIDES */}
+{(editingId || editingSiteTemplate) &&
+  !adding &&
+  !selectedChecklist &&
+  !viewingCompleted && (
         <Card hoverable={false}>
           <SectionTitle>Edit Checklist</SectionTitle>
           <div style={{ color: "#6b7280", marginBottom: 10 }}>
