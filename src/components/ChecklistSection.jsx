@@ -139,6 +139,7 @@ const [viewingTemplates, setViewingTemplates] = useState(false); //
 
   // Authoring state (Create)
   const [adding, setAdding] = useState(false);
+  const [createTarget, setCreateTarget] = useState("checklists"); // "checklists" | "templates"
   const [titleSet, setTitleSet] = useState(false);
   const [checklistTitle, setChecklistTitle] = useState("");
   const [newFrequency, setNewFrequency] = useState("Daily");
@@ -372,7 +373,7 @@ try {
     fetchData();
     resetView();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [site, personName]);
+  }, [site]);
 
   const siteChecklists = checklists;
   const siteCompleted = completed;
@@ -444,11 +445,15 @@ const newQuestion = (text = "") =>
     };
 
     try {
-      const docRef = await addDoc(
-  viewingTemplates ? templatesCollectionRef : checklistCollectionRef,
+const docRef = await addDoc(
+  createTarget === "templates" ? templatesCollectionRef : checklistCollectionRef,
   record
 );
-      setChecklists((prev) => [{ id: docRef.id, ...record }, ...prev]);
+if (createTarget === "templates") {
+  setTemplates((prev) => [{ id: docRef.id, ...record }, ...prev]);
+} else {
+  setChecklists((prev) => [{ id: docRef.id, ...record }, ...prev]);
+}
       // Reset create state
       setChecklistTitle("");
       setNewFrequency("Daily");
@@ -1469,13 +1474,14 @@ const isSiteOverrideMode = !!editingSiteTemplate;
           {isManager && !editingId && (
             <Button
               kind="primary"
-              onClick={() => {
-                setAdding(true);
-                setSelectedChecklist(null);
-                setViewingCompleted(null);
-                setEditingId(null);
-                setDraftId(null);
-              }}
+onClick={() => {
+  setCreateTarget(viewingTemplates ? "templates" : "checklists"); // ✅ lock in target at click time
+  setAdding(true);
+  setSelectedChecklist(null);
+  setViewingCompleted(null);
+  setEditingId(null);
+  setDraftId(null);
+}}
             >
               {viewingTemplates ? "+ Add Template" : "+ Add Checklist"}
             </Button>
