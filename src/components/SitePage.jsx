@@ -17,7 +17,7 @@ import {
 } from "react-icons/fa";
 
 import { db } from "../firebase";
-import { collection, onSnapshot } from "firebase/firestore";
+import { collection, onSnapshot, query, where } from "firebase/firestore";
 
 import EquipmentManager from "./EquipmentManager";
 import ChecklistSection from "./ChecklistSection";
@@ -42,29 +42,21 @@ const sites = [
 // Helpers for id/label compatibility
 const siteLabelForId = (id) => sites.find((s) => s.id === id)?.label ?? id;
 
-/**
- * Returns an array of possible "site" values found in Firestore for this venue.
- * We include both the new id and the old label, because older docs may have stored label strings.
- */
 const siteKeysForSelected = (selectedSite) => {
   if (!selectedSite) return [];
   const label = siteLabelForId(selectedSite);
   return Array.from(new Set([selectedSite, label].filter(Boolean)));
 };
 
-/** ========= Collections/fields ========= */
 const COLLECTIONS = {
   completedChecklists: "completed",
   cleaningLogs: "cleaningLogs",
 };
-/** ===================================== */
 
-/** ========= Temperature limits ========= */
 const TEMP_LIMITS = {
   Fridge: { min: 0, max: 5 },
   Freezer: { max: -18 },
 };
-/** ===================================== */
 
 // ---- Small date helpers ----
 const toDate = (ts) => (ts?.toDate ? ts.toDate() : ts instanceof Date ? ts : null);
@@ -171,25 +163,59 @@ const norm = (s = "") =>
     .replace(/\s+/g, " ")
     .replace(/[^\w\s]/g, "");
 
+// Build effective checklists from templates + siteTemplates
+const buildChecklistsFromTemplates = (siteId, siteTemplateRows, templatesRows) => {
+  const tplMap = new Map(templatesRows.map((t) => [t.id, t]));
+  const enabledLinks = siteTemplateRows.filter((st) => st.enabled !== false);
+
+  return enabledLinks
+    .map((st) => {
+      const tpl = tplMap.get(st.templateId);
+      if (!tpl) return null;
+
+      const overrideTitle = st.overrides?.title;
+      const qOverrides = st.overrides?.questions || {};
+
+      const questions = (tpl.questions || []).map((q) => {
+        const base = q; // template questions already have ids
+        const o = qOverrides[base.id];
+        return { ...base, enabled: o?.enabled ?? base.enabled ?? true };
+      });
+
+      return {
+        id: tpl.id, // checklist id == template id
+        site: siteId,
+        title: overrideTitle || tpl.title,
+        frequency: tpl.frequency || "Ad hoc",
+        questions,
+        _source: "template",
+        _templateId: tpl.id,
+      };
+    })
+    .filter(Boolean);
+};
+
 const SitePage = ({ user, onLogout }) => {
   const [selectedSite, setSelectedSite] = useState(null);
   const [activeSection, setActiveSection] = useState(null);
 
-  // Local states
-  const [checklists, setChecklists] = useState([]);
+  // Raw data
+  const [templates, setTemplates] = useState([]);
+  const [siteTemplates, setSiteTemplates] = useState([]);
+  const [legacyChecklists, setLegacyChecklists] = useState([]);
   const [completed, setCompleted] = useState([]);
 
-  // subscribe to equipment (fridges/freezers) and cleaning logs
   const [equipment, setEquipment] = useState([]);
   const [cleanLogs, setCleanLogs] = useState([]);
 
-  // pass into child sections
+  // Effective checklists shown on dashboard overview
+  const [checklists, setChecklists] = useState([]);
+
+  // pass into child sections (kept from your structure)
   const [tempChecks, setTempChecks] = useState([]);
   const [cleaningRecords, setCleaningRecords] = useState([]);
 
-  // Overview mode toggle
   const [overviewMode, setOverviewMode] = useState("ALL");
-
   const isMobile = useIsMobile();
 
   const selectedSiteKeys = useMemo(() => siteKeysForSelected(selectedSite), [selectedSite]);
@@ -203,8 +229,8 @@ const SitePage = ({ user, onLogout }) => {
     const keys = selectedSiteKeys;
     return (docData) => {
       const s = docData?.site;
-      if (s && keys.includes(s)) return true; // new docs with site
-      if (!s && assumeMissingSiteAsThisVenue) return true; // legacy docs with no site -> thorganby
+      if (s && keys.includes(s)) return true;
+      if (!s && assumeMissingSiteAsThisVenue) return true;
       return false;
     };
   }, [selectedSiteKeys, assumeMissingSiteAsThisVenue]);
@@ -213,8 +239,19 @@ const SitePage = ({ user, onLogout }) => {
   useEffect(() => {
     if (!selectedSite) return;
 
-    // Checklists (templates) — subscribe to ALL then filter
-    const unsubCL = onSnapshot(
+    const unsubSiteTemplates = onSnapshot(
+      query(collection(db, "siteTemplates"), where("site", "==", selectedSite)),
+      (snap) => setSiteTemplates(snap.docs.map((d) => ({ id: d.id, ...d.data() }))),
+      () => setSiteTemplates([])
+    );
+
+    const unsubTemplates = onSnapshot(
+      collection(db, "templates"),
+      (snap) => setTemplates(snap.docs.map((d) => ({ id: d.id, ...d.data() }))),
+      () => setTemplates([])
+    );
+
+    const unsubLegacy = onSnapshot(
       collection(db, "checklists"),
       (snap) => {
         const rows = snap.docs
@@ -226,12 +263,12 @@ const SitePage = ({ user, onLogout }) => {
           const tb = b.createdAt?.toMillis?.() ?? 0;
           return tb - ta;
         });
-        setChecklists(rows);
+
+        setLegacyChecklists(rows);
       },
-      () => setChecklists([])
+      () => setLegacyChecklists([])
     );
 
-    // Completed checklist runs — subscribe to ALL then filter
     const unsubDone = onSnapshot(
       collection(db, COLLECTIONS.completedChecklists),
       (snap) => {
@@ -244,12 +281,12 @@ const SitePage = ({ user, onLogout }) => {
           const tb = b.completedAt?.toMillis?.() ?? b.createdAt?.toMillis?.() ?? 0;
           return tb - ta;
         });
+
         setCompleted(rows);
       },
       () => setCompleted([])
     );
 
-    // Equipment — subscribe to ALL then filter
     const unsubEquip = onSnapshot(
       collection(db, "equipment"),
       (snap) => {
@@ -261,7 +298,6 @@ const SitePage = ({ user, onLogout }) => {
       () => setEquipment([])
     );
 
-    // Cleaning logs — subscribe to ALL then filter
     const unsubClean = onSnapshot(
       collection(db, COLLECTIONS.cleaningLogs),
       (snap) => {
@@ -274,12 +310,25 @@ const SitePage = ({ user, onLogout }) => {
     );
 
     return () => {
-      unsubCL();
+      unsubSiteTemplates();
+      unsubTemplates();
+      unsubLegacy();
       unsubDone();
       unsubEquip();
       unsubClean();
     };
   }, [selectedSite, filterForSelectedSite]);
+
+  // ✅ Build "effective" checklists (templates if linked, otherwise legacy)
+  useEffect(() => {
+    if (!selectedSite) return;
+
+    if (siteTemplates.length > 0) {
+      setChecklists(buildChecklistsFromTemplates(selectedSite, siteTemplates, templates));
+    } else {
+      setChecklists(legacyChecklists);
+    }
+  }, [selectedSite, siteTemplates, templates, legacyChecklists]);
 
   // --- Compute “due” vs “done” by frequency (scheduled checklist progress) ---
   const overview = useMemo(() => {
@@ -289,16 +338,26 @@ const SitePage = ({ user, onLogout }) => {
       const t = norm(cl.title || "");
       const matches = completed.filter((c) => {
         const cid = c.checklistId || c.checklistRef || c.checklist_id;
-        if (cid && cid === cl.id) return true;
+        const tid = c.templateId;
+
+        if (cl._source === "template") {
+          if (tid && tid === cl.id) return true;
+        } else {
+          if (cid && cid === cl.id) return true;
+        }
+
         const ct = norm(c.title || c.checklistTitle || "");
         return t && ct && ct === t;
       });
+
       if (!matches.length) return null;
+
       matches.sort((a, b) => {
         const ta = a.completedAt?.toMillis?.() ?? a.createdAt?.toMillis?.() ?? 0;
         const tb = b.completedAt?.toMillis?.() ?? b.createdAt?.toMillis?.() ?? 0;
         return tb - ta;
       });
+
       return matches[0]?.completedAt || matches[0]?.createdAt || null;
     };
 
@@ -347,22 +406,22 @@ const SitePage = ({ user, onLogout }) => {
         totalDone = buckets.monthly.done;
         label = totalDue ? `Monthly: ${totalDone}/${totalDue}` : "No monthly due";
         break;
-      default: {
+      default:
         totalDue = buckets.daily.total + buckets.weekly.total + buckets.monthly.total;
         totalDone = buckets.daily.done + buckets.weekly.done + buckets.monthly.done;
         label = totalDue ? `${totalDone}/${totalDue} done` : "All clear";
-      }
     }
 
     const percent = totalDue ? (totalDone / totalDue) * 100 : 100;
     return { buckets, totalDue, totalDone, percent, label };
   }, [checklists, completed, overviewMode]);
 
-  /** ======= Combined “today” compliance across Checklists + Temps + Cleaning ======= */
+  // ======= Combined “today” compliance across Checklists + Temps + Cleaning =======
   const todayCompliance = useMemo(() => {
-    // 1) Checklists — FAIL if corrective action text present; otherwise PASS
+    // 1) Checklists — PASS if no corrective action entered
     let clPass = 0;
     let clTotal = 0;
+
     completed.forEach((run) => {
       const t = run.completedAt || run.createdAt;
       if (!isToday(t)) return;
@@ -370,7 +429,6 @@ const SitePage = ({ user, onLogout }) => {
       qs.forEach((q) => {
         const hasAnswer = (q?.answer ?? "") !== "";
         if (!hasAnswer) return;
-
         const corrective = (q?.corrective || "").toString().trim();
         const isPass = corrective.length === 0;
         if (isPass) clPass += 1;
@@ -384,7 +442,7 @@ const SitePage = ({ user, onLogout }) => {
     let tTotal = 0;
 
     equipment
-      .filter((eq) => (eq.type === "Fridge" || eq.type === "Freezer"))
+      .filter((eq) => eq.type === "Fridge" || eq.type === "Freezer")
       .forEach((eq) => {
         const recs = Array.isArray(eq.records) ? eq.records : [];
         recs.forEach((r) => {
@@ -396,7 +454,7 @@ const SitePage = ({ user, onLogout }) => {
           if (eq.type === "Fridge") {
             const { min, max } = TEMP_LIMITS.Fridge;
             pass = temp >= min && temp <= max;
-          } else if (eq.type === "Freezer") {
+          } else {
             const { max } = TEMP_LIMITS.Freezer;
             pass = temp <= max;
           }
@@ -433,12 +491,14 @@ const SitePage = ({ user, onLogout }) => {
       c: { pass: cPass, total: cTotal, pct: pctC },
     };
   }, [completed, equipment, cleanLogs]);
-  /** ================================================================================ */
 
   const resetSite = () => {
     setSelectedSite(null);
     setActiveSection(null);
     setChecklists([]);
+    setLegacyChecklists([]);
+    setTemplates([]);
+    setSiteTemplates([]);
     setCompleted([]);
     setEquipment([]);
     setCleanLogs([]);
@@ -460,8 +520,6 @@ const SitePage = ({ user, onLogout }) => {
     return <ChecklistSection goBack={() => setActiveSection(null)} site={selectedSite} user={user} />;
   }
   if (selectedSite && activeSection === "temp") {
-    // Keep existing behaviour for TempSection input list
-    // (TempSection itself likely writes/reads equipment by site - you pass `site={selectedSite}`)
     const siteTempChecks = tempChecks.filter(
       (e) => selectedSiteKeys.includes(e.site) && (e.type === "Fridge" || e.type === "Freezer")
     );
@@ -647,7 +705,13 @@ const SitePage = ({ user, onLogout }) => {
 
       <div
         className="overview-card"
-        style={{ background: "#fff", borderRadius: 16, padding: 18, marginBottom: 22, boxShadow: "0 2px 6px rgba(0,0,0,0.08)" }}
+        style={{
+          background: "#fff",
+          borderRadius: 16,
+          padding: 18,
+          marginBottom: 22,
+          boxShadow: "0 2px 6px rgba(0,0,0,0.08)",
+        }}
       >
         <div className="overview-left">
           <Donut
@@ -746,7 +810,16 @@ const SitePage = ({ user, onLogout }) => {
       <div style={{ marginTop: "40px", display: "flex", gap: "16px", justifyContent: "center", flexWrap: "wrap" }}>
         <button
           onClick={resetSite}
-          style={{ padding: "12px 24px", borderRadius: "10px", cursor: "pointer", backgroundColor: "#f3f4f6", fontSize: "15px", fontWeight: 500, border: "none", transition: "all 0.25s" }}
+          style={{
+            padding: "12px 24px",
+            borderRadius: "10px",
+            cursor: "pointer",
+            backgroundColor: "#f3f4f6",
+            fontSize: "15px",
+            fontWeight: 500,
+            border: "none",
+            transition: "all 0.25s",
+          }}
           onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#e0e3e8")}
           onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#f3f4f6")}
         >
@@ -754,7 +827,17 @@ const SitePage = ({ user, onLogout }) => {
         </button>
         <button
           onClick={onLogout}
-          style={{ padding: "12px 24px", borderRadius: "10px", cursor: "pointer", backgroundColor: "#ff5f5f", fontSize: "15px", color: "#fff", fontWeight: 500, border: "none", transition: "all 0.25s" }}
+          style={{
+            padding: "12px 24px",
+            borderRadius: "10px",
+            cursor: "pointer",
+            backgroundColor: "#ff5f5f",
+            fontSize: "15px",
+            color: "#fff",
+            fontWeight: 500,
+            border: "none",
+            transition: "all 0.25s",
+          }}
           onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#ff3f3f")}
           onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#ff5f5f")}
         >
@@ -773,7 +856,9 @@ function BreakdownRow({ label, pct, detail, hint, color = "#2563eb" }) {
         <div style={{ width: `${pct}%`, height: "100%", background: color, transition: "width 0.6s ease" }} />
       </div>
       <div style={{ textAlign: "right", color: "#111", fontWeight: 700 }}>{pct}%</div>
-      <div style={{ gridColumn: "1 / span 3", fontSize: 11, color: "#6b7280" }}>{detail} • {hint}</div>
+      <div style={{ gridColumn: "1 / span 3", fontSize: 11, color: "#6b7280" }}>
+        {detail} • {hint}
+      </div>
     </div>
   );
 }
