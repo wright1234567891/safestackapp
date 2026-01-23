@@ -35,6 +35,13 @@ const normalize = (el) => {
   el.style.boxShadow = "0 2px 6px rgba(0,0,0,0.08)";
   el.style.backgroundColor = "#fff";
 };
+const makeId = () => {
+  try {
+    return crypto.randomUUID();
+  } catch {
+    return `q_${Math.random().toString(16).slice(2)}_${Date.now()}`;
+  }
+};
 
 const freqChip = (f) => {
   const base = {
@@ -72,10 +79,12 @@ const tinyDraftChip = {
 // NEW: Utilities for new schema with sensible defaults (backward-compatible)
 const withQuestionDefaults = (q) => {
   return {
+    id: q?.id ?? makeId(),           // ✅ STABLE ID
     text: q?.text ?? "",
+    enabled: q?.enabled ?? true,     // ✅ FUTURE SITE OVERRIDES
     answer: q?.answer ?? null,
     corrective: q?.corrective ?? "",
-    correctiveOn: q?.correctiveOn ?? "no", // default to old behavior (corrective on No)
+    correctiveOn: q?.correctiveOn ?? "no",
     followUps: {
       yes: {
         enabled: q?.followUps?.yes?.enabled ?? false,
@@ -150,9 +159,35 @@ const ChecklistSection = ({ goBack, site, user }) => {
   const [draftId, setDraftId] = useState(null);
 
   // Adjust to your auth model if user is an object
-  const personName =
-    typeof user === "string" ? user : user?.displayName || "Unknown";
-  const isManager = ["Chris", "Chloe"].includes(personName);
+import { getDoc } from "firebase/firestore";
+
+// ...
+
+const uid = user?.uid || null;
+const personName = user?.displayName || user?.email || "Unknown";
+const [role, setRole] = useState("staff");
+const isManager = role === "manager";
+
+useEffect(() => {
+  let ignore = false;
+
+  async function loadRole() {
+    if (!uid) {
+      setRole("staff");
+      return;
+    }
+    try {
+      const snap = await getDoc(doc(db, "users", uid));
+      const data = snap.exists() ? snap.data() : null;
+      if (!ignore) setRole(data?.role === "manager" ? "manager" : "staff");
+    } catch {
+      if (!ignore) setRole("staff");
+    }
+  }
+
+  loadRole();
+  return () => { ignore = true; };
+}, [uid]);
 
   // Firestore refs
   const checklistCollectionRef = collection(db, "checklists");
@@ -278,21 +313,23 @@ const ChecklistSection = ({ goBack, site, user }) => {
   }, [editingId]);
 
   // ---------- Authoring (Create) ----------
-  const newQuestion = (text = "") =>
-    withQuestionDefaults({
-      text,
-      answer: null,
-      corrective: "",
-      correctiveOn: "no",
-      followUps: {
-        yes: { enabled: false, text: "", correctiveOn: "no" },
-        no: { enabled: false, text: "", correctiveOn: "no" },
-      },
-      followUpAnswers: {
-        yes: { answer: null, corrective: "" },
-        no: { answer: null, corrective: "" },
-      },
-    });
+const newQuestion = (text = "") =>
+  withQuestionDefaults({
+    id: makeId(),           // ✅ CREATE ID ONCE
+    text,
+    enabled: true,
+    answer: null,
+    corrective: "",
+    correctiveOn: "no",
+    followUps: {
+      yes: { enabled: false, text: "", correctiveOn: "no" },
+      no: { enabled: false, text: "", correctiveOn: "no" },
+    },
+    followUpAnswers: {
+      yes: { answer: null, corrective: "" },
+      no: { answer: null, corrective: "" },
+    },
+  });
 
   const addItemAuthor = () => {
     if (!newItem.trim()) return;
@@ -1010,7 +1047,7 @@ const ChecklistSection = ({ goBack, site, user }) => {
       const item = withQuestionDefaults(itemRaw);
       const ans = item.answer;
       return (
-        <Card key={index} hoverable={false} style={{ margin: "10px 0" }}>
+        <Card key={item.id || index} hoverable={false} style={{ margin: "10px 0" }}>
           <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
             <div style={{ flex: 1, color: "#111" }}>{item.text}</div>
             <AnswerButtons active={ans} onPick={editable ? (v) => handleAnswerChange(index, v) : () => {}} />
@@ -1046,7 +1083,7 @@ const ChecklistSection = ({ goBack, site, user }) => {
     list.map((raw, index) => {
       const item = withQuestionDefaults(raw);
       return (
-        <Card key={index} hoverable={false} style={{ margin: "10px 0" }}>
+        <Card key={item.id || index} hoverable={false} style={{ margin: "10px 0" }}>
           <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
             <input
               type="text"
