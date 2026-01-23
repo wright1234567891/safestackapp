@@ -44,6 +44,21 @@ const makeId = () => {
   }
 };
 
+// Stable local IDs for objects that don't yet have an id (prevents input remount / focus loss)
+const __localIdMap = new WeakMap();
+
+const getStableId = (q) => {
+  if (q?.id) return q.id;
+  if (!q || typeof q !== "object") return makeId();
+
+  const existing = __localIdMap.get(q);
+  if (existing) return existing;
+
+  const id = makeId();
+  __localIdMap.set(q, id);
+  return id;
+};
+
 const freqChip = (f) => {
   const base = {
     display: "inline-block",
@@ -80,7 +95,7 @@ const tinyDraftChip = {
 // NEW: Utilities for new schema with sensible defaults (backward-compatible)
 const withQuestionDefaults = (q) => {
   return {
-    id: q?.id ?? makeId(),           // ✅ STABLE ID
+id: getStableId(q),
     text: q?.text ?? "",
     enabled: q?.enabled ?? true,     // ✅ FUTURE SITE OVERRIDES
     answer: q?.answer ?? null,
