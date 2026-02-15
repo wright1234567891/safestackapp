@@ -1,6 +1,6 @@
 // src/components/LoginPage.jsx
 import React, { useEffect, useMemo, useState } from "react";
-import { collection, onSnapshot, query, where, orderBy } from "firebase/firestore";
+import { collection, onSnapshot, query, orderBy } from "firebase/firestore";
 import { db } from "../firebase";
 
 const STAFF_COLLECTION = "StaffLogin";
@@ -11,18 +11,22 @@ const LoginPage = ({ setUser }) => {
 
   useEffect(() => {
     const unsub = onSnapshot(
-      query(collection(db, STAFF_COLLECTION), where("active", "==", true), orderBy("name")),
+      query(collection(db, STAFF_COLLECTION), orderBy("name")),
       (snap) => {
         const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-        setStaff(rows);
-        // pick first active staff by default
-        setSelectedId((prev) => prev || rows[0]?.id || "");
+
+        // Filter active client-side (avoids where/index quirks and keeps it simple)
+        const activeRows = rows.filter((s) => s.active === true);
+
+        setStaff(activeRows);
+        setSelectedId((prev) => prev || activeRows[0]?.id || "");
       },
       (err) => {
         console.error("Login staff subscribe error:", err);
         setStaff([]);
       }
     );
+
     return () => unsub();
   }, []);
 
