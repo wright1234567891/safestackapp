@@ -3,7 +3,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { collection, onSnapshot, query, where, orderBy } from "firebase/firestore";
 import { db } from "../firebase";
 
-const STAFF_COLLECTION = "stafflogin";
+const STAFF_COLLECTION = "StaffLogin";
 
 const LoginPage = ({ setUser }) => {
   const [staff, setStaff] = useState([]);
