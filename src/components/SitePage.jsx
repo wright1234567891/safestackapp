@@ -14,6 +14,7 @@ import {
   FaTools,
   FaUtensils,
   FaUserGraduate,
+  FaUserCheck
 } from "react-icons/fa";
 
 import { db } from "../firebase";
@@ -30,6 +31,7 @@ import CCPSection from "./CCPSection";
 import HaccpDashboard from "./HaccpDashboard";
 import DishesSection from "./DishesSection";
 import StaffTrainingSection from "./StaffTrainingSection";
+import StaffManager from "./StaffManager";
 
 const sites = [
   { id: "thorganby", label: "Thorganby Site" },
@@ -574,6 +576,14 @@ const SitePage = ({ user, onLogout }) => {
   if (selectedSite && activeSection === "training") {
     return <StaffTrainingSection goBack={() => setActiveSection(null)} site={selectedSite} user={user} />;
   }
+  if (selectedSite && activeSection === "staff") {
+  return (
+    <StaffManager
+      goBack={() => setActiveSection(null)}
+      user={user}
+    />
+  );
+}
 
   // Site selection screen
   if (!selectedSite) {
@@ -671,6 +681,7 @@ const SitePage = ({ user, onLogout }) => {
     { label: "Reports", key: "reports", icon: <FaChartBar size={24} color="#9333ea" /> },
     { label: "Dishes", key: "dishes", icon: <FaUtensils size={24} color="#0ea5e9" /> },
     { label: "Staff Training", key: "training", icon: <FaUserGraduate size={24} color="#0ea5e9" /> },
+    { label: "Staff", key: "staff", icon: <FaUserCheck size={24} color="#111" /> },
     { label: "HACCP Dashboard", key: "haccpDashboard", icon: <FaExclamationTriangle size={24} color="#16a34a" /> },
     { label: "CCPs", key: "ccp", icon: <FaExclamationTriangle size={24} color="#dc2626" /> },
     { label: "Add Equipment", key: "equipment", icon: <FaTools size={24} color="#374151" /> },

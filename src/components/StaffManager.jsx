@@ -4,7 +4,7 @@ import { addDoc, collection, onSnapshot, query, orderBy, updateDoc, doc } from "
 import { db } from "../firebase";
 import { FaChevronLeft, FaUserPlus, FaUserSlash, FaUserCheck } from "react-icons/fa";
 
-const STAFF_COLLECTION = "stafflogin";
+const STAFF_COLLECTION = "StaffLogin";
 
 const chip = (bg, fg) => ({
   display: "inline-flex",
