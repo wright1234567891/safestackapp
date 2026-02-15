@@ -198,6 +198,9 @@ const buildChecklistsFromTemplates = (siteId, siteTemplateRows, templatesRows) =
 };
 
 const SitePage = ({ user, onLogout }) => {
+  const isManager =
+  (user?.role || "").toLowerCase() === "manager" ||
+  ["chris", "chloe"].includes((user?.name || "").toLowerCase());
   const [selectedSite, setSelectedSite] = useState(null);
   const [activeSection, setActiveSection] = useState(null);
 
@@ -672,20 +675,25 @@ const SitePage = ({ user, onLogout }) => {
   }
 
   // Dashboard with overview + icon cards
-  const sections = [
-    { label: "Checklists", key: "checklists", icon: <FaClipboardCheck size={24} color="#2563eb" /> },
-    { label: "Temp Checks", key: "temp", icon: <FaThermometerHalf size={24} color="#ef4444" /> },
-    { label: "Cleaning", key: "cleaning", icon: <FaBroom size={24} color="#10b981" /> },
-    { label: "Cooking & Cooling", key: "cooking", icon: <FaDrumstickBite size={24} color="#f59e0b" /> },
-    { label: "Stock", key: "stock", icon: <FaBoxes size={24} color="#6366f1" /> },
-    { label: "Reports", key: "reports", icon: <FaChartBar size={24} color="#9333ea" /> },
-    { label: "Dishes", key: "dishes", icon: <FaUtensils size={24} color="#0ea5e9" /> },
-    { label: "Staff Training", key: "training", icon: <FaUserGraduate size={24} color="#0ea5e9" /> },
-    { label: "Staff", key: "staff", icon: <FaUserCheck size={24} color="#111" /> },
-    { label: "HACCP Dashboard", key: "haccpDashboard", icon: <FaExclamationTriangle size={24} color="#16a34a" /> },
-    { label: "CCPs", key: "ccp", icon: <FaExclamationTriangle size={24} color="#dc2626" /> },
-    { label: "Add Equipment", key: "equipment", icon: <FaTools size={24} color="#374151" /> },
-  ];
+const sections = [
+  { label: "Checklists", key: "checklists", icon: <FaClipboardCheck size={24} color="#2563eb" /> },
+  { label: "Temp Checks", key: "temp", icon: <FaThermometerHalf size={24} color="#ef4444" /> },
+  { label: "Cleaning", key: "cleaning", icon: <FaBroom size={24} color="#10b981" /> },
+  { label: "Cooking & Cooling", key: "cooking", icon: <FaDrumstickBite size={24} color="#f59e0b" /> },
+  { label: "Stock", key: "stock", icon: <FaBoxes size={24} color="#6366f1" /> },
+  { label: "Reports", key: "reports", icon: <FaChartBar size={24} color="#9333ea" /> },
+  { label: "Dishes", key: "dishes", icon: <FaUtensils size={24} color="#0ea5e9" /> },
+  { label: "Staff Training", key: "training", icon: <FaUserGraduate size={24} color="#0ea5e9" /> },
+
+  // 👇 manager only
+  ...(isManager
+    ? [{ label: "Staff", key: "staff", icon: <FaUserCheck size={24} color="#111" /> }]
+    : []),
+
+  { label: "HACCP Dashboard", key: "haccpDashboard", icon: <FaExclamationTriangle size={24} color="#16a34a" /> },
+  { label: "CCPs", key: "ccp", icon: <FaExclamationTriangle size={24} color="#dc2626" /> },
+  { label: "Add Equipment", key: "equipment", icon: <FaTools size={24} color="#374151" /> },
+];
 
   const { buckets, totalDue, totalDone, percent, label } = overview;
 
