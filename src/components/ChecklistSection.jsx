@@ -190,34 +190,50 @@ const [viewQuestions, setViewQuestions] = useState([]);
 // Adjust to your auth model if user is an object
 
 const uid = user?.uid || null;
+
 const personName =
   typeof user === "string"
     ? user
     : user?.displayName || user?.email || "Unknown";
-const [role, setRole] = useState("staff");
+
+// normalise role from props first (new login model), then fallback to Firestore
+const [role, setRole] = useState(() =>
+  (user?.role || "staff").toString().toLowerCase()
+);
+
 const isManager =
-  role === "manager" || ["Chris", "Chloe"].includes(personName);
+  role === "manager" ||
+  role === "admin" ||
+  ["chris", "chloe"].includes((user?.displayName || "").toLowerCase()) ||
+  ["christopher.wright@oaknsmkbbq.com"].includes((user?.email || "").toLowerCase());
 
 useEffect(() => {
   let ignore = false;
 
   async function loadRole() {
+    // if role already provided on user object, don't override it
+    if (user?.role) return;
+
     if (!uid) {
-      setRole("staff");
+      if (!ignore) setRole("staff");
       return;
     }
+
     try {
       const snap = await getDoc(doc(db, "users", uid));
       const data = snap.exists() ? snap.data() : null;
-      if (!ignore) setRole(data?.role === "manager" ? "manager" : "staff");
+      const r = (data?.role || "staff").toString().toLowerCase();
+      if (!ignore) setRole(r);
     } catch {
       if (!ignore) setRole("staff");
     }
   }
 
   loadRole();
-  return () => { ignore = true; };
-}, [uid]);
+  return () => {
+    ignore = true;
+  };
+}, [uid, user?.role]);
 
   // Firestore refs
 const checklistCollectionRef = collection(db, "checklists"); //
