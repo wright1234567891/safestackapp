@@ -14,7 +14,8 @@ import {
   FaTools,
   FaUtensils,
   FaUserGraduate,
-  FaUserCheck
+  FaUserCheck,
+  FaTrashAlt
 } from "react-icons/fa";
 
 import { db } from "../firebase";
