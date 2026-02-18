@@ -33,6 +33,7 @@ import DishesSection from "./DishesSection";
 import StaffTrainingSection from "./StaffTrainingSection";
 import StaffManager from "./StaffManager";
 import FridgeLogSection from "./FridgeLogSection";
+import WasteLogSection from "./WasteLogSection";
 
 const sites = [
   { id: "thorganby", label: "Thorganby Site" },
@@ -549,6 +550,15 @@ const SitePage = ({ user, onLogout }) => {
     />
   );
 }
+if (selectedSite && activeSection === "wasteLog") {
+  return (
+    <WasteLogSection
+      goBack={() => setActiveSection(null)}
+      site={selectedSite}
+      user={user}
+    />
+  );
+}
   if (selectedSite && activeSection === "cleaning") {
     return (
       <CleaningSection
@@ -690,6 +700,7 @@ const sections = [
   { label: "Checklists", key: "checklists", icon: <FaClipboardCheck size={24} color="#2563eb" /> },
   { label: "Temp Checks", key: "temp", icon: <FaThermometerHalf size={24} color="#ef4444" /> },
   { label: "Fridge Log", key: "fridgeLog", icon: <FaThermometerHalf size={24} color="#0ea5e9" /> },
+  { label: "Waste Log", key: "wasteLog", icon: <FaTrashAlt size={24} color="#111" /> },
   { label: "Cleaning", key: "cleaning", icon: <FaBroom size={24} color="#10b981" /> },
   { label: "Cooking & Cooling", key: "cooking", icon: <FaDrumstickBite size={24} color="#f59e0b" /> },
   { label: "Stock", key: "stock", icon: <FaBoxes size={24} color="#6366f1" /> },
