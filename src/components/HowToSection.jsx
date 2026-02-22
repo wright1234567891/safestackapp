@@ -8,12 +8,19 @@ import {
   serverTimestamp,
   query,
   where,
-  orderBy,
   doc,
   updateDoc,
   deleteDoc,
 } from "firebase/firestore";
-import { FaChevronLeft, FaPlus, FaTrash, FaEdit, FaSave, FaTimes, FaSearch } from "react-icons/fa";
+import {
+  FaChevronLeft,
+  FaPlus,
+  FaTrash,
+  FaEdit,
+  FaSave,
+  FaTimes,
+  FaSearch,
+} from "react-icons/fa";
 
 // Small chip helper (same style family as SitePage/EquipmentManager)
 const chip = (bg, fg) => ({
@@ -34,6 +41,9 @@ const fmtDate = (ts) => {
   return d.toLocaleString();
 };
 
+// Safe sort helper (serverTimestamp can be null until resolved)
+const toMillisSafe = (ts) => (ts?.toMillis?.() ? ts.toMillis() : 0);
+
 export default function HowToSection({ site, user, goBack }) {
   const [guides, setGuides] = useState([]);
   const [expandedId, setExpandedId] = useState(null);
@@ -52,20 +62,23 @@ export default function HowToSection({ site, user, goBack }) {
   useEffect(() => {
     if (!site) return;
 
-    // Dedicated collection for guides
-    // NOTE: this requires a composite index (site + createdAt) if Firestore asks – same as fridge log did.
-    const q = query(
-      collection(db, "howtos"),
-      where("site", "==", site),
-      orderBy("createdAt", "desc")
-    );
+    // ✅ No orderBy -> avoids composite index requirement.
+    const q = query(collection(db, "howtos"), where("site", "==", site));
 
     const unsub = onSnapshot(
       q,
-      (snap) => setGuides(snap.docs.map((d) => ({ id: d.id, ...d.data() }))),
+      (snap) => {
+        const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+
+        // ✅ Sort newest first client-side
+        rows.sort((a, b) => toMillisSafe(b.createdAt) - toMillisSafe(a.createdAt));
+
+        setGuides(rows);
+      },
       (err) => {
         console.error("HowTo subscribe error:", err);
-        setGuides([]);
+        // ✅ DON'T wipe the list; keep last good state so it doesn't "disappear"
+        // setGuides([]);
       }
     );
 
@@ -84,7 +97,10 @@ export default function HowToSection({ site, user, goBack }) {
       .map((x) => x.trim())
       .filter(Boolean);
 
-  const canSaveNew = title.trim().length > 0 && stepsFromText(stepsText).length > 0 && !busy;
+  const canSaveNew =
+    title.trim().length > 0 &&
+    stepsFromText(stepsText).length > 0 &&
+    !busy;
 
   const addGuide = async () => {
     if (!canSaveNew) return;
@@ -168,9 +184,24 @@ export default function HowToSection({ site, user, goBack }) {
   };
 
   return (
-    <div style={{ maxWidth: 900, margin: "0 auto", padding: "40px 20px", fontFamily: "'Inter', sans-serif" }}>
+    <div
+      style={{
+        maxWidth: 900,
+        margin: "0 auto",
+        padding: "40px 20px",
+        fontFamily: "'Inter', sans-serif",
+      }}
+    >
       {/* Header */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 12,
+          flexWrap: "wrap",
+        }}
+      >
         <button
           onClick={goBack}
           style={{
@@ -206,7 +237,15 @@ export default function HowToSection({ site, user, goBack }) {
           boxShadow: "0 2px 6px rgba(0,0,0,0.08)",
         }}
       >
-        <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            gap: 10,
+            flexWrap: "wrap",
+            alignItems: "center",
+          }}
+        >
           <div style={{ fontWeight: 900, color: "#111" }}>Create a guide</div>
           <span style={chip("#eef2ff", "#3730a3")}>One step per line</span>
         </div>
