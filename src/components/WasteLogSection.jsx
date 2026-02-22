@@ -5,7 +5,6 @@ import {
   addDoc,
   collection,
   onSnapshot,
-  orderBy,
   query,
   serverTimestamp,
   where,
@@ -30,6 +29,8 @@ const startOfToday = () => {
   return d;
 };
 
+const toMillisSafe = (ts) => (ts?.toMillis?.() ? ts.toMillis() : 0);
+
 export default function WasteLogSection({ site, user, goBack }) {
   const [rows, setRows] = useState([]);
   const [busy, setBusy] = useState(false);
@@ -45,21 +46,25 @@ export default function WasteLogSection({ site, user, goBack }) {
   useEffect(() => {
     if (!site) return;
 
-    // ✅ this query WILL likely require a composite index (site + createdAt)
-    const q = query(
-      collection(db, "wasteLogs"),
-      where("site", "==", site),
-      orderBy("createdAt", "desc")
-    );
+    // ✅ No orderBy -> avoids composite index requirement
+    const q = query(collection(db, "wasteLogs"), where("site", "==", site));
 
-    return onSnapshot(
+    const unsub = onSnapshot(
       q,
-      (snap) => setRows(snap.docs.map((d) => ({ id: d.id, ...d.data() }))),
+      (snap) => {
+        const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        // ✅ newest first client-side
+        rows.sort((a, b) => toMillisSafe(b.createdAt) - toMillisSafe(a.createdAt));
+        setRows(rows);
+      },
       (err) => {
         console.error("Waste logs subscribe error:", err);
-        setRows([]);
+        // ✅ don't wipe UI on error (prevents “flash then disappear”)
+        // setRows([]);
       }
     );
+
+    return () => unsub();
   }, [site]);
 
   const canAdd = item.trim().length > 0 && !busy;
