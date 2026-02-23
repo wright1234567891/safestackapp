@@ -136,6 +136,12 @@ export default function StaffManager({ goBack }) {
   const [busy, setBusy] = useState(false);
   const [showInactive, setShowInactive] = useState(false);
 
+  // edit staff modal
+  const [editStaff, setEditStaff] = useState(null);
+  const [editStaffName, setEditStaffName] = useState("");
+  const [editStaffEmail, setEditStaffEmail] = useState("");
+  const [editStaffRole, setEditStaffRole] = useState("Staff");
+
   // tabs
   const [tab, setTab] = useState("staff"); // "staff" | "rota"
 
@@ -146,7 +152,7 @@ export default function StaffManager({ goBack }) {
   // view
   const [rotaView, setRotaView] = useState("list"); // "list" | "grid"
 
-  // add shift modal fields
+  // add/edit shift modal fields (shared)
   const [showAddShift, setShowAddShift] = useState(false);
   const [shiftStaffId, setShiftStaffId] = useState("");
   const [shiftRole, setShiftRole] = useState("Staff");
@@ -154,6 +160,7 @@ export default function StaffManager({ goBack }) {
   const [shiftStart, setShiftStart] = useState("09:00");
   const [shiftEnd, setShiftEnd] = useState("15:00");
   const [shiftNotes, setShiftNotes] = useState("");
+  const [shiftLocation, setShiftLocation] = useState(""); // ✅ NEW
 
   // edit shift
   const [editShift, setEditShift] = useState(null);
@@ -232,6 +239,39 @@ export default function StaffManager({ goBack }) {
     }
   };
 
+  // ✅ NEW: edit staff (to add/change email after creation)
+  const openEditStaff = (s) => {
+    if (!s?.id) return;
+    setEditStaff(s);
+    setEditStaffName(s.name || "");
+    setEditStaffEmail(s.email || "");
+    setEditStaffRole(s.role || "Staff");
+  };
+
+  const canSaveEditStaff = useMemo(() => {
+    if (!editStaff?.id) return false;
+    if (busy) return false;
+    return editStaffName.trim().length > 0;
+  }, [editStaff, busy, editStaffName]);
+
+  const saveEditStaff = async () => {
+    if (!canSaveEditStaff) return;
+    setBusy(true);
+    try {
+      await updateDoc(doc(db, STAFF_COLLECTION, editStaff.id), {
+        name: editStaffName.trim(),
+        email: editStaffEmail.trim() || "",
+        role: editStaffRole || "Staff",
+      });
+      setEditStaff(null);
+    } catch (e) {
+      console.error("Save staff edit failed:", e);
+      alert("Couldn’t update staff member.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   // ---------- ROTA ----------
   const weekEnd = useMemo(() => addDays(weekStart, 7), [weekStart]);
   const days = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)), [weekStart]);
@@ -302,6 +342,7 @@ export default function StaffManager({ goBack }) {
     setShiftStart("09:00");
     setShiftEnd("15:00");
     setShiftNotes("");
+    setShiftLocation(""); // ✅ NEW
     setShowAddShift(true);
   };
 
@@ -313,6 +354,7 @@ export default function StaffManager({ goBack }) {
     setShiftStart("09:00");
     setShiftEnd("15:00");
     setShiftNotes("");
+    setShiftLocation(""); // ✅ NEW
     setShowAddShift(true);
   };
 
@@ -340,6 +382,7 @@ export default function StaffManager({ goBack }) {
         role: shiftRole || s?.role || "Staff",
         startAt,
         endAt,
+        location: shiftLocation?.trim() || "", // ✅ NEW
         notes: shiftNotes?.trim() || "",
         status: "draft",
         createdAt: Timestamp.now(),
@@ -407,12 +450,13 @@ export default function StaffManager({ goBack }) {
     const staffEmail = st?.email || "";
     if (!staffEmail) return null;
 
-    const date = s.startAt?.toDate?.() ? fmtDateLong(s.startAt.toDate()) : "";
+    const dateObj = s.startAt?.toDate?.() ? s.startAt.toDate() : null;
+    const date = dateObj ? fmtDateLong(dateObj) : "";
     const subject = encodeURIComponent(`Your shift: ${date} ${fmtTime(s.startAt)}–${fmtTime(s.endAt)} (Oak & Smoke)`);
     const body = encodeURIComponent(
       `Hi ${s.staffName || st?.name || ""},\n\nYou’re scheduled for:\n${date}\n${fmtTime(s.startAt)} – ${fmtTime(
         s.endAt
-      )}\nRole: ${s.role || ""}\n${s.notes ? `Notes: ${s.notes}\n` : ""}\n\nThanks,\nChris`
+      )}\nRole: ${s.role || ""}\n${s.location ? `Location: ${s.location}\n` : ""}${s.notes ? `Notes: ${s.notes}\n` : ""}\n\nThanks,\nChris`
     );
     return `mailto:${staffEmail}?subject=${subject}&body=${body}`;
   };
@@ -426,6 +470,7 @@ export default function StaffManager({ goBack }) {
     setShiftDate(toDateInput(s.startAt));
     setShiftStart(toTimeInput(s.startAt));
     setShiftEnd(toTimeInput(s.endAt));
+    setShiftLocation(s.location || ""); // ✅ NEW
     setShiftNotes(s.notes || "");
   };
 
@@ -453,6 +498,7 @@ export default function StaffManager({ goBack }) {
         role: shiftRole || st?.role || "Staff",
         startAt,
         endAt,
+        location: shiftLocation?.trim() || "", // ✅ NEW
         notes: shiftNotes?.trim() || "",
       });
 
@@ -594,6 +640,8 @@ export default function StaffManager({ goBack }) {
               <select value={role} onChange={(e) => setRole(e.target.value)} style={{ ...inputStyle, cursor: "pointer" }}>
                 <option value="Manager">Manager</option>
                 <option value="Staff">Staff</option>
+                <option value="Kitchen">Kitchen</option>
+                <option value="Front">Front</option>
               </select>
             </div>
 
@@ -659,34 +707,120 @@ export default function StaffManager({ goBack }) {
                         </span>
                       </div>
                       <div style={{ fontSize: 12, color: "#6b7280", marginTop: 6 }}>
-                        {s.email ? <span style={chip("#f3f4f6", "#111827")}>{s.email}</span> : <span style={chip("#fff7ed", "#9a3412")}>No email</span>}
+                        {s.email ? (
+                          <span style={chip("#f3f4f6", "#111827")}>{s.email}</span>
+                        ) : (
+                          <span style={chip("#fff7ed", "#9a3412")}>No email</span>
+                        )}
                       </div>
                     </div>
 
-                    <button
-                      onClick={() => toggleActive(s)}
-                      disabled={busy}
-                      style={{
-                        display: "inline-flex",
-                        alignItems: "center",
-                        gap: 8,
-                        padding: "10px 12px",
-                        borderRadius: 12,
-                        border: "1px solid #e5e7eb",
-                        background: "#fff",
-                        cursor: busy ? "not-allowed" : "pointer",
-                        fontWeight: 900,
-                        color: s.active !== false ? "#b91c1c" : "#16a34a",
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      <FaUserSlash /> {s.active !== false ? "Deactivate" : "Activate"}
-                    </button>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                      <button
+                        onClick={() => openEditStaff(s)}
+                        disabled={busy}
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 8,
+                          padding: "10px 12px",
+                          borderRadius: 12,
+                          border: "1px solid #e5e7eb",
+                          background: "#fff",
+                          cursor: busy ? "not-allowed" : "pointer",
+                          fontWeight: 900,
+                          color: "#111827",
+                          whiteSpace: "nowrap",
+                        }}
+                        title="Edit name / email / role"
+                      >
+                        <FaPen /> Edit
+                      </button>
+
+                      <button
+                        onClick={() => toggleActive(s)}
+                        disabled={busy}
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 8,
+                          padding: "10px 12px",
+                          borderRadius: 12,
+                          border: "1px solid #e5e7eb",
+                          background: "#fff",
+                          cursor: busy ? "not-allowed" : "pointer",
+                          fontWeight: 900,
+                          color: s.active !== false ? "#b91c1c" : "#16a34a",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        <FaUserSlash /> {s.active !== false ? "Deactivate" : "Activate"}
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
             )}
           </div>
+
+          {/* Edit staff modal */}
+          {editStaff ? (
+            <div style={overlayStyle} onClick={() => !busy && setEditStaff(null)}>
+              <div style={modalStyle} onClick={(e) => e.stopPropagation()}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                  <div>
+                    <div style={{ fontWeight: 900, color: "#111", fontSize: 16 }}>Edit staff</div>
+                    <div style={{ fontSize: 12, color: "#6b7280", marginTop: 4 }}>Update email so you can send shifts</div>
+                  </div>
+                  <button style={toggleBtn(false)} onClick={() => !busy && setEditStaff(null)}>
+                    Close
+                  </button>
+                </div>
+
+                <div style={{ marginTop: 14, display: "grid", gridTemplateColumns: "1fr 1fr 220px", gap: 12 }}>
+                  <input value={editStaffName} onChange={(e) => setEditStaffName(e.target.value)} placeholder="Name" style={inputStyle} />
+                  <input value={editStaffEmail} onChange={(e) => setEditStaffEmail(e.target.value)} placeholder="Email" style={inputStyle} />
+                  <select
+                    value={editStaffRole}
+                    onChange={(e) => setEditStaffRole(e.target.value)}
+                    style={{ ...inputStyle, cursor: "pointer" }}
+                  >
+                    <option value="Manager">Manager</option>
+                    <option value="Staff">Staff</option>
+                    <option value="Kitchen">Kitchen</option>
+                    <option value="Front">Front</option>
+                  </select>
+                </div>
+
+                <div style={{ display: "flex", gap: 10, marginTop: 14, justifyContent: "flex-end", flexWrap: "wrap" }}>
+                  <button style={toggleBtn(false)} onClick={() => !busy && setEditStaff(null)}>
+                    Cancel
+                  </button>
+                  <button
+                    onClick={saveEditStaff}
+                    disabled={!canSaveEditStaff}
+                    style={{
+                      ...toggleBtn(false),
+                      background: canSaveEditStaff ? "#2563eb" : "#93c5fd",
+                      border: "none",
+                      color: "#fff",
+                      cursor: canSaveEditStaff ? "pointer" : "not-allowed",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 8,
+                      fontWeight: 900,
+                    }}
+                  >
+                    <FaPen /> {busy ? "Saving..." : "Save"}
+                  </button>
+                </div>
+
+                {!canSaveEditStaff ? (
+                  <div style={{ marginTop: 10, fontSize: 12, color: "#6b7280" }}>Name is required.</div>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
         </>
       ) : null}
 
@@ -793,6 +927,7 @@ export default function StaffManager({ goBack }) {
                                   </div>
                                   <div style={{ fontSize: 12, color: "#374151", marginTop: 4 }}>
                                     {fmtTime(s.startAt)} – {fmtTime(s.endAt)}
+                                    {s.location ? <span style={{ color: "#6b7280" }}> · {s.location}</span> : null}
                                     {s.notes ? <span style={{ color: "#6b7280" }}> · {s.notes}</span> : null}
                                   </div>
                                 </div>
@@ -881,9 +1016,7 @@ export default function StaffManager({ goBack }) {
                                       <FaEnvelope /> Email
                                     </a>
                                   ) : (
-                                    <span style={{ ...chip("#fff7ed", "#9a3412"), height: 32, alignSelf: "center" }}>
-                                      No email
-                                    </span>
+                                    <span style={{ ...chip("#fff7ed", "#9a3412"), height: 32, alignSelf: "center" }}>No email</span>
                                   )}
 
                                   <button
@@ -994,6 +1127,11 @@ export default function StaffManager({ goBack }) {
                                         <div style={{ fontWeight: 900, fontSize: 12, color: "#111827" }}>
                                           {fmtTime(s.startAt)} – {fmtTime(s.endAt)}
                                         </div>
+                                        {s.location ? (
+                                          <div style={{ marginTop: 4, fontSize: 12, color: "#6b7280", fontWeight: 700 }}>
+                                            {s.location}
+                                          </div>
+                                        ) : null}
                                         <div style={{ marginTop: 6, display: "flex", gap: 8, flexWrap: "wrap" }}>
                                           <button
                                             onClick={() => openEditShift(s)}
@@ -1091,6 +1229,16 @@ export default function StaffManager({ goBack }) {
                   <input type="time" value={shiftEnd} onChange={(e) => setShiftEnd(e.target.value)} style={inputStyle} />
                 </div>
 
+                {/* ✅ NEW: Location */}
+                <div style={{ marginTop: 12 }}>
+                  <input
+                    value={shiftLocation}
+                    onChange={(e) => setShiftLocation(e.target.value)}
+                    placeholder="Location (optional) e.g. Micklegate / Thorganby / Private booking"
+                    style={inputStyle}
+                  />
+                </div>
+
                 <div style={{ marginTop: 12 }}>
                   <input value={shiftNotes} onChange={(e) => setShiftNotes(e.target.value)} placeholder="Notes (optional)" style={inputStyle} />
                 </div>
@@ -1171,6 +1319,16 @@ export default function StaffManager({ goBack }) {
                   <input type="date" value={shiftDate} onChange={(e) => setShiftDate(e.target.value)} style={inputStyle} />
                   <input type="time" value={shiftStart} onChange={(e) => setShiftStart(e.target.value)} style={inputStyle} />
                   <input type="time" value={shiftEnd} onChange={(e) => setShiftEnd(e.target.value)} style={inputStyle} />
+                </div>
+
+                {/* ✅ NEW: Location */}
+                <div style={{ marginTop: 12 }}>
+                  <input
+                    value={shiftLocation}
+                    onChange={(e) => setShiftLocation(e.target.value)}
+                    placeholder="Location (optional) e.g. Micklegate / Thorganby / Private booking"
+                    style={inputStyle}
+                  />
                 </div>
 
                 <div style={{ marginTop: 12 }}>
