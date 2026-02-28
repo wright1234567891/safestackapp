@@ -27,7 +27,7 @@ import {
   FaRegCalendarCheck,
 } from "react-icons/fa";
 
-const STAFF_COLLECTION = "StaffLogin";
+const STAFF_COLLECTION = "stafflogin";
 const SHIFTS_COLLECTION = "Shifts";
 
 const chip = (bg, fg) => ({
