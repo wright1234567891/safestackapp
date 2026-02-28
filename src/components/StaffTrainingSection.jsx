@@ -78,7 +78,37 @@ function trainingStatus(completedOn, expiresOn) {
 
 const StaffTrainingSection = ({ site, user, goBack }) => {
   // Staff
-  const [staff, setStaff] = useState([]);
+  useEffect(() => {
+  if (!site) return;
+
+  // 1) Global staff directory
+  const unsubProfiles = onSnapshot(
+    collection(db, "staffProfiles"),
+    (snap) => {
+      const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      list.sort((a, b) =>
+        (a.name || "").toLowerCase().localeCompare((b.name || "").toLowerCase())
+      );
+      setStaffProfiles(list);
+    },
+    (err) => console.error("staffProfiles listener error:", err)
+  );
+
+  // 2) Site staff links (template-link equivalent)
+  const unsubSiteStaff = onSnapshot(
+    query(collection(db, "siteStaff"), where("site", "==", site)),
+    (snap) => {
+      const links = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      setSiteStaffLinks(links);
+    },
+    (err) => console.error("siteStaff listener error:", err)
+  );
+
+  return () => {
+    unsubProfiles();
+    unsubSiteStaff();
+  };
+}, [site]);
   const [newStaff, setNewStaff] = useState({ name: "", role: "", contact: "" });
   const [editingStaffId, setEditingStaffId] = useState(null);
   const [staffEdit, setStaffEdit] = useState(null);
@@ -102,21 +132,9 @@ const StaffTrainingSection = ({ site, user, goBack }) => {
   const [searchCourse, setSearchCourse] = useState("");
 
   // ===== Firestore listeners =====
-  useEffect(() => {
-    if (!site) return;
-    const qStaff = query(collection(db, "staff"), where("site", "==", site));
-    const unsub = onSnapshot(
-      qStaff,
-      (snap) => {
-        const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-        // sort by name (case-insensitive)
-        list.sort((a, b) => (a.name || "").toLowerCase().localeCompare((b.name || "").toLowerCase()));
-        setStaff(list);
-      },
-      (err) => console.error("staff listener error:", err)
-    );
-    return () => unsub();
-  }, [site]);
+// Staff (GLOBAL + site links)
+const [staffProfiles, setStaffProfiles] = useState([]); // global staff directory
+const [siteStaffLinks, setSiteStaffLinks] = useState([]); // who is assigned to this site
 
   useEffect(() => {
     if (!site) return;
@@ -134,7 +152,44 @@ const StaffTrainingSection = ({ site, user, goBack }) => {
     return () => unsub();
   }, [site]);
 
-  const staffMap = useMemo(() => Object.fromEntries(staff.map((s) => [s.id, s])), [staff]);
+  const staffProfileMap = useMemo(
+  () => Object.fromEntries(staffProfiles.map((p) => [p.id, p])),
+  [staffProfiles]
+);
+
+const siteStaffIdSet = useMemo(() => {
+  const enabled = siteStaffLinks.filter((l) => l.enabled !== false);
+  return new Set(enabled.map((l) => l.staffId));
+}, [siteStaffLinks]);
+
+// Effective staff list for THIS site (what your UI will show)
+const staff = useMemo(() => {
+  const enabledLinks = siteStaffLinks.filter((l) => l.enabled !== false);
+
+  const joined = enabledLinks
+    .map((l) => {
+      const p = staffProfileMap[l.staffId];
+      if (!p) return null;
+      return {
+        ...p,
+        _siteStaffLinkId: l.id,
+        role: l.roleOverride?.trim() ? l.roleOverride.trim() : p.role,
+      };
+    })
+    .filter(Boolean);
+
+  joined.sort((a, b) =>
+    (a.name || "").toLowerCase().localeCompare((b.name || "").toLowerCase())
+  );
+
+  return joined;
+}, [siteStaffLinks, staffProfileMap]);
+
+// Map for quick lookup
+const staffMap = useMemo(
+  () => Object.fromEntries(staff.map((s) => [s.id, s])),
+  [staff]
+);
 
   // ===== Staff CRUD =====
   const saveNewStaff = async () => {
