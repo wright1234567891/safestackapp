@@ -376,19 +376,20 @@ export default function StaffManager({ goBack }) {
       const startAt = combineDateTimeToTimestamp(shiftDate, shiftStart);
       const endAt = combineDateTimeToTimestamp(shiftDate, shiftEnd);
 
-      await addDoc(collection(db, SHIFTS_COLLECTION), {
-        staffId: shiftStaffId,
-        staffName: s?.name || "",
-        role: shiftRole || s?.role || "Staff",
-        startAt,
-        endAt,
-        location: shiftLocation?.trim() || "",
-        notes: shiftNotes?.trim() || "",
-        status: "draft",
-        publishedAt: null,
-        emailedAt: null, // IMPORTANT: exists for where("emailedAt","==",null)
-        createdAt: Timestamp.now(),
-      });
+await addDoc(collection(db, SHIFTS_COLLECTION), {
+  staffId: shiftStaffId,
+  staffName: s?.name || "",
+  staffEmail: (s?.email || "").trim().toLowerCase(), // ✅ NEW
+  role: shiftRole || s?.role || "Staff",
+  startAt,
+  endAt,
+  location: shiftLocation?.trim() || "",
+  notes: shiftNotes?.trim() || "",
+  status: "draft",
+  publishedAt: null,
+  emailedAt: null,
+  createdAt: Timestamp.now(),
+});
 
       setShowAddShift(false);
     } catch (e) {
@@ -607,15 +608,16 @@ export default function StaffManager({ goBack }) {
       const endAt = combineDateTimeToTimestamp(shiftDate, shiftEnd);
       const st = staffById.get(shiftStaffId);
 
-      const patch = {
-        staffId: shiftStaffId,
-        staffName: st?.name || "",
-        role: shiftRole || st?.role || "Staff",
-        startAt,
-        endAt,
-        location: shiftLocation?.trim() || "",
-        notes: shiftNotes?.trim() || "",
-      };
+const patch = {
+  staffId: shiftStaffId,
+  staffName: st?.name || "",
+  staffEmail: (st?.email || "").trim().toLowerCase(), // ✅ NEW
+  role: shiftRole || st?.role || "Staff",
+  startAt,
+  endAt,
+  location: shiftLocation?.trim() || "",
+  notes: shiftNotes?.trim() || "",
+};
 
       // if editing a published shift, force it back into "new email" bucket
       if (editShift?.status === "published") {

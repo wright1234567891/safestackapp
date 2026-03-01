@@ -58,22 +58,39 @@ export default function MyRota({ user, goBack }) {
 
   // user should be the "selected staff" from your dropdown login
   // Needs: user.id (staff doc id) and user.name ideally
-  const staffId = user?.id || "";
+const staffId = user?.id || user?.staffId || ""; // supports either shape
+const staffEmail = (user?.email || "").trim().toLowerCase();
 
-  useEffect(() => {
-    if (!staffId) return;
+useEffect(() => {
+  if (!staffId && !staffEmail) return;
 
     setLoading(true);
 
     // Query: this staff member, this week, sorted by start time
     // NOTE: requires Firestore composite index if you add more where() later.
-    const qRef = query(
-      collection(db, SHIFTS_COLLECTION),
-      where("staffId", "==", staffId),
-      where("startAt", ">=", Timestamp.fromDate(weekStart)),
-      where("startAt", "<", Timestamp.fromDate(weekEnd)),
-      orderBy("startAt", "asc")
-    );
+let qRef;
+
+if (staffId) {
+  qRef = query(
+    collection(db, SHIFTS_COLLECTION),
+    where("staffId", "==", staffId),
+    where("startAt", ">=", Timestamp.fromDate(weekStart)),
+    where("startAt", "<", Timestamp.fromDate(weekEnd)),
+    orderBy("startAt", "asc")
+  );
+} else if (staffEmail) {
+  qRef = query(
+    collection(db, SHIFTS_COLLECTION),
+    where("staffEmail", "==", staffEmail),
+    where("startAt", ">=", Timestamp.fromDate(weekStart)),
+    where("startAt", "<", Timestamp.fromDate(weekEnd)),
+    orderBy("startAt", "asc")
+  );
+} else {
+  setShifts([]);
+  setLoading(false);
+  return;
+}
 
     const unsub = onSnapshot(
       qRef,
@@ -90,7 +107,7 @@ export default function MyRota({ user, goBack }) {
     );
 
     return () => unsub();
-  }, [staffId, weekStart, weekEnd]);
+}, [staffId, staffEmail, weekStart, weekEnd]);
 
   const visibleShifts = useMemo(() => {
     if (!onlyPublished) return shifts;
@@ -237,7 +254,7 @@ export default function MyRota({ user, goBack }) {
         })}
       </div>
 
-      {!staffId ? (
+{(!staffId && !staffEmail) ? (
         <div style={{ marginTop: 16, padding: 14, borderRadius: 14, border: "1px solid #fee2e2", background: "#fef2f2", color: "#991b1b", fontWeight: 800 }}>
           No user selected. Go back and select your name to view rota.
         </div>
