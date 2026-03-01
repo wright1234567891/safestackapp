@@ -58,16 +58,20 @@ export default function MyRota({ user, goBack }) {
 
   // user should be the "selected staff" from your dropdown login
   // Needs: user.id (staff doc id) and user.name ideally
-const staffId = user?.id || user?.staffId || ""; // supports either shape
+const staffId = user?.id || user?.staffId || "";
 const staffEmail = (user?.email || "").trim().toLowerCase();
 
+// we can work with either id OR email
+const hasIdentity = !!staffId || !!staffEmail;
+
 useEffect(() => {
-  if (!staffId && !staffEmail) return;
+  if (!hasIdentity) {
+    setShifts([]);
+    setLoading(false);
+    return;
+  }
 
-    setLoading(true);
-
-    // Query: this staff member, this week, sorted by start time
-    // NOTE: requires Firestore composite index if you add more where() later.
+  setLoading(true);
 let qRef;
 
 if (staffId) {
@@ -107,7 +111,7 @@ if (staffId) {
     );
 
     return () => unsub();
-}, [staffId, staffEmail, weekStart, weekEnd]);
+}, [staffId, staffEmail, hasIdentity, weekStart, weekEnd]);
 
   const visibleShifts = useMemo(() => {
     if (!onlyPublished) return shifts;
@@ -254,7 +258,7 @@ if (staffId) {
         })}
       </div>
 
-{(!staffId && !staffEmail) ? (
+{!hasIdentity ? (
         <div style={{ marginTop: 16, padding: 14, borderRadius: 14, border: "1px solid #fee2e2", background: "#fef2f2", color: "#991b1b", fontWeight: 800 }}>
           No user selected. Go back and select your name to view rota.
         </div>

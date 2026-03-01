@@ -379,7 +379,7 @@ export default function StaffManager({ goBack }) {
 await addDoc(collection(db, SHIFTS_COLLECTION), {
   staffId: shiftStaffId,
   staffName: s?.name || "",
-  staffEmail: (s?.email || "").trim().toLowerCase(), // ✅ NEW
+  staffEmail: (s?.email || "").trim().toLowerCase(),
   role: shiftRole || s?.role || "Staff",
   startAt,
   endAt,
@@ -611,7 +611,7 @@ await addDoc(collection(db, SHIFTS_COLLECTION), {
 const patch = {
   staffId: shiftStaffId,
   staffName: st?.name || "",
-  staffEmail: (st?.email || "").trim().toLowerCase(), // ✅ NEW
+  staffEmail: (st?.email || "").trim().toLowerCase(),
   role: shiftRole || st?.role || "Staff",
   startAt,
   endAt,
