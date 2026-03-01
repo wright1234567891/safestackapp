@@ -160,7 +160,7 @@ export default function StaffManager({ goBack }) {
   const [shiftStart, setShiftStart] = useState("09:00");
   const [shiftEnd, setShiftEnd] = useState("15:00");
   const [shiftNotes, setShiftNotes] = useState("");
-  const [shiftLocation, setShiftLocation] = useState(""); // ✅ NEW
+  const [shiftLocation, setShiftLocation] = useState("");
 
   // edit shift
   const [editShift, setEditShift] = useState(null);
@@ -239,7 +239,7 @@ export default function StaffManager({ goBack }) {
     }
   };
 
-  // ✅ NEW: edit staff (to add/change email after creation)
+  // edit staff
   const openEditStaff = (s) => {
     if (!s?.id) return;
     setEditStaff(s);
@@ -277,7 +277,7 @@ export default function StaffManager({ goBack }) {
   const days = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)), [weekStart]);
 
   useEffect(() => {
-    const q = query(
+    const qy = query(
       collection(db, SHIFTS_COLLECTION),
       where("startAt", ">=", Timestamp.fromDate(weekStart)),
       where("startAt", "<", Timestamp.fromDate(weekEnd)),
@@ -285,7 +285,7 @@ export default function StaffManager({ goBack }) {
     );
 
     const unsub = onSnapshot(
-      q,
+      qy,
       (snap) => setShifts(snap.docs.map((d) => ({ id: d.id, ...d.data() }))),
       (err) => {
         console.error("Shifts subscribe error:", err);
@@ -342,7 +342,7 @@ export default function StaffManager({ goBack }) {
     setShiftStart("09:00");
     setShiftEnd("15:00");
     setShiftNotes("");
-    setShiftLocation(""); // ✅ NEW
+    setShiftLocation("");
     setShowAddShift(true);
   };
 
@@ -354,7 +354,7 @@ export default function StaffManager({ goBack }) {
     setShiftStart("09:00");
     setShiftEnd("15:00");
     setShiftNotes("");
-    setShiftLocation(""); // ✅ NEW
+    setShiftLocation("");
     setShowAddShift(true);
   };
 
@@ -382,9 +382,11 @@ export default function StaffManager({ goBack }) {
         role: shiftRole || s?.role || "Staff",
         startAt,
         endAt,
-        location: shiftLocation?.trim() || "", // ✅ NEW
+        location: shiftLocation?.trim() || "",
         notes: shiftNotes?.trim() || "",
         status: "draft",
+        publishedAt: null,
+        emailedAt: null, // IMPORTANT: exists for where("emailedAt","==",null)
         createdAt: Timestamp.now(),
       });
 
@@ -415,7 +417,12 @@ export default function StaffManager({ goBack }) {
     if (!shiftId) return;
     setBusy(true);
     try {
-      await updateDoc(doc(db, SHIFTS_COLLECTION, shiftId), { status });
+      await updateDoc(doc(db, SHIFTS_COLLECTION, shiftId), {
+        status,
+        ...(status === "published"
+          ? { publishedAt: Timestamp.now(), emailedAt: null } // reset email flag on publish
+          : {}),
+      });
     } catch (e) {
       console.error("Set shift status failed:", e);
       alert("Couldn’t update shift status.");
@@ -427,15 +434,16 @@ export default function StaffManager({ goBack }) {
   const publishWeek = async () => {
     setBusy(true);
     try {
-      const q = query(
+      const qy = query(
         collection(db, SHIFTS_COLLECTION),
         where("startAt", ">=", Timestamp.fromDate(weekStart)),
         where("startAt", "<", Timestamp.fromDate(weekEnd)),
         orderBy("startAt", "asc")
       );
-      const snap = await getDocs(q);
+      const snap = await getDocs(qy);
       const batch = writeBatch(db);
-      snap.docs.forEach((d) => batch.update(d.ref, { status: "published" }));
+      const now = Timestamp.now();
+      snap.docs.forEach((d) => batch.update(d.ref, { status: "published", publishedAt: now, emailedAt: null }));
       await batch.commit();
     } catch (e) {
       console.error("Publish week failed:", e);
@@ -461,6 +469,113 @@ export default function StaffManager({ goBack }) {
     return `mailto:${staffEmail}?subject=${subject}&body=${body}`;
   };
 
+  // One email per staff member for all newly published (not emailed) shifts in a range
+  const buildStaffRotaMailto = (staffEmail, staffName, shiftsList, rangeLabel) => {
+    if (!staffEmail) return null;
+
+    const lines = shiftsList
+      .slice()
+      .sort((a, b) => (a.startAt?.toMillis?.() || 0) - (b.startAt?.toMillis?.() || 0))
+      .map((s) => {
+        const dateObj = s.startAt?.toDate?.() ? s.startAt.toDate() : null;
+        const date = dateObj ? fmtDateLong(dateObj) : "";
+        const time = `${fmtTime(s.startAt)}–${fmtTime(s.endAt)}`;
+        const loc = s.location ? ` | ${s.location}` : "";
+        const roleTxt = s.role ? ` | ${s.role}` : "";
+        const notes = s.notes ? ` | Notes: ${s.notes}` : "";
+        return `• ${date} | ${time}${loc}${roleTxt}${notes}`;
+      });
+
+    const subject = encodeURIComponent(`Your shifts (${rangeLabel}) — Oak & Smoke`);
+    const body = encodeURIComponent(
+      `Hi ${staffName || ""},\n\nHere are your newly published shifts (${rangeLabel}):\n\n${lines.join(
+        "\n"
+      )}\n\nThanks,\nChris`
+    );
+
+    return `mailto:${staffEmail}?subject=${subject}&body=${body}`;
+  };
+
+  const fetchUnemailedPublishedShifts = async (rangeStartDate, rangeEndDate) => {
+    const qy = query(
+      collection(db, SHIFTS_COLLECTION),
+      where("status", "==", "published"),
+      where("emailedAt", "==", null),
+      where("startAt", ">=", Timestamp.fromDate(rangeStartDate)),
+      where("startAt", "<", Timestamp.fromDate(rangeEndDate)),
+      orderBy("startAt", "asc")
+    );
+    const snap = await getDocs(qy);
+    return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  };
+
+  const emailAndMarkRange = async (rangeStartDate, rangeEndDate, rangeLabel) => {
+    setBusy(true);
+    try {
+      const items = await fetchUnemailedPublishedShifts(rangeStartDate, rangeEndDate);
+
+      if (items.length === 0) {
+        alert("No newly published shifts to email in this range.");
+        return;
+      }
+
+      // group by staffId
+      const byStaff = new Map();
+      for (const s of items) {
+        const key = s.staffId || "unknown";
+        if (!byStaff.has(key)) byStaff.set(key, []);
+        byStaff.get(key).push(s);
+      }
+
+      // open one mailto per staff member, and ONLY mark those shifts as emailed
+      let opened = 0;
+      let missingEmailCount = 0;
+      const shiftIdsToMark = [];
+
+      for (const [staffId, list] of byStaff.entries()) {
+        const st = staffById.get(staffId);
+        const staffEmail = st?.email || "";
+        if (!staffEmail) {
+          missingEmailCount += list.length;
+          continue;
+        }
+
+        const mailto = buildStaffRotaMailto(staffEmail, st?.name || list[0]?.staffName || "", list, rangeLabel);
+        if (!mailto) {
+          missingEmailCount += list.length;
+          continue;
+        }
+
+        window.open(mailto, "_blank");
+        opened += 1;
+
+        list.forEach((x) => shiftIdsToMark.push(x.id));
+      }
+
+      if (opened === 0) {
+        alert("No emails could be created (missing staff emails).");
+        return;
+      }
+
+      // Mark only the shifts we actually prepared an email for
+      const batch = writeBatch(db);
+      const now = Timestamp.now();
+      shiftIdsToMark.forEach((id) => batch.update(doc(db, SHIFTS_COLLECTION, id), { emailedAt: now }));
+      await batch.commit();
+
+      const msg =
+        `Prepared ${opened} email(s) — one per staff member.\n` +
+        `Marked ${shiftIdsToMark.length} shift(s) as emailed.` +
+        (missingEmailCount ? `\n\n${missingEmailCount} shift(s) were NOT emailed because staff are missing an email address.` : "");
+      alert(msg);
+    } catch (e) {
+      console.error("Email range failed:", e);
+      alert("Couldn’t prepare emails. You may need a Firestore composite index for this query.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const openEditShift = (s) => {
     if (!s?.id) return;
     const st = staffById.get(s.staffId);
@@ -470,7 +585,7 @@ export default function StaffManager({ goBack }) {
     setShiftDate(toDateInput(s.startAt));
     setShiftStart(toTimeInput(s.startAt));
     setShiftEnd(toTimeInput(s.endAt));
-    setShiftLocation(s.location || ""); // ✅ NEW
+    setShiftLocation(s.location || "");
     setShiftNotes(s.notes || "");
   };
 
@@ -492,15 +607,22 @@ export default function StaffManager({ goBack }) {
       const endAt = combineDateTimeToTimestamp(shiftDate, shiftEnd);
       const st = staffById.get(shiftStaffId);
 
-      await updateDoc(doc(db, SHIFTS_COLLECTION, editShift.id), {
+      const patch = {
         staffId: shiftStaffId,
         staffName: st?.name || "",
         role: shiftRole || st?.role || "Staff",
         startAt,
         endAt,
-        location: shiftLocation?.trim() || "", // ✅ NEW
+        location: shiftLocation?.trim() || "",
         notes: shiftNotes?.trim() || "",
-      });
+      };
+
+      // if editing a published shift, force it back into "new email" bucket
+      if (editShift?.status === "published") {
+        patch.emailedAt = null;
+      }
+
+      await updateDoc(doc(db, SHIFTS_COLLECTION, editShift.id), patch);
 
       setEditShift(null);
     } catch (e) {
@@ -874,6 +996,51 @@ export default function StaffManager({ goBack }) {
                 >
                   <FaRegCalendarCheck /> Publish week
                 </button>
+
+                <button
+                  onClick={() => emailAndMarkRange(weekStart, weekEnd, `Week of ${fmtDay(weekStart)}`)}
+                  disabled={busy}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 8,
+                    padding: "10px 12px",
+                    borderRadius: 12,
+                    border: "1px solid #e5e7eb",
+                    background: "#fff",
+                    color: "#111827",
+                    fontWeight: 900,
+                    cursor: busy ? "not-allowed" : "pointer",
+                  }}
+                  title="One email per staff member for newly published (not yet emailed) shifts this week"
+                >
+                  <FaEnvelope /> Email new (week)
+                </button>
+
+                <button
+                  onClick={() => {
+                    const monthStart = new Date(weekStart.getFullYear(), weekStart.getMonth(), 1);
+                    const monthEnd = new Date(weekStart.getFullYear(), weekStart.getMonth() + 1, 1);
+                    const label = monthStart.toLocaleDateString("en-GB", { month: "long", year: "numeric" });
+                    emailAndMarkRange(monthStart, monthEnd, label);
+                  }}
+                  disabled={busy}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 8,
+                    padding: "10px 12px",
+                    borderRadius: 12,
+                    border: "1px solid #e5e7eb",
+                    background: "#fff",
+                    color: "#111827",
+                    fontWeight: 900,
+                    cursor: busy ? "not-allowed" : "pointer",
+                  }}
+                  title="One email per staff member for newly published (not yet emailed) shifts this month"
+                >
+                  <FaEnvelope /> Email new (month)
+                </button>
               </div>
             </div>
 
@@ -1229,7 +1396,6 @@ export default function StaffManager({ goBack }) {
                   <input type="time" value={shiftEnd} onChange={(e) => setShiftEnd(e.target.value)} style={inputStyle} />
                 </div>
 
-                {/* ✅ NEW: Location */}
                 <div style={{ marginTop: 12 }}>
                   <input
                     value={shiftLocation}
@@ -1321,7 +1487,6 @@ export default function StaffManager({ goBack }) {
                   <input type="time" value={shiftEnd} onChange={(e) => setShiftEnd(e.target.value)} style={inputStyle} />
                 </div>
 
-                {/* ✅ NEW: Location */}
                 <div style={{ marginTop: 12 }}>
                   <input
                     value={shiftLocation}
