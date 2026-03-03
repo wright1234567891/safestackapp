@@ -6,61 +6,69 @@ import {
   doc,
   query,
   where,
-  orderBy,
-  serverTimestamp,
+  Timestamp,
 } from "firebase/firestore";
 import { db } from "../firebase";
 
-// ---------- style helpers (match your teal/card vibe) ----------
+/** ---- Styles closer to your “Checklists” page (white cards on teal) ---- */
 const styles = {
   page: {
     minHeight: "100vh",
-    background: "#0f3f3f", // deep teal
-    padding: "32px 18px",
-    color: "#f3f5f6",
+    background: "#0f3f3f",
+    padding: "28px 16px",
   },
   header: {
     textAlign: "center",
     fontSize: 34,
-    fontWeight: 700,
-    margin: "10px 0 24px",
+    fontWeight: 800,
+    margin: "10px 0 18px",
+    color: "#ffffff",
     letterSpacing: 0.2,
-    fontFamily: "Georgia, serif", // matches your screenshot feel
   },
-  shell: {
+  wrap: {
     maxWidth: 980,
     margin: "0 auto",
   },
-  card: {
-    border: "1px solid rgba(255,255,255,0.18)",
-    borderRadius: 12,
-    padding: "18px 18px",
-    marginBottom: 16,
-    background: "rgba(0,0,0,0.12)",
-    boxShadow: "0 6px 18px rgba(0,0,0,0.15)",
+  panel: {
+    background: "#ffffff",
+    borderRadius: 14,
+    padding: 18,
+    boxShadow: "0 10px 28px rgba(0,0,0,0.20)",
+    border: "1px solid rgba(0,0,0,0.06)",
   },
-  equipmentTile: {
-    border: "1px solid rgba(255,255,255,0.18)",
+  tile: {
+    background: "#ffffff",
     borderRadius: 12,
-    padding: "18px",
-    marginBottom: 14,
-    background: "rgba(0,0,0,0.10)",
+    padding: 16,
+    marginBottom: 12,
+    border: "1px solid rgba(0,0,0,0.10)",
+    boxShadow: "0 6px 18px rgba(0,0,0,0.08)",
     cursor: "pointer",
   },
-  tileTitle: {
-    fontSize: 20,
-    fontWeight: 700,
-    margin: 0,
-    fontFamily: "Georgia, serif",
+  titleRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: 10,
+    flexWrap: "wrap",
+    justifyContent: "space-between",
   },
-  tileSub: {
-    opacity: 0.9,
-    marginTop: 8,
-    marginBottom: 0,
+  tileTitle: { margin: 0, fontSize: 18, fontWeight: 800, color: "#0f172a" },
+  tileSub: { margin: "6px 0 0", color: "#334155" },
+  badgeRow: { display: "flex", gap: 8, flexWrap: "wrap" },
+  badge: {
+    display: "inline-flex",
+    alignItems: "center",
+    padding: "6px 10px",
+    borderRadius: 999,
+    border: "1px solid rgba(0,0,0,0.12)",
+    background: "#f8fafc",
+    fontSize: 12,
+    fontWeight: 700,
+    color: "#0f172a",
   },
   divider: {
     height: 1,
-    background: "rgba(255,255,255,0.14)",
+    background: "rgba(15, 23, 42, 0.10)",
     margin: "14px 0",
   },
   row: {
@@ -73,62 +81,91 @@ const styles = {
     flex: "1 1 260px",
     padding: "10px 12px",
     borderRadius: 10,
-    border: "1px solid rgba(255,255,255,0.18)",
-    background: "rgba(255,255,255,0.06)",
-    color: "#fff",
+    border: "1px solid rgba(0,0,0,0.14)",
+    background: "#ffffff",
+    color: "#0f172a",
     outline: "none",
   },
   select: {
-    flex: "0 1 220px",
+    flex: "0 1 260px",
     padding: "10px 12px",
     borderRadius: 10,
-    border: "1px solid rgba(255,255,255,0.18)",
-    background: "rgba(255,255,255,0.06)",
-    color: "#fff",
+    border: "1px solid rgba(0,0,0,0.14)",
+    background: "#ffffff",
+    color: "#0f172a",
     outline: "none",
   },
-  button: {
-    padding: "10px 16px",
+  textarea: {
+    width: "100%",
+    padding: "10px 12px",
     borderRadius: 10,
-    border: "1px solid rgba(255,255,255,0.22)",
-    background: "rgba(255,255,255,0.12)",
-    color: "#fff",
-    cursor: "pointer",
-    fontWeight: 600,
+    border: "1px solid rgba(0,0,0,0.14)",
+    background: "#ffffff",
+    color: "#0f172a",
+    outline: "none",
+    minHeight: 80,
   },
-  buttonPrimary: {
-    padding: "10px 16px",
+  btnRow: { display: "flex", gap: 10, flexWrap: "wrap", marginTop: 12 },
+  btn: {
+    padding: "10px 14px",
     borderRadius: 10,
-    border: "1px solid rgba(255,255,255,0.28)",
-    background: "rgba(120, 200, 255, 0.18)",
+    border: "1px solid rgba(0,0,0,0.14)",
+    background: "#f1f5f9",
+    color: "#0f172a",
+    cursor: "pointer",
+    fontWeight: 800,
+  },
+  btnPrimary: {
+    padding: "10px 14px",
+    borderRadius: 10,
+    border: "1px solid rgba(0,0,0,0.12)",
+    background: "#3b82f6",
     color: "#fff",
     cursor: "pointer",
+    fontWeight: 900,
+  },
+  hint: { marginTop: 10, fontSize: 13, color: "#475569" },
+  error: {
+    marginTop: 10,
+    padding: "10px 12px",
+    borderRadius: 10,
+    border: "1px solid rgba(220, 38, 38, 0.25)",
+    background: "rgba(220, 38, 38, 0.06)",
+    color: "#b91c1c",
     fontWeight: 700,
   },
-  small: { fontSize: 13, opacity: 0.85 },
+  ok: {
+    marginTop: 10,
+    padding: "10px 12px",
+    borderRadius: 10,
+    border: "1px solid rgba(22, 163, 74, 0.25)",
+    background: "rgba(22, 163, 74, 0.06)",
+    color: "#15803d",
+    fontWeight: 800,
+  },
   recordLine: {
     padding: "10px 12px",
     borderRadius: 10,
-    border: "1px solid rgba(255,255,255,0.14)",
+    border: "1px solid rgba(0,0,0,0.10)",
+    background: "#ffffff",
+    boxShadow: "0 6px 14px rgba(0,0,0,0.06)",
     marginBottom: 10,
-    background: "rgba(0,0,0,0.10)",
     cursor: "pointer",
   },
-  badge: {
+  small: { fontSize: 13, color: "#475569" },
+  checkboxWrap: {
     display: "inline-flex",
     alignItems: "center",
     gap: 8,
-    padding: "6px 10px",
-    borderRadius: 999,
-    border: "1px solid rgba(255,255,255,0.18)",
-    background: "rgba(255,255,255,0.08)",
-    fontSize: 12,
-    opacity: 0.95,
+    padding: "8px 10px",
+    borderRadius: 10,
+    border: "1px solid rgba(0,0,0,0.10)",
+    background: "#f8fafc",
+    fontWeight: 800,
+    color: "#0f172a",
   },
-  checkbox: { transform: "scale(1.1)" },
 };
 
-// ---------- record type presets ----------
 const COOKING_TYPES = [
   { value: "HOT_HOLD", label: "Hot holding check (°C)" },
   { value: "COOLING", label: "Cooling check (°C)" },
@@ -143,16 +180,14 @@ const VACPACK_TYPES = [
   { value: "CLEANING", label: "Cleaning / sanitise record" },
 ];
 
-// quick helper
 const safeName = (user) =>
   typeof user === "string" ? user : user?.name || "Unknown";
 
 const generateId = () => "_" + Math.random().toString(36).slice(2, 10);
 
-// decide if equipment is vac pack
 const isVacPackEquipment = (eq) => {
   const name = (eq?.name || "").toLowerCase();
-  if (eq?.type === "VacPack") return true; // recommended if you add this type
+  if (eq?.type === "VacPack") return true;
   return name.includes("vac") || name.includes("pack");
 };
 
@@ -161,9 +196,8 @@ const CookingSection = ({ site, user, goBack }) => {
   const [selectedEquipment, setSelectedEquipment] = useState(null);
   const [viewingRecord, setViewingRecord] = useState(null);
 
-  // form state
   const [logType, setLogType] = useState("HOT_HOLD");
-  const [value, setValue] = useState(""); // °C or text
+  const [value, setValue] = useState("");
   const [notes, setNotes] = useState("");
 
   // vac-pack extras
@@ -173,23 +207,21 @@ const CookingSection = ({ site, user, goBack }) => {
   const [sealOk, setSealOk] = useState(true);
   const [cleaned, setCleaned] = useState(false);
 
-  // Fetch equipment on mount (ONLY this site; order by name if you have it)
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState("");
+  const [ok, setOk] = useState("");
+
   useEffect(() => {
     const fetchEquipment = async () => {
       try {
-        // If you only want Cooking + VacPack, do 2 queries and merge.
-        // For now: fetch site equipment and filter client-side by allowed types.
         const q1 = query(collection(db, "equipment"), where("site", "==", site));
         const snapshot = await getDocs(q1);
-
         const data = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
 
-        // show cooking gear + vac pack (by type or name match)
         const allowed = data.filter(
           (eq) => eq.type === "Cooking" || isVacPackEquipment(eq)
         );
 
-        // optional: sort by type then name
         allowed.sort((a, b) => {
           const ta = isVacPackEquipment(a) ? "VacPack" : a.type;
           const tb = isVacPackEquipment(b) ? "VacPack" : b.type;
@@ -202,7 +234,6 @@ const CookingSection = ({ site, user, goBack }) => {
         console.error("Error fetching equipment:", error);
       }
     };
-
     fetchEquipment();
   }, [site]);
 
@@ -211,10 +242,11 @@ const CookingSection = ({ site, user, goBack }) => {
     [selectedEquipment]
   );
 
-  // set default log types when equipment changes
   useEffect(() => {
     if (!selectedEquipment) return;
     setViewingRecord(null);
+    setErr("");
+    setOk("");
 
     if (isVacPackEquipment(selectedEquipment)) {
       setLogType("VAC_PACK");
@@ -233,50 +265,63 @@ const CookingSection = ({ site, user, goBack }) => {
   }, [selectedEquipment]);
 
   const addRecord = async () => {
+    setErr("");
+    setOk("");
+
     if (!selectedEquipment) return;
 
-    // validation: cooking logs should have a value if it’s a temp type
     const needsTemp =
       !selectedIsVacPack &&
       ["HOT_HOLD", "COOLING", "REHEAT"].includes(logType);
 
-    if (needsTemp && !String(value).trim()) return;
-
-    // vac pack: if doing VAC_PACK log, product + use-by is strongly recommended
-    if (selectedIsVacPack && logType === "VAC_PACK") {
-      if (!product.trim()) return;
-      if (!useBy.trim()) return;
+    if (needsTemp && !String(value).trim()) {
+      setErr("Please enter a temperature value.");
+      return;
     }
 
+    if (selectedIsVacPack && logType === "VAC_PACK") {
+      if (!product.trim()) {
+        setErr("Please enter a product name.");
+        return;
+      }
+      if (!useBy.trim()) {
+        setErr("Please choose a use-by date.");
+        return;
+      }
+    }
+
+    const now = new Date();
+
+    // ✅ IMPORTANT: Timestamp.now() works in arrays; serverTimestamp() does not.
     const record = {
       id: generateId(),
       type: logType,
-      value: String(value || "").trim(), // may be empty for tick-based logs
-      unit: needsTemp || selectedIsVacPack ? (value ? "°C" : "") : "",
+      value: String(value || "").trim(),
+      unit: (needsTemp || (selectedIsVacPack && value)) ? "°C" : "",
       notes: notes.trim(),
       meta: selectedIsVacPack
         ? {
             product: product.trim(),
-            useBy: useBy.trim(), // store ISO date string from <input type="date">
+            useBy: useBy.trim(),
             cooledBeforePack,
             sealOk,
             cleaned,
           }
         : {},
       person: safeName(user),
-      createdAt: serverTimestamp(),
-      // keep your current date/time fields too (easy display without needing timestamp reads)
-      date: new Date().toLocaleDateString(),
-      time: new Date().toLocaleTimeString(),
+      createdAt: Timestamp.now(),
+      date: now.toLocaleDateString(),
+      time: now.toLocaleTimeString(),
     };
 
     try {
+      setSaving(true);
+
       const eqRef = doc(db, "equipment", selectedEquipment.id);
       const updatedRecords = [...(selectedEquipment.records || []), record];
 
       await updateDoc(eqRef, { records: updatedRecords });
 
-      // update local state
       setEquipmentList((prev) =>
         prev.map((eq) =>
           eq.id === selectedEquipment.id ? { ...eq, records: updatedRecords } : eq
@@ -284,12 +329,15 @@ const CookingSection = ({ site, user, goBack }) => {
       );
       setSelectedEquipment((prev) => ({ ...prev, records: updatedRecords }));
 
-      // reset inputs lightly (keep logType)
       setValue("");
       setNotes("");
       setCleaned(false);
+      setOk("Record saved.");
     } catch (error) {
       console.error("Error updating record:", error);
+      setErr(error?.message || "Could not save record. Check Firestore rules/console.");
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -298,6 +346,8 @@ const CookingSection = ({ site, user, goBack }) => {
     setViewingRecord(null);
     setValue("");
     setNotes("");
+    setErr("");
+    setOk("");
   };
 
   const viewRecord = (eq, rec) =>
@@ -310,7 +360,6 @@ const CookingSection = ({ site, user, goBack }) => {
       [...COOKING_TYPES, ...VACPACK_TYPES].find((t) => t.value === rec.type)
         ?.label || rec.type;
 
-    // show meta summary for vac pack
     let metaBits = "";
     if (rec?.meta?.product) {
       metaBits = ` • ${rec.meta.product}`;
@@ -325,14 +374,14 @@ const CookingSection = ({ site, user, goBack }) => {
 
   return (
     <div style={styles.page}>
-      <div style={styles.shell}>
+      <div style={styles.wrap}>
         <div style={styles.header}>{site} - Cooking & Cooling</div>
 
         {/* LIST VIEW */}
         {!selectedEquipment && !viewingRecord && (
-          <div style={styles.card}>
+          <div style={styles.panel}>
             {equipmentList.length === 0 && (
-              <p style={{ margin: 0, opacity: 0.9 }}>
+              <p style={{ margin: 0, color: "#334155", fontWeight: 700 }}>
                 No cooking/vac pack equipment yet.
               </p>
             )}
@@ -340,28 +389,30 @@ const CookingSection = ({ site, user, goBack }) => {
             {equipmentList.map((eq) => {
               const vac = isVacPackEquipment(eq);
               const tag = vac ? "Vac Pack" : eq.type;
+
               return (
                 <div
                   key={eq.id}
-                  style={styles.equipmentTile}
+                  style={styles.tile}
                   onClick={() => setSelectedEquipment(eq)}
                 >
-                  <div style={styles.row}>
+                  <div style={styles.titleRow}>
                     <h3 style={styles.tileTitle}>{eq.name}</h3>
-                    <span style={styles.badge}>{tag}</span>
-                    <span style={styles.badge}>
-                      {(eq.records || []).length} record(s)
-                    </span>
+
+                    <div style={styles.badgeRow}>
+                      <span style={styles.badge}>{tag}</span>
+                      <span style={styles.badge}>
+                        {(eq.records || []).length} record(s)
+                      </span>
+                    </div>
                   </div>
-                  <p style={styles.tileSub}>
-                    Tap to log a check / note.
-                  </p>
+                  <p style={styles.tileSub}>Tap to log a check / note.</p>
                 </div>
               );
             })}
 
-            <div style={{ textAlign: "center", marginTop: 18 }}>
-              <button style={styles.button} onClick={goBack}>
+            <div style={{ textAlign: "center", marginTop: 14 }}>
+              <button style={styles.btn} onClick={goBack}>
                 Back
               </button>
             </div>
@@ -370,19 +421,20 @@ const CookingSection = ({ site, user, goBack }) => {
 
         {/* EQUIPMENT DETAIL VIEW */}
         {selectedEquipment && !viewingRecord && (
-          <div style={styles.card}>
-            <div style={styles.row}>
-              <h2 style={{ margin: 0, fontFamily: "Georgia, serif" }}>
+          <div style={styles.panel}>
+            <div style={styles.titleRow}>
+              <h2 style={{ margin: 0, fontSize: 22, fontWeight: 900, color: "#0f172a" }}>
                 {selectedEquipment.name}
               </h2>
-              <span style={styles.badge}>
-                {selectedIsVacPack ? "Vac Pack" : "Cooking"}
-              </span>
+              <div style={styles.badgeRow}>
+                <span style={styles.badge}>
+                  {selectedIsVacPack ? "Vac Pack" : "Cooking"}
+                </span>
+              </div>
             </div>
 
             <div style={styles.divider} />
 
-            {/* LOG FORM */}
             <div style={styles.row}>
               <select
                 style={styles.select}
@@ -396,21 +448,15 @@ const CookingSection = ({ site, user, goBack }) => {
                 ))}
               </select>
 
-              {/* value input: temp/value for most types */}
               <input
                 style={styles.input}
                 type="text"
-                placeholder={
-                  selectedIsVacPack
-                    ? "Optional temp (°C) or leave blank"
-                    : "Enter temp (°C) or note"
-                }
+                placeholder={selectedIsVacPack ? "Optional temp (°C)" : "Enter temp (°C)"}
                 value={value}
                 onChange={(e) => setValue(e.target.value)}
               />
             </div>
 
-            {/* VAC PACK EXTRA FIELDS */}
             {selectedIsVacPack && (
               <>
                 <div style={{ height: 10 }} />
@@ -433,9 +479,8 @@ const CookingSection = ({ site, user, goBack }) => {
 
                 <div style={{ height: 10 }} />
                 <div style={styles.row}>
-                  <label style={styles.badge}>
+                  <label style={styles.checkboxWrap}>
                     <input
-                      style={styles.checkbox}
                       type="checkbox"
                       checked={cooledBeforePack}
                       onChange={(e) => setCooledBeforePack(e.target.checked)}
@@ -443,9 +488,8 @@ const CookingSection = ({ site, user, goBack }) => {
                     Cooled before packing
                   </label>
 
-                  <label style={styles.badge}>
+                  <label style={styles.checkboxWrap}>
                     <input
-                      style={styles.checkbox}
                       type="checkbox"
                       checked={sealOk}
                       onChange={(e) => setSealOk(e.target.checked)}
@@ -453,9 +497,8 @@ const CookingSection = ({ site, user, goBack }) => {
                     Seal OK
                   </label>
 
-                  <label style={styles.badge}>
+                  <label style={styles.checkboxWrap}>
                     <input
-                      style={styles.checkbox}
                       type="checkbox"
                       checked={cleaned}
                       onChange={(e) => setCleaned(e.target.checked)}
@@ -464,35 +507,35 @@ const CookingSection = ({ site, user, goBack }) => {
                   </label>
                 </div>
 
-                <p style={{ ...styles.small, marginTop: 10 }}>
-                  Tip: “Product + use-by + cooled before packing + seal OK” is the
-                  strongest EHO-friendly vac pack record.
-                </p>
+                <div style={styles.hint}>
+                  Tip: “Product + use-by + cooled before packing + seal OK” is your strongest EHO record.
+                </div>
               </>
             )}
 
             <div style={{ height: 10 }} />
             <textarea
-              style={{ ...styles.input, flex: "1 1 100%", minHeight: 70 }}
+              style={styles.textarea}
               placeholder="Notes (optional) e.g. moved to Tall Fridge, batch ref, any issues"
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
             />
 
-            <div style={{ height: 12 }} />
-            <div style={styles.row}>
-              <button style={styles.buttonPrimary} onClick={addRecord}>
-                Add Record
+            <div style={styles.btnRow}>
+              <button style={styles.btnPrimary} onClick={addRecord} disabled={saving}>
+                {saving ? "Saving..." : "Add Record"}
               </button>
-              <button style={styles.button} onClick={resetView}>
+              <button style={styles.btn} onClick={resetView}>
                 Back
               </button>
             </div>
 
+            {!!err && <div style={styles.error}>{err}</div>}
+            {!!ok && <div style={styles.ok}>{ok}</div>}
+
             <div style={styles.divider} />
 
-            {/* RECORDS LIST */}
-            <h3 style={{ marginTop: 0, fontFamily: "Georgia, serif" }}>
+            <h3 style={{ margin: "0 0 12px", fontSize: 18, fontWeight: 900, color: "#0f172a" }}>
               Previous Records
             </h3>
 
@@ -505,7 +548,7 @@ const CookingSection = ({ site, user, goBack }) => {
                   style={styles.recordLine}
                   onClick={() => viewRecord(selectedEquipment, rec)}
                 >
-                  <div style={{ fontWeight: 700 }}>
+                  <div style={{ fontWeight: 900, color: "#0f172a" }}>
                     {renderRecordSummary(rec)}
                   </div>
                   <div style={styles.small}>
@@ -518,17 +561,14 @@ const CookingSection = ({ site, user, goBack }) => {
 
         {/* RECORD VIEW */}
         {viewingRecord && (
-          <div style={styles.card}>
-            <h2 style={{ marginTop: 0, fontFamily: "Georgia, serif" }}>
+          <div style={styles.panel}>
+            <h2 style={{ marginTop: 0, fontSize: 22, fontWeight: 900, color: "#0f172a" }}>
               {viewingRecord.equipment.name} - Record
             </h2>
 
             <div style={styles.divider} />
 
-            <p style={{ marginTop: 0 }}>
-              <strong>Type:</strong>{" "}
-              {viewingRecord.record.type || "—"}
-            </p>
+            <p><strong>Type:</strong> {viewingRecord.record.type || "—"}</p>
             <p>
               <strong>Value:</strong>{" "}
               {viewingRecord.record.value
@@ -538,44 +578,23 @@ const CookingSection = ({ site, user, goBack }) => {
 
             {viewingRecord.record?.meta?.product && (
               <>
-                <p>
-                  <strong>Product:</strong> {viewingRecord.record.meta.product}
-                </p>
-                <p>
-                  <strong>Use-by:</strong> {viewingRecord.record.meta.useBy || "—"}
-                </p>
-                <p>
-                  <strong>Cooled before pack:</strong>{" "}
-                  {String(!!viewingRecord.record.meta.cooledBeforePack)}
-                </p>
-                <p>
-                  <strong>Seal OK:</strong>{" "}
-                  {String(!!viewingRecord.record.meta.sealOk)}
-                </p>
-                <p>
-                  <strong>Cleaned after use:</strong>{" "}
-                  {String(!!viewingRecord.record.meta.cleaned)}
-                </p>
+                <p><strong>Product:</strong> {viewingRecord.record.meta.product}</p>
+                <p><strong>Use-by:</strong> {viewingRecord.record.meta.useBy || "—"}</p>
+                <p><strong>Cooled before pack:</strong> {String(!!viewingRecord.record.meta.cooledBeforePack)}</p>
+                <p><strong>Seal OK:</strong> {String(!!viewingRecord.record.meta.sealOk)}</p>
+                <p><strong>Cleaned after use:</strong> {String(!!viewingRecord.record.meta.cleaned)}</p>
               </>
             )}
 
             {viewingRecord.record.notes && (
-              <p>
-                <strong>Notes:</strong> {viewingRecord.record.notes}
-              </p>
+              <p><strong>Notes:</strong> {viewingRecord.record.notes}</p>
             )}
 
-            <p>
-              <strong>Date:</strong> {viewingRecord.record.date}
-            </p>
-            <p>
-              <strong>Time:</strong> {viewingRecord.record.time}
-            </p>
-            <p>
-              <strong>Recorded by:</strong> {viewingRecord.record.person}
-            </p>
+            <p><strong>Date:</strong> {viewingRecord.record.date}</p>
+            <p><strong>Time:</strong> {viewingRecord.record.time}</p>
+            <p><strong>Recorded by:</strong> {viewingRecord.record.person}</p>
 
-            <button style={styles.button} onClick={resetView}>
+            <button style={styles.btn} onClick={resetView}>
               Back
             </button>
           </div>
