@@ -14,7 +14,7 @@ import {
   where,
 } from "firebase/firestore";
 import Select from "react-select";
-import Tesseract from "tesseract.js"; // 👈 OCR
+import Tesseract from "tesseract.js";
 import {
   FaUpload,
   FaReceipt,
@@ -25,9 +25,12 @@ import {
   FaUtensils,
   FaBoxOpen,
   FaIndustry,
+  FaExclamationTriangle,
 } from "react-icons/fa";
 
 const StockSection = ({ site, goBack, user }) => {
+  const today = new Date().toISOString().split("T")[0];
+
   const [stockItems, setStockItems] = useState([]);
   const [equipment, setEquipment] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
@@ -37,25 +40,27 @@ const StockSection = ({ site, goBack, user }) => {
   const [newItemQty, setNewItemQty] = useState(0);
   const [newMeasurement, setNewMeasurement] = useState("unit");
   const [newLocation, setNewLocation] = useState("Ambient");
-  const [newExpiry, setNewExpiry] = useState("");
+  const [newDateReceived, setNewDateReceived] = useState(today);
+  const [newUseByDate, setNewUseByDate] = useState("");
   const [newSupplier, setNewSupplier] = useState("");
   const [newHACCP, setNewHACCP] = useState([]);
 
   const [selectedItem, setSelectedItem] = useState(null);
+  const [movementType, setMovementType] = useState("delivery");
   const [movementQty, setMovementQty] = useState(0);
-  const [newSupplierName, setNewSupplierName] = useState("");
+  const [movementDateReceived, setMovementDateReceived] = useState(today);
+  const [movementUseByDate, setMovementUseByDate] = useState("");
 
+  const [newSupplierName, setNewSupplierName] = useState("");
   const [editBuffer, setEditBuffer] = useState({});
 
-  // --- OCR states (added) ---
   const [ocrLoading, setOcrLoading] = useState(false);
   const [ocrError, setOcrError] = useState("");
-  const [ocrItems, setOcrItems] = useState([]); // [{id, selected, name, qty, measurement, price, rawWeight}]
+  const [ocrItems, setOcrItems] = useState([]);
   const [ocrImageName, setOcrImageName] = useState("");
 
-  // ===== Styles (inspired by SitePage) =====
   const wrap = {
-    maxWidth: "980px",
+    maxWidth: "1100px",
     margin: "0 auto",
     padding: "40px 20px",
     fontFamily: "'Inter', sans-serif",
@@ -72,7 +77,7 @@ const StockSection = ({ site, goBack, user }) => {
   const card = {
     background: "#fff",
     borderRadius: "14px",
-    padding: "18px 18px",
+    padding: "18px",
     boxShadow: "0 2px 6px rgba(0,0,0,0.08)",
     marginBottom: "18px",
   };
@@ -90,6 +95,18 @@ const StockSection = ({ site, goBack, user }) => {
     display: "flex",
     gap: "10px",
     flexWrap: "wrap",
+  };
+
+  const fieldWrap = {
+    display: "flex",
+    flexDirection: "column",
+    gap: "5px",
+  };
+
+  const label = {
+    fontSize: "12px",
+    fontWeight: 700,
+    color: "#374151",
   };
 
   const input = {
@@ -112,7 +129,6 @@ const StockSection = ({ site, goBack, user }) => {
     backgroundColor: bg,
     color: fg,
     fontWeight: 600,
-    transition: "all .2s",
   });
 
   const primaryBtn = button("#22c55e", "#fff");
@@ -144,6 +160,7 @@ const StockSection = ({ site, goBack, user }) => {
     top: 0,
     zIndex: 1,
     borderBottom: "1px solid #e5e7eb",
+    whiteSpace: "nowrap",
   };
 
   const td = {
@@ -199,7 +216,6 @@ const StockSection = ({ site, goBack, user }) => {
     multiValue: (p) => ({ ...p, backgroundColor: "#e5e7eb", borderRadius: 8 }),
   };
 
-  // --- Firestore listeners ---
   useEffect(() => {
     if (!site) return;
     const q = query(collection(db, "stockItems"), where("site", "==", site));
@@ -243,39 +259,104 @@ const StockSection = ({ site, goBack, user }) => {
     return () => unsub();
   }, [site]);
 
-  // --- CRUD helpers ---
+  const filteredHACCP = haccpPoints.map((ccp) => ({
+    value: ccp.id,
+    label: ccp.name,
+  }));
+
+  const resetMovementForm = () => {
+    setMovementQty(0);
+    setMovementDateReceived(today);
+    setMovementUseByDate("");
+    setSelectedItem(null);
+    setMovementType("delivery");
+  };
+
+  const addMovementRecord = async ({
+    stockItemId,
+    stockItemName,
+    type,
+    quantity,
+    measurement,
+    supplier,
+    location,
+    dateReceived = null,
+    useByDate = null,
+    price = null,
+    source = "manual",
+  }) => {
+    await addDoc(collection(db, "stockMovements"), {
+      stockItemId,
+      stockItemName,
+      type,
+      quantity: Number(quantity),
+      measurement: measurement || "unit",
+      supplier: supplier || null,
+      location: location || null,
+      dateReceived: dateReceived || null,
+      useByDate: useByDate || null,
+      needsUseByReview: type === "delivery" && !useByDate,
+      price: price !== null && price !== "" ? Number(price) : null,
+      source,
+      site,
+      createdAt: serverTimestamp(),
+      createdBy: user?.uid || null,
+    });
+  };
+
   const addStockItem = async () => {
-    if (!newItemName || newItemQty <= 0 || !newSupplier) {
-      alert("Please fill in all required fields");
+    if (!newItemName || Number(newItemQty) <= 0 || !newSupplier || !newDateReceived) {
+      alert("Please enter item name, quantity, supplier and date received.");
       return;
     }
+
     try {
-      await addDoc(collection(db, "stockItems"), {
+      const docRef = await addDoc(collection(db, "stockItems"), {
         name: newItemName,
         quantity: Number(newItemQty),
         measurement: newMeasurement,
         location: newLocation,
-        expiryDate: newExpiry || null,
+        dateReceived: newDateReceived,
+        lastReceivedDate: newDateReceived,
+        useByDate: newUseByDate || null,
+        needsUseByReview: !newUseByDate,
         supplier: newSupplier,
         haccpPoints: newHACCP || [],
         site,
         createdAt: serverTimestamp(),
         createdBy: user?.uid || null,
       });
+
+      await addMovementRecord({
+        stockItemId: docRef.id,
+        stockItemName: newItemName,
+        type: "delivery",
+        quantity: Number(newItemQty),
+        measurement: newMeasurement,
+        supplier: newSupplier,
+        location: newLocation,
+        dateReceived: newDateReceived,
+        useByDate: newUseByDate || null,
+        source: "manual-add",
+      });
+
       setNewItemName("");
       setNewItemQty(0);
       setNewMeasurement("unit");
       setNewLocation("Ambient");
-      setNewExpiry("");
+      setNewDateReceived(today);
+      setNewUseByDate("");
       setNewSupplier("");
       setNewHACCP([]);
     } catch (error) {
       console.error("Error adding stock item:", error);
+      alert("Failed to add stock item.");
     }
   };
 
   const addSupplier = async () => {
     if (!newSupplierName) return;
+
     try {
       await addDoc(collection(db, "suppliers"), {
         name: newSupplierName,
@@ -286,43 +367,87 @@ const StockSection = ({ site, goBack, user }) => {
       setNewSupplierName("");
     } catch (error) {
       console.error("Error adding supplier:", error);
+      alert("Failed to add supplier.");
     }
   };
 
-  const recordDelivery = async (itemId, qty, expiry = null) => {
-    if (qty <= 0) return;
-    const ref = doc(db, "stockItems", itemId);
+  const recordDelivery = async (item, qty, dateReceived, useByDate = null) => {
+    if (!item || Number(qty) <= 0) return;
+
+    const ref = doc(db, "stockItems", item.id);
+
     await updateDoc(ref, {
-      quantity: increment(qty),
-      ...(expiry && { expiryDate: expiry }),
+      quantity: increment(Number(qty)),
+      lastReceivedDate: dateReceived || today,
+      dateReceived: item.dateReceived || dateReceived || today,
+      ...(useByDate ? { useByDate } : {}),
+      needsUseByReview: !useByDate,
     });
-    setMovementQty(0);
-    setSelectedItem(null);
+
+    await addMovementRecord({
+      stockItemId: item.id,
+      stockItemName: item.name,
+      type: "delivery",
+      quantity: Number(qty),
+      measurement: item.measurement,
+      supplier: item.supplier,
+      location: item.location,
+      dateReceived: dateReceived || today,
+      useByDate: useByDate || null,
+      price: item.price ?? null,
+      source: "delivery-button",
+    });
+
+    resetMovementForm();
   };
 
-  const useStock = async (itemId, qty) => {
-    if (qty <= 0) return;
-    const ref = doc(db, "stockItems", itemId);
-    await updateDoc(ref, { quantity: increment(-qty) });
-    setMovementQty(0);
-    setSelectedItem(null);
+  const useStock = async (item, qty) => {
+    if (!item || Number(qty) <= 0) return;
+
+    const ref = doc(db, "stockItems", item.id);
+
+    await updateDoc(ref, {
+      quantity: increment(-Number(qty)),
+    });
+
+    await addMovementRecord({
+      stockItemId: item.id,
+      stockItemName: item.name,
+      type: "usage",
+      quantity: Number(qty),
+      measurement: item.measurement,
+      supplier: item.supplier,
+      location: item.location,
+      source: "usage-button",
+    });
+
+    resetMovementForm();
   };
 
   const deleteStockItem = async (itemId) => {
+    const confirmed = window.confirm("Delete this stock item?");
+    if (!confirmed) return;
     await deleteDoc(doc(db, "stockItems", itemId));
   };
 
-  // Debounced inline editing
   useEffect(() => {
     const timeout = setTimeout(() => {
       Object.entries(editBuffer).forEach(([id, fields]) => {
         Object.entries(fields).forEach(([field, value]) => {
           const ref = doc(db, "stockItems", id);
-          updateDoc(ref, { [field]: value }).catch(console.error);
+
+          const updateData = { [field]: value };
+
+          if (field === "useByDate") {
+            updateData.needsUseByReview = !value;
+          }
+
+          updateDoc(ref, updateData).catch(console.error);
         });
       });
       setEditBuffer({});
     }, 500);
+
     return () => clearTimeout(timeout);
   }, [editBuffer]);
 
@@ -333,14 +458,6 @@ const StockSection = ({ site, goBack, user }) => {
     }));
   };
 
-  const filteredHACCP = haccpPoints.map((ccp) => ({
-    value: ccp.id,
-    label: ccp.name,
-  }));
-
-  // -------------------------
-  // OCR HELPERS
-  // -------------------------
   const gramsToKg = (gNum) => {
     if (!gNum && gNum !== 0) return null;
     return Number(gNum) / 1000;
@@ -355,15 +472,20 @@ const StockSection = ({ site, goBack, user }) => {
 
   const parseWeightToQtyAndMeasurement = (weightStr) => {
     if (!weightStr) return { qty: 1, measurement: "unit", rawWeight: "" };
+
     const s = weightStr.toLowerCase().replace(/\s/g, "");
     const m = s.match(/(\d+(?:[\.,]\d+)?)(kg|g|l|ml)/i);
+
     if (!m) return { qty: 1, measurement: "unit", rawWeight: weightStr };
+
     const num = Number(m[1].replace(",", "."));
     const unit = m[2];
+
     if (unit === "kg") return { qty: num, measurement: "kg", rawWeight: weightStr };
     if (unit === "g") return { qty: gramsToKg(num), measurement: "kg", rawWeight: weightStr };
     if (unit === "l") return { qty: num, measurement: "unit", rawWeight: weightStr };
     if (unit === "ml") return { qty: num / 1000, measurement: "unit", rawWeight: weightStr };
+
     return { qty: 1, measurement: "unit", rawWeight: weightStr };
   };
 
@@ -372,19 +494,24 @@ const StockSection = ({ site, goBack, user }) => {
       .split("\n")
       .map((l) => l.trim())
       .filter(Boolean)
-      .filter((l) => !/total|subtotal|vat|change/i.test(l));
+      .filter((l) => !/total|subtotal|vat|change|card|cash|balance/i.test(l));
 
     const items = [];
+
     for (const line of lines) {
       const priceMatch =
         line.match(/£\s*\d+(?:[\.,]\d{2})?|\d+(?:[\.,]\d{2})\s*£/i) ||
         line.match(/\b\d+(?:[\.,]\d{2})\b/);
+
       const weightMatch = line.match(/(\d+(?:[\.,]\d+)?)(kg|g|ml|l)\b/i);
 
       let name = line;
+
       if (priceMatch) name = name.replace(priceMatch[0], "");
       if (weightMatch) name = name.replace(weightMatch[0], "");
+
       name = name.replace(/\s{2,}/g, " ").trim();
+
       if (!name || name.length < 2) continue;
 
       const price = priceMatch ? parseMoney(priceMatch[0]) : null;
@@ -397,27 +524,33 @@ const StockSection = ({ site, goBack, user }) => {
         name,
         quantity: qty || 1,
         measurement: measurement || "unit",
-        price: price,
+        price,
         rawWeight,
         location: "Ambient",
-        expiryDate: "",
-        supplier: newSupplier || "", // default to current dropdown
+        dateReceived: today,
+        useByDate: "",
+        supplier: newSupplier || "",
       });
     }
+
     return items;
   };
 
   const handlePhotoUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
     setOcrImageName(file.name);
     setOcrLoading(true);
     setOcrError("");
+
     try {
       const {
         data: { text },
       } = await Tesseract.recognize(file, "eng");
+
       const parsed = parseReceiptText(text);
+
       if (!parsed.length) {
         setOcrItems([]);
         setOcrError("No items could be parsed from this image. Try a clearer, well-lit photo.");
@@ -435,25 +568,32 @@ const StockSection = ({ site, goBack, user }) => {
   };
 
   const updateOcrItem = (id, field, value) => {
-    setOcrItems((prev) => prev.map((it) => (it.id === id ? { ...it, [field]: value } : it)));
+    setOcrItems((prev) =>
+      prev.map((it) => (it.id === id ? { ...it, [field]: value } : it))
+    );
   };
 
   const addSelectedOcrItems = async () => {
     const selected = ocrItems.filter((i) => i.selected && i.name);
+
     if (!selected.length) {
       alert("Nothing selected to add.");
       return;
     }
+
     try {
       for (const it of selected) {
-        await addDoc(collection(db, "stockItems"), {
+        const docRef = await addDoc(collection(db, "stockItems"), {
           name: it.name,
           quantity: Number(it.quantity) > 0 ? Number(it.quantity) : 1,
           measurement: it.measurement || "unit",
           location: it.location || "Ambient",
-          expiryDate: it.expiryDate || null,
+          dateReceived: it.dateReceived || today,
+          lastReceivedDate: it.dateReceived || today,
+          useByDate: it.useByDate || null,
+          needsUseByReview: !it.useByDate,
           supplier: it.supplier || newSupplier || "Unknown",
-          haccpPoints: [], // can be edited later per-row in "Current stock"
+          haccpPoints: [],
           site,
           createdAt: serverTimestamp(),
           createdBy: user?.uid || null,
@@ -461,7 +601,22 @@ const StockSection = ({ site, goBack, user }) => {
           ...(it.rawWeight ? { parsedWeight: it.rawWeight } : {}),
           source: ocrImageName || "ocr",
         });
+
+        await addMovementRecord({
+          stockItemId: docRef.id,
+          stockItemName: it.name,
+          type: "delivery",
+          quantity: Number(it.quantity) > 0 ? Number(it.quantity) : 1,
+          measurement: it.measurement || "unit",
+          supplier: it.supplier || newSupplier || "Unknown",
+          location: it.location || "Ambient",
+          dateReceived: it.dateReceived || today,
+          useByDate: it.useByDate || null,
+          price: it.price ?? null,
+          source: ocrImageName || "ocr",
+        });
       }
+
       alert(`${selected.length} item(s) added from receipt.`);
       setOcrItems([]);
       setOcrImageName("");
@@ -472,18 +627,16 @@ const StockSection = ({ site, goBack, user }) => {
     }
   };
 
-  // --- JSX ---
   return (
     <div style={wrap}>
       <h2 style={title}>
         Stock Management — <span style={{ color: "#2563eb" }}>{site}</span>
       </h2>
 
-      {/* OCR Upload */}
       <div style={card}>
         <div style={sectionHeader}>
           <FaReceipt color="#111827" />
-          Add from receipt (photo)
+          Add from receipt photo
         </div>
 
         <div style={{ ...row, alignItems: "center" }}>
@@ -495,12 +648,11 @@ const StockSection = ({ site, goBack, user }) => {
               alignItems: "center",
               gap: 8,
             }}
-            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#e5e7eb")}
-            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#f3f4f6")}
           >
             <FaUpload />
             Upload photo
           </label>
+
           <input
             id="receiptUpload"
             type="file"
@@ -515,13 +667,14 @@ const StockSection = ({ site, goBack, user }) => {
               <FaIndustry />
               Supplier
             </span>
+
             <select
               value={newSupplier}
               onChange={(e) => setNewSupplier(e.target.value)}
               style={selectInput}
               title="Supplier for OCR-added items"
             >
-              <option value="">Select supplier (optional)</option>
+              <option value="">Select supplier optional</option>
               {suppliers.map((sup) => (
                 <option key={sup.id} value={sup.name}>
                   {sup.name}
@@ -532,34 +685,57 @@ const StockSection = ({ site, goBack, user }) => {
         </div>
 
         {ocrLoading && (
-          <div style={{ marginTop: 10, ...subtle }}>Reading receipt… this can take a moment.</div>
+          <div style={{ marginTop: 10, ...subtle }}>
+            Reading receipt… this can take a moment.
+          </div>
         )}
-        {ocrError && <div style={{ marginTop: 10, color: "#dc2626", fontSize: 13 }}>{ocrError}</div>}
+
+        {ocrError && (
+          <div style={{ marginTop: 10, color: "#dc2626", fontSize: 13 }}>
+            {ocrError}
+          </div>
+        )}
 
         {ocrItems.length > 0 && (
           <>
             <div style={sectionDivider} />
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: 10,
+                gap: 10,
+                flexWrap: "wrap",
+              }}
+            >
               <div style={{ fontWeight: 600 }}>
-                Parsed items from <span style={{ fontStyle: "italic", color: "#6b7280" }}>{ocrImageName || "image"}</span>
+                Parsed items from{" "}
+                <span style={{ fontStyle: "italic", color: "#6b7280" }}>
+                  {ocrImageName || "image"}
+                </span>
               </div>
-              <div style={{ display: "flex", gap: 8 }}>
+
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 <button
-                  onClick={() => setOcrItems((prev) => prev.map((i) => ({ ...i, selected: true })))}
+                  onClick={() =>
+                    setOcrItems((prev) => prev.map((i) => ({ ...i, selected: true })))
+                  }
                   style={grayBtn}
-                  onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#e5e7eb")}
-                  onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#f3f4f6")}
                 >
                   Select all
                 </button>
+
                 <button
-                  onClick={() => setOcrItems((prev) => prev.map((i) => ({ ...i, selected: false })))}
+                  onClick={() =>
+                    setOcrItems((prev) => prev.map((i) => ({ ...i, selected: false })))
+                  }
                   style={grayBtn}
-                  onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#e5e7eb")}
-                  onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#f3f4f6")}
                 >
                   Deselect all
                 </button>
+
                 <button
                   onClick={() => {
                     setOcrItems([]);
@@ -567,8 +743,6 @@ const StockSection = ({ site, goBack, user }) => {
                     setOcrImageName("");
                   }}
                   style={grayBtn}
-                  onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#e5e7eb")}
-                  onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#f3f4f6")}
                 >
                   Clear
                 </button>
@@ -586,26 +760,29 @@ const StockSection = ({ site, goBack, user }) => {
                       <th style={th}>Meas.</th>
                       <th style={th}>Supplier</th>
                       <th style={th}>Location</th>
-                      <th style={th}>Expiry</th>
-                      <th style={th}>Price (£)</th>
+                      <th style={th}>Date received</th>
+                      <th style={th}>Use-by date</th>
+                      <th style={th}>Price</th>
                       <th style={th}>Parsed weight</th>
                     </tr>
                   </thead>
+
                   <tbody>
                     {ocrItems.map((it, idx) => (
                       <tr
                         key={it.id}
-                        style={{
-                          background: idx % 2 === 0 ? "#fff" : "#fafafa",
-                        }}
+                        style={{ background: idx % 2 === 0 ? "#fff" : "#fafafa" }}
                       >
                         <td style={td}>
                           <input
                             type="checkbox"
                             checked={!!it.selected}
-                            onChange={(e) => updateOcrItem(it.id, "selected", e.target.checked)}
+                            onChange={(e) =>
+                              updateOcrItem(it.id, "selected", e.target.checked)
+                            }
                           />
                         </td>
+
                         <td style={td}>
                           <input
                             type="text"
@@ -614,32 +791,41 @@ const StockSection = ({ site, goBack, user }) => {
                             style={{ ...smallInput, minWidth: 200 }}
                           />
                         </td>
+
                         <td style={td}>
                           <input
                             type="number"
                             step="0.01"
                             value={it.quantity}
-                            onChange={(e) => updateOcrItem(it.id, "quantity", Number(e.target.value))}
+                            onChange={(e) =>
+                              updateOcrItem(it.id, "quantity", Number(e.target.value))
+                            }
                             style={smallInput}
                           />
                         </td>
+
                         <td style={td}>
                           <select
                             value={it.measurement}
-                            onChange={(e) => updateOcrItem(it.id, "measurement", e.target.value)}
+                            onChange={(e) =>
+                              updateOcrItem(it.id, "measurement", e.target.value)
+                            }
                             style={smallSelect}
                           >
                             <option value="unit">Units</option>
                             <option value="kg">Kilograms</option>
                           </select>
                         </td>
+
                         <td style={td}>
                           <select
                             value={it.supplier || ""}
-                            onChange={(e) => updateOcrItem(it.id, "supplier", e.target.value)}
+                            onChange={(e) =>
+                              updateOcrItem(it.id, "supplier", e.target.value)
+                            }
                             style={{ ...smallSelect, minWidth: 160 }}
                           >
-                            <option value="">(none)</option>
+                            <option value="">None</option>
                             {suppliers.map((sup) => (
                               <option key={sup.id} value={sup.name}>
                                 {sup.name}
@@ -647,10 +833,13 @@ const StockSection = ({ site, goBack, user }) => {
                             ))}
                           </select>
                         </td>
+
                         <td style={td}>
                           <select
                             value={it.location}
-                            onChange={(e) => updateOcrItem(it.id, "location", e.target.value)}
+                            onChange={(e) =>
+                              updateOcrItem(it.id, "location", e.target.value)
+                            }
                             style={{ ...smallSelect, minWidth: 170 }}
                           >
                             <option value="Ambient">Ambient</option>
@@ -661,27 +850,49 @@ const StockSection = ({ site, goBack, user }) => {
                             ))}
                           </select>
                         </td>
+
                         <td style={td}>
                           <input
                             type="date"
-                            value={it.expiryDate || ""}
-                            onChange={(e) => updateOcrItem(it.id, "expiryDate", e.target.value)}
+                            value={it.dateReceived || today}
+                            onChange={(e) =>
+                              updateOcrItem(it.id, "dateReceived", e.target.value)
+                            }
                             style={smallInput}
                           />
                         </td>
+
+                        <td style={td}>
+                          <input
+                            type="date"
+                            value={it.useByDate || ""}
+                            onChange={(e) =>
+                              updateOcrItem(it.id, "useByDate", e.target.value)
+                            }
+                            style={smallInput}
+                          />
+                        </td>
+
                         <td style={td}>
                           <input
                             type="number"
                             step="0.01"
                             value={it.price ?? ""}
                             onChange={(e) =>
-                              updateOcrItem(it.id, "price", e.target.value === "" ? null : Number(e.target.value))
+                              updateOcrItem(
+                                it.id,
+                                "price",
+                                e.target.value === "" ? null : Number(e.target.value)
+                              )
                             }
                             placeholder="0.00"
                             style={smallInput}
                           />
                         </td>
-                        <td style={{ ...td, color: "#6b7280" }}>{it.rawWeight || "-"}</td>
+
+                        <td style={{ ...td, color: "#6b7280" }}>
+                          {it.rawWeight || "-"}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -690,12 +901,7 @@ const StockSection = ({ site, goBack, user }) => {
             </div>
 
             <div style={{ marginTop: 12, display: "flex", justifyContent: "flex-end" }}>
-              <button
-                onClick={addSelectedOcrItems}
-                style={primaryBtn}
-                onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#16a34a")}
-                onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#22c55e")}
-              >
+              <button onClick={addSelectedOcrItems} style={primaryBtn}>
                 <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
                   <FaCheckCircle />
                   Add selected items
@@ -706,87 +912,123 @@ const StockSection = ({ site, goBack, user }) => {
         )}
       </div>
 
-      {/* Manual Add */}
       <div style={card}>
         <div style={sectionHeader}>
           <FaBoxOpen color="#0ea5e9" />
-          Add stock item
+          Add stock item manually
         </div>
 
         <div style={row}>
-          <input
-            type="text"
-            placeholder="Item name"
-            value={newItemName}
-            onChange={(e) => setNewItemName(e.target.value)}
-            style={{ ...input, flex: 1, minWidth: 220 }}
-          />
-          <input
-            type="number"
-            placeholder="Qty"
-            value={newItemQty}
-            onChange={(e) => setNewItemQty(e.target.value)}
-            style={input}
-          />
-          <select
-            value={newMeasurement}
-            onChange={(e) => setNewMeasurement(e.target.value)}
-            style={selectInput}
-          >
-            <option value="unit">Units</option>
-            <option value="kg">Kilograms</option>
-          </select>
-          <select
-            value={newLocation}
-            onChange={(e) => setNewLocation(e.target.value)}
-            style={{ ...selectInput, minWidth: 200 }}
-          >
-            <option value="Ambient">Ambient</option>
-            {equipment.map((eq) => (
-              <option key={eq.id} value={eq.name || eq.id}>
-                {eq.name || eq.type}
-              </option>
-            ))}
-          </select>
-          <input
-            type="date"
-            value={newExpiry}
-            onChange={(e) => setNewExpiry(e.target.value)}
-            style={input}
-          />
-          <select
-            value={newSupplier}
-            onChange={(e) => setNewSupplier(e.target.value)}
-            style={{ ...selectInput, minWidth: 220 }}
-          >
-            <option value="">Select supplier</option>
-            {suppliers.map((sup) => (
-              <option key={sup.id} value={sup.name}>
-                {sup.name}
-              </option>
-            ))}
-          </select>
+          <div style={{ ...fieldWrap, flex: 1, minWidth: 220 }}>
+            <label style={label}>Item name</label>
+            <input
+              type="text"
+              placeholder="e.g. Whole Milk"
+              value={newItemName}
+              onChange={(e) => setNewItemName(e.target.value)}
+              style={{ ...input, minWidth: "100%" }}
+            />
+          </div>
 
-          {/* HACCP multi-select for NEW item */}
-          <div style={{ flex: 1, minWidth: 240 }}>
+          <div style={fieldWrap}>
+            <label style={label}>Quantity</label>
+            <input
+              type="number"
+              placeholder="Qty"
+              value={newItemQty}
+              onChange={(e) => setNewItemQty(e.target.value)}
+              style={input}
+            />
+          </div>
+
+          <div style={fieldWrap}>
+            <label style={label}>Measurement</label>
+            <select
+              value={newMeasurement}
+              onChange={(e) => setNewMeasurement(e.target.value)}
+              style={selectInput}
+            >
+              <option value="unit">Units</option>
+              <option value="kg">Kilograms</option>
+            </select>
+          </div>
+
+          <div style={fieldWrap}>
+            <label style={label}>Location</label>
+            <select
+              value={newLocation}
+              onChange={(e) => setNewLocation(e.target.value)}
+              style={{ ...selectInput, minWidth: 200 }}
+            >
+              <option value="Ambient">Ambient</option>
+              {equipment.map((eq) => (
+                <option key={eq.id} value={eq.name || eq.id}>
+                  {eq.name || eq.type}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div style={fieldWrap}>
+            <label style={label}>Date received</label>
+            <input
+              type="date"
+              value={newDateReceived}
+              onChange={(e) => setNewDateReceived(e.target.value)}
+              style={input}
+            />
+          </div>
+
+          <div style={fieldWrap}>
+            <label style={label}>Use-by date if shown</label>
+            <input
+              type="date"
+              value={newUseByDate}
+              onChange={(e) => setNewUseByDate(e.target.value)}
+              style={input}
+            />
+          </div>
+
+          <div style={fieldWrap}>
+            <label style={label}>Supplier</label>
+            <select
+              value={newSupplier}
+              onChange={(e) => setNewSupplier(e.target.value)}
+              style={{ ...selectInput, minWidth: 220 }}
+            >
+              <option value="">Select supplier</option>
+              {suppliers.map((sup) => (
+                <option key={sup.id} value={sup.name}>
+                  {sup.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div style={{ ...fieldWrap, flex: 1, minWidth: 240 }}>
+            <label style={label}>HACCP points</label>
             <Select
               styles={selectStyles}
               isMulti
               options={filteredHACCP}
               value={filteredHACCP.filter((ccp) => newHACCP.includes(ccp.value))}
-              onChange={(selected) => setNewHACCP(selected ? selected.map((s) => s.value) : [])}
+              onChange={(selected) =>
+                setNewHACCP(selected ? selected.map((s) => s.value) : [])
+              }
               placeholder="HACCP points"
             />
           </div>
         </div>
 
+        {!newUseByDate && (
+          <div style={{ marginTop: 10, color: "#92400e", fontSize: 13 }}>
+            <FaExclamationTriangle /> No use-by date entered. This will be flagged for
+            management review.
+          </div>
+        )}
+
         <div style={{ marginTop: 12, display: "flex", justifyContent: "flex-end" }}>
-          <button
-            onClick={addStockItem}
-            style={primaryBtn}
-            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#16a34a")}
-            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#22c55e")}
-          >
+          <button onClick={addStockItem} style={primaryBtn}>
             <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
               <FaPlus />
               Add Item
@@ -795,7 +1037,6 @@ const StockSection = ({ site, goBack, user }) => {
         </div>
       </div>
 
-      {/* Stock list */}
       <div style={card}>
         <div style={sectionHeader}>
           <FaBoxOpen color="#4f46e5" />
@@ -805,12 +1046,20 @@ const StockSection = ({ site, goBack, user }) => {
         <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
           {stockItems.map((item) => {
             const currentHaccpIds =
-              editBuffer[item.id]?.haccpPoints ??
-              item.haccpPoints ??
-              [];
+              editBuffer[item.id]?.haccpPoints ?? item.haccpPoints ?? [];
+
             const currentHaccpOptions = filteredHACCP.filter((opt) =>
               currentHaccpIds.includes(opt.value)
             );
+
+            const useByValue =
+              editBuffer[item.id]?.useByDate ??
+              item.useByDate ??
+              item.expiryDate ??
+              "";
+
+            const dateReceivedValue =
+              editBuffer[item.id]?.dateReceived ?? item.dateReceived ?? "";
 
             return (
               <li
@@ -822,22 +1071,34 @@ const StockSection = ({ site, goBack, user }) => {
                   alignItems: "center",
                   justifyContent: "space-between",
                   borderBottom: "1px solid #f1f5f9",
-                  padding: "10px 0",
+                  padding: "12px 0",
                 }}
               >
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", flex: 1 }}>
+                <div
+                  style={{
+                    display: "flex",
+                    gap: 8,
+                    flexWrap: "wrap",
+                    alignItems: "center",
+                    flex: 1,
+                  }}
+                >
                   <input
                     type="text"
                     value={editBuffer[item.id]?.name ?? item.name}
                     onChange={(e) => handleEdit(item.id, "name", e.target.value)}
                     style={{ ...smallInput, minWidth: 180 }}
                   />
+
                   <input
                     type="number"
                     value={editBuffer[item.id]?.quantity ?? item.quantity}
-                    onChange={(e) => handleEdit(item.id, "quantity", Number(e.target.value))}
+                    onChange={(e) =>
+                      handleEdit(item.id, "quantity", Number(e.target.value))
+                    }
                     style={{ ...smallInput, minWidth: 90 }}
                   />
+
                   <select
                     value={editBuffer[item.id]?.measurement ?? item.measurement}
                     onChange={(e) => handleEdit(item.id, "measurement", e.target.value)}
@@ -846,6 +1107,7 @@ const StockSection = ({ site, goBack, user }) => {
                     <option value="unit">Units</option>
                     <option value="kg">Kilograms</option>
                   </select>
+
                   <select
                     value={editBuffer[item.id]?.location ?? item.location}
                     onChange={(e) => handleEdit(item.id, "location", e.target.value)}
@@ -858,12 +1120,29 @@ const StockSection = ({ site, goBack, user }) => {
                       </option>
                     ))}
                   </select>
-                  <input
-                    type="date"
-                    value={(editBuffer[item.id]?.expiryDate ?? item.expiryDate) || ""}
-                    onChange={(e) => handleEdit(item.id, "expiryDate", e.target.value)}
-                    style={smallInput}
-                  />
+
+                  <div style={fieldWrap}>
+                    <label style={label}>Date received</label>
+                    <input
+                      type="date"
+                      value={dateReceivedValue}
+                      onChange={(e) =>
+                        handleEdit(item.id, "dateReceived", e.target.value)
+                      }
+                      style={smallInput}
+                    />
+                  </div>
+
+                  <div style={fieldWrap}>
+                    <label style={label}>Use-by</label>
+                    <input
+                      type="date"
+                      value={useByValue}
+                      onChange={(e) => handleEdit(item.id, "useByDate", e.target.value)}
+                      style={smallInput}
+                    />
+                  </div>
+
                   <select
                     value={(editBuffer[item.id]?.supplier ?? item.supplier) || ""}
                     onChange={(e) => handleEdit(item.id, "supplier", e.target.value)}
@@ -876,19 +1155,23 @@ const StockSection = ({ site, goBack, user }) => {
                       </option>
                     ))}
                   </select>
+
                   <input
                     type="number"
                     step="0.01"
                     value={(editBuffer[item.id]?.price ?? item.price) ?? ""}
                     onChange={(e) =>
-                      handleEdit(item.id, "price", e.target.value === "" ? null : Number(e.target.value))
+                      handleEdit(
+                        item.id,
+                        "price",
+                        e.target.value === "" ? null : Number(e.target.value)
+                      )
                     }
                     placeholder="£"
-                    title="Item price (optional)"
+                    title="Item price optional"
                     style={{ ...smallInput, minWidth: 110 }}
                   />
 
-                  {/* NEW: HACCP multi-select for EXISTING item */}
                   <div style={{ minWidth: 240, flex: 1 }}>
                     <Select
                       styles={selectStyles}
@@ -905,38 +1188,49 @@ const StockSection = ({ site, goBack, user }) => {
                       placeholder="HACCP points"
                     />
                   </div>
+
+                  {(item.needsUseByReview || !useByValue) && (
+                    <span style={chip("#fef3c7", "#92400e")}>
+                      <FaExclamationTriangle />
+                      Review use-by
+                    </span>
+                  )}
                 </div>
 
-                <div style={{ display: "flex", gap: 8 }}>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                   <button
-                    onClick={() => setSelectedItem(item)}
+                    onClick={() => {
+                      setSelectedItem(item);
+                      setMovementType("delivery");
+                      setMovementDateReceived(today);
+                      setMovementUseByDate(item.useByDate || item.expiryDate || "");
+                    }}
                     style={blueBtn}
-                    onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#1d4ed8")}
-                    onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#2563eb")}
-                    title="Record delivery (increase qty)"
+                    title="Record delivery increase qty"
                   >
                     <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
                       <FaTruckLoading />
                       Delivery
                     </span>
                   </button>
+
                   <button
-                    onClick={() => setSelectedItem(item)}
+                    onClick={() => {
+                      setSelectedItem(item);
+                      setMovementType("usage");
+                    }}
                     style={orangeBtn}
-                    onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#ea580c")}
-                    onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#f97316")}
-                    title="Use stock (decrease qty)"
+                    title="Use stock decrease qty"
                   >
                     <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
                       <FaUtensils />
                       Use
                     </span>
                   </button>
+
                   <button
                     onClick={() => deleteStockItem(item.id)}
                     style={redBtn}
-                    onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#dc2626")}
-                    onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#ef4444")}
                     title="Delete item"
                   >
                     <FaTimes />
@@ -948,47 +1242,90 @@ const StockSection = ({ site, goBack, user }) => {
         </ul>
       </div>
 
-      {/* Movement input */}
       {selectedItem && (
         <div style={card}>
           <div style={sectionHeader}>
             <FaBoxOpen color="#16a34a" />
-            Adjust stock — <span style={{ color: "#16a34a" }}>{selectedItem.name}</span>
+            {movementType === "delivery" ? "Record delivery" : "Use stock"} —{" "}
+            <span style={{ color: "#16a34a" }}>{selectedItem.name}</span>
           </div>
-          <div style={{ ...row, alignItems: "center" }}>
-            <input
-              type="number"
-              step={selectedItem.measurement === "kg" ? "0.1" : "1"}
-              value={movementQty}
-              onChange={(e) => setMovementQty(Number(e.target.value))}
-              style={{ ...input, minWidth: 140 }}
-            />
-            <button
-              onClick={() => recordDelivery(selectedItem.id, movementQty, selectedItem.expiryDate)}
-              style={blueBtn}
-              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#1d4ed8")}
-              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#2563eb")}
-            >
-              + Delivery
-            </button>
-            <button
-              onClick={() => useStock(selectedItem.id, movementQty)}
-              style={orangeBtn}
-              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#ea580c")}
-              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#f97316")}
-            >
-              - Usage
+
+          <div style={{ ...row, alignItems: "flex-end" }}>
+            <div style={fieldWrap}>
+              <label style={label}>Quantity</label>
+              <input
+                type="number"
+                step={selectedItem.measurement === "kg" ? "0.1" : "1"}
+                value={movementQty}
+                onChange={(e) => setMovementQty(Number(e.target.value))}
+                style={{ ...input, minWidth: 140 }}
+              />
+            </div>
+
+            {movementType === "delivery" && (
+              <>
+                <div style={fieldWrap}>
+                  <label style={label}>Date received</label>
+                  <input
+                    type="date"
+                    value={movementDateReceived}
+                    onChange={(e) => setMovementDateReceived(e.target.value)}
+                    style={input}
+                  />
+                </div>
+
+                <div style={fieldWrap}>
+                  <label style={label}>Use-by date if shown</label>
+                  <input
+                    type="date"
+                    value={movementUseByDate}
+                    onChange={(e) => setMovementUseByDate(e.target.value)}
+                    style={input}
+                  />
+                </div>
+              </>
+            )}
+
+            {movementType === "delivery" ? (
+              <button
+                onClick={() =>
+                  recordDelivery(
+                    selectedItem,
+                    movementQty,
+                    movementDateReceived,
+                    movementUseByDate
+                  )
+                }
+                style={blueBtn}
+              >
+                + Confirm delivery
+              </button>
+            ) : (
+              <button onClick={() => useStock(selectedItem, movementQty)} style={orangeBtn}>
+                - Confirm usage
+              </button>
+            )}
+
+            <button onClick={resetMovementForm} style={grayBtn}>
+              Cancel
             </button>
           </div>
+
+          {movementType === "delivery" && !movementUseByDate && (
+            <div style={{ marginTop: 10, color: "#92400e", fontSize: 13 }}>
+              <FaExclamationTriangle /> No use-by date entered. This delivery will be
+              flagged for review.
+            </div>
+          )}
         </div>
       )}
 
-      {/* Add supplier */}
       <div style={card}>
         <div style={sectionHeader}>
           <FaIndustry color="#0891b2" />
           Add Supplier
         </div>
+
         <div style={row}>
           <input
             type="text"
@@ -997,12 +1334,8 @@ const StockSection = ({ site, goBack, user }) => {
             onChange={(e) => setNewSupplierName(e.target.value)}
             style={{ ...input, flex: 1, minWidth: 260 }}
           />
-          <button
-            onClick={addSupplier}
-            style={primaryBtn}
-            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#16a34a")}
-            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#22c55e")}
-          >
+
+          <button onClick={addSupplier} style={primaryBtn}>
             <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
               <FaPlus />
               Add
@@ -1011,14 +1344,8 @@ const StockSection = ({ site, goBack, user }) => {
         </div>
       </div>
 
-      {/* Back */}
       <div style={{ display: "flex", justifyContent: "center", marginTop: 18 }}>
-        <button
-          onClick={goBack}
-          style={grayBtn}
-          onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#e5e7eb")}
-          onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#f3f4f6")}
-        >
+        <button onClick={goBack} style={grayBtn}>
           Back
         </button>
       </div>
