@@ -32,10 +32,10 @@ const startOfToday = () => {
 const toMillisSafe = (ts) => (ts?.toMillis?.() ? ts.toMillis() : 0);
 
 export default function WasteLogSection({ site, user, goBack }) {
-  const [rows, setRows] = useState([]);
+  const [manualRows, setManualRows] = useState([]);
+  const [stockWasteRows, setStockWasteRows] = useState([]);
   const [busy, setBusy] = useState(false);
 
-  // form
   const [item, setItem] = useState("");
   const [qty, setQty] = useState("");
   const [unit, setUnit] = useState("portion");
@@ -46,26 +46,66 @@ export default function WasteLogSection({ site, user, goBack }) {
   useEffect(() => {
     if (!site) return;
 
-    // ✅ No orderBy -> avoids composite index requirement
     const q = query(collection(db, "wasteLogs"), where("site", "==", site));
 
-    const unsub = onSnapshot(
-      q,
-      (snap) => {
-        const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-        // ✅ newest first client-side
-        rows.sort((a, b) => toMillisSafe(b.createdAt) - toMillisSafe(a.createdAt));
-        setRows(rows);
-      },
-      (err) => {
-        console.error("Waste logs subscribe error:", err);
-        // ✅ don't wipe UI on error (prevents “flash then disappear”)
-        // setRows([]);
-      }
-    );
+    const unsub = onSnapshot(q, (snap) => {
+      const rows = snap.docs.map((d) => ({
+        id: `manual-${d.id}`,
+        sourceType: "manual",
+        ...d.data(),
+      }));
+      setManualRows(rows);
+    });
 
     return () => unsub();
   }, [site]);
+
+  useEffect(() => {
+    if (!site) return;
+
+    const q = query(
+      collection(db, "stockMovements"),
+      where("site", "==", site),
+      where("type", "==", "waste")
+    );
+
+    const unsub = onSnapshot(q, (snap) => {
+      const rows = snap.docs.map((d) => {
+        const data = d.data();
+
+        const qNum = Number(data.quantity);
+        const priceNum = Number(data.price);
+        const estimated =
+          Number.isFinite(qNum) && Number.isFinite(priceNum)
+            ? qNum * priceNum
+            : null;
+
+        return {
+          id: `stock-${d.id}`,
+          sourceType: "stock",
+          item: data.stockItemName || data.item || "Untitled",
+          qty: Number.isFinite(qNum) ? qNum : null,
+          unit: data.measurement || data.unit || "",
+          reason: data.wasteReason || "Waste",
+          notes: data.notes || "Logged from stock section",
+          estimatedCost: estimated,
+          createdAt: data.createdAt,
+          createdBy: data.createdBy || data.createdByUid || "Unknown",
+          createdByUid: data.createdByUid || data.createdBy || null,
+        };
+      });
+
+      setStockWasteRows(rows);
+    });
+
+    return () => unsub();
+  }, [site]);
+
+  const rows = useMemo(() => {
+    const all = [...manualRows, ...stockWasteRows];
+    all.sort((a, b) => toMillisSafe(b.createdAt) - toMillisSafe(a.createdAt));
+    return all;
+  }, [manualRows, stockWasteRows]);
 
   const canAdd = item.trim().length > 0 && !busy;
 
@@ -121,8 +161,23 @@ export default function WasteLogSection({ site, user, goBack }) {
   }, [rows]);
 
   return (
-    <div style={{ maxWidth: 900, margin: "0 auto", padding: "40px 20px", fontFamily: "'Inter', sans-serif" }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+    <div
+      style={{
+        maxWidth: 900,
+        margin: "0 auto",
+        padding: "40px 20px",
+        fontFamily: "'Inter', sans-serif",
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 12,
+          flexWrap: "wrap",
+        }}
+      >
         <button
           onClick={goBack}
           style={{
@@ -136,30 +191,41 @@ export default function WasteLogSection({ site, user, goBack }) {
             cursor: "pointer",
             fontWeight: 800,
           }}
-          onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#f9fafb")}
-          onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#fff")}
         >
           <FaChevronLeft /> Back
         </button>
 
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <div style={{ width: 38, height: 38, borderRadius: 12, background: "#f3f4f6", display: "grid", placeItems: "center" }}>
+          <div
+            style={{
+              width: 38,
+              height: 38,
+              borderRadius: 12,
+              background: "#f3f4f6",
+              display: "grid",
+              placeItems: "center",
+            }}
+          >
             <FaTrashAlt color="#111" />
           </div>
           <div>
-            <div style={{ fontSize: 20, fontWeight: 900, color: "#111" }}>Waste Log</div>
+            <div style={{ fontSize: 20, fontWeight: 900, color: "#111" }}>
+              Waste Log
+            </div>
             <div style={{ fontSize: 12, color: "#6b7280" }}>{site}</div>
           </div>
         </div>
       </div>
 
-      {/* Summary */}
       <div style={{ marginTop: 18, display: "flex", gap: 10, flexWrap: "wrap" }}>
-        <span style={chip("#f3f4f6", "#111827")}>Today: <strong>{todayTotals.count}</strong> entries</span>
-        <span style={chip("#ecfeff", "#075985")}>Est. cost today: <strong>£{todayTotals.cost.toFixed(2)}</strong></span>
+        <span style={chip("#f3f4f6", "#111827")}>
+          Today: <strong>{todayTotals.count}</strong> entries
+        </span>
+        <span style={chip("#ecfeff", "#075985")}>
+          Est. cost today: <strong>£{todayTotals.cost.toFixed(2)}</strong>
+        </span>
       </div>
 
-      {/* Add card */}
       <div
         style={{
           marginTop: 18,
@@ -171,24 +237,51 @@ export default function WasteLogSection({ site, user, goBack }) {
       >
         <div style={{ fontWeight: 900, color: "#111" }}>Add waste entry</div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1.5fr 110px 140px", gap: 12, marginTop: 14 }}>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1.5fr 110px 140px",
+            gap: 12,
+            marginTop: 14,
+          }}
+        >
           <input
             value={item}
             onChange={(e) => setItem(e.target.value)}
-            placeholder="Item e.g. pulled pork (pan), croissants, milk"
-            style={{ padding: 12, borderRadius: 12, border: "1px solid #e5e7eb", fontSize: 14, outline: "none" }}
+            placeholder="Item e.g. pulled pork, croissants, milk"
+            style={{
+              padding: 12,
+              borderRadius: 12,
+              border: "1px solid #e5e7eb",
+              fontSize: 14,
+              outline: "none",
+            }}
           />
+
           <input
             value={qty}
             onChange={(e) => setQty(e.target.value)}
             placeholder="Qty"
             inputMode="decimal"
-            style={{ padding: 12, borderRadius: 12, border: "1px solid #e5e7eb", fontSize: 14, outline: "none" }}
+            style={{
+              padding: 12,
+              borderRadius: 12,
+              border: "1px solid #e5e7eb",
+              fontSize: 14,
+              outline: "none",
+            }}
           />
+
           <select
             value={unit}
             onChange={(e) => setUnit(e.target.value)}
-            style={{ padding: 12, borderRadius: 12, border: "1px solid #e5e7eb", fontSize: 14, background: "#fff" }}
+            style={{
+              padding: 12,
+              borderRadius: 12,
+              border: "1px solid #e5e7eb",
+              fontSize: 14,
+              background: "#fff",
+            }}
           >
             <option value="portion">portion</option>
             <option value="pack">pack</option>
@@ -198,18 +291,34 @@ export default function WasteLogSection({ site, user, goBack }) {
           </select>
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 180px", gap: 12, marginTop: 12 }}>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 180px",
+            gap: 12,
+            marginTop: 12,
+          }}
+        >
           <select
             value={reason}
             onChange={(e) => setReason(e.target.value)}
-            style={{ padding: 12, borderRadius: 12, border: "1px solid #e5e7eb", fontSize: 14, background: "#fff" }}
+            style={{
+              padding: 12,
+              borderRadius: 12,
+              border: "1px solid #e5e7eb",
+              fontSize: 14,
+              background: "#fff",
+            }}
           >
             <option value="Expired">Expired</option>
+            <option value="Out of date">Out of date</option>
             <option value="Spoiled">Spoiled</option>
             <option value="Over-produced">Over-produced</option>
+            <option value="Overproduction">Overproduction</option>
             <option value="Customer return">Customer return</option>
             <option value="Prep waste">Prep waste</option>
             <option value="Dropped/contaminated">Dropped/contaminated</option>
+            <option value="Temperature issue">Temperature issue</option>
             <option value="Other">Other</option>
           </select>
 
@@ -218,15 +327,30 @@ export default function WasteLogSection({ site, user, goBack }) {
             onChange={(e) => setEstimatedCost(e.target.value)}
             placeholder="Est. cost (£)"
             inputMode="decimal"
-            style={{ padding: 12, borderRadius: 12, border: "1px solid #e5e7eb", fontSize: 14, outline: "none" }}
+            style={{
+              padding: 12,
+              borderRadius: 12,
+              border: "1px solid #e5e7eb",
+              fontSize: 14,
+              outline: "none",
+            }}
           />
         </div>
 
         <input
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
-          placeholder="Notes (optional) e.g. batch, reason details"
-          style={{ marginTop: 12, width: "100%", padding: 12, borderRadius: 12, border: "1px solid #e5e7eb", fontSize: 14, outline: "none" }}
+          placeholder="Notes optional e.g. batch, reason details"
+          style={{
+            marginTop: 12,
+            width: "100%",
+            padding: 12,
+            borderRadius: 12,
+            border: "1px solid #e5e7eb",
+            fontSize: 14,
+            outline: "none",
+            boxSizing: "border-box",
+          }}
         />
 
         <div style={{ display: "flex", gap: 12, marginTop: 14, flexWrap: "wrap" }}>
@@ -250,12 +374,11 @@ export default function WasteLogSection({ site, user, goBack }) {
           </button>
 
           <div style={{ fontSize: 12, color: "#6b7280", alignSelf: "center" }}>
-            Tip: staff can log in under 10 seconds. That’s the goal.
+            Tip: waste recorded from Stock Management appears here automatically.
           </div>
         </div>
       </div>
 
-      {/* List */}
       <div
         style={{
           marginTop: 18,
@@ -265,17 +388,27 @@ export default function WasteLogSection({ site, user, goBack }) {
           boxShadow: "0 2px 6px rgba(0,0,0,0.08)",
         }}
       >
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: 10,
+          }}
+        >
           <div style={{ fontWeight: 900, color: "#111" }}>Recent entries</div>
           <span style={chip("#f3f4f6", "#111827")}>{rows.length} total</span>
         </div>
 
         {rows.length === 0 ? (
-          <div style={{ marginTop: 12, color: "#6b7280", fontSize: 13 }}>No waste entries yet.</div>
+          <div style={{ marginTop: 12, color: "#6b7280", fontSize: 13 }}>
+            No waste entries yet.
+          </div>
         ) : (
           <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
             {rows.slice(0, 50).map((r) => {
               const dt = r.createdAt?.toDate?.() || null;
+
               return (
                 <div
                   key={r.id}
@@ -287,8 +420,17 @@ export default function WasteLogSection({ site, user, goBack }) {
                     gap: 6,
                   }}
                 >
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
-                    <div style={{ fontWeight: 900, color: "#111" }}>{r.item || "Untitled"}</div>
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      gap: 10,
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    <div style={{ fontWeight: 900, color: "#111" }}>
+                      {r.item || "Untitled"}
+                    </div>
                     <div style={{ color: "#6b7280", fontSize: 12 }}>
                       {dt ? dt.toLocaleString() : ""}
                     </div>
@@ -298,14 +440,37 @@ export default function WasteLogSection({ site, user, goBack }) {
                     <span style={chip("#f3f4f6", "#111827")}>
                       {r.qty ?? "—"} {r.unit || ""}
                     </span>
-                    <span style={chip("#ecfeff", "#075985")}>{r.reason || "—"}</span>
+
+                    <span style={chip("#ecfeff", "#075985")}>
+                      {r.reason || "—"}
+                    </span>
+
                     {typeof r.estimatedCost === "number" && (
-                      <span style={chip("#fef3c7", "#92400e")}>£{r.estimatedCost.toFixed(2)}</span>
+                      <span style={chip("#fef3c7", "#92400e")}>
+                        £{r.estimatedCost.toFixed(2)}
+                      </span>
                     )}
-                    {r.createdBy && <span style={chip("#f3f4f6", "#374151")}>By: {r.createdBy}</span>}
+
+                    <span
+                      style={
+                        r.sourceType === "stock"
+                          ? chip("#dcfce7", "#166534")
+                          : chip("#f3f4f6", "#374151")
+                      }
+                    >
+                      {r.sourceType === "stock" ? "From stock" : "Manual"}
+                    </span>
+
+                    {r.createdBy && (
+                      <span style={chip("#f3f4f6", "#374151")}>
+                        By: {r.createdBy}
+                      </span>
+                    )}
                   </div>
 
-                  {r.notes ? <div style={{ fontSize: 12, color: "#374151" }}>{r.notes}</div> : null}
+                  {r.notes ? (
+                    <div style={{ fontSize: 12, color: "#374151" }}>{r.notes}</div>
+                  ) : null}
                 </div>
               );
             })}

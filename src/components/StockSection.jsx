@@ -32,6 +32,7 @@ const StockSection = ({ site, goBack, user }) => {
   const today = new Date().toISOString().split("T")[0];
 
   const [stockItems, setStockItems] = useState([]);
+  const [stockBatches, setStockBatches] = useState([]);
   const [equipment, setEquipment] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
   const [haccpPoints, setHaccpPoints] = useState([]);
@@ -229,6 +230,15 @@ const StockSection = ({ site, goBack, user }) => {
 
   useEffect(() => {
     if (!site) return;
+    const q = query(collection(db, "stockBatches"), where("site", "==", site));
+    const unsub = onSnapshot(q, (snapshot) => {
+      setStockBatches(snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })));
+    });
+    return () => unsub();
+  }, [site]);
+
+  useEffect(() => {
+    if (!site) return;
     const q = query(collection(db, "equipment"), where("site", "==", site));
     const unsub = onSnapshot(q, (snapshot) => {
       const eq = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
@@ -278,6 +288,96 @@ const StockSection = ({ site, goBack, user }) => {
       item.measurement?.toLowerCase().includes(search)
     );
   });
+
+  const getActiveBatchesForItem = (stockItemId) => {
+    return stockBatches
+      .filter(
+        (batch) =>
+          batch.stockItemId === stockItemId &&
+          Number(batch.quantityRemaining || 0) > 0 &&
+          batch.status !== "closed"
+      )
+      .sort((a, b) => {
+        if (!a.useByDate && !b.useByDate) return 0;
+        if (!a.useByDate) return 1;
+        if (!b.useByDate) return -1;
+        return a.useByDate.localeCompare(b.useByDate);
+      });
+  };
+
+  const getOldestUseByForItem = (stockItemId) => {
+    const batches = getActiveBatchesForItem(stockItemId);
+    return batches[0]?.useByDate || "";
+  };
+
+  const createStockBatch = async ({
+    stockItemId,
+    stockItemName,
+    quantity,
+    measurement,
+    supplier,
+    location,
+    dateReceived,
+    useByDate,
+    price = null,
+    source = "manual",
+  }) => {
+    await addDoc(collection(db, "stockBatches"), {
+      stockItemId,
+      stockItemName,
+      quantityReceived: Number(quantity),
+      quantityRemaining: Number(quantity),
+      measurement: measurement || "unit",
+      supplier: supplier || null,
+      location: location || null,
+      dateReceived: dateReceived || today,
+      useByDate: useByDate || null,
+      needsUseByReview: !useByDate,
+      price: price !== null && price !== "" ? Number(price) : null,
+      source,
+      site,
+      status: "active",
+      createdAt: serverTimestamp(),
+      createdBy: user?.uid || null,
+    });
+  };
+
+  const reduceBatchesOldestFirst = async (item, qty) => {
+    const quantityToReduce = Number(qty);
+    if (!item || quantityToReduce <= 0) return;
+
+    const batches = getActiveBatchesForItem(item.id);
+
+    if (!batches.length) {
+      return;
+    }
+
+    let remainingToReduce = quantityToReduce;
+
+    for (const batch of batches) {
+      if (remainingToReduce <= 0) break;
+
+      const currentRemaining = Number(batch.quantityRemaining || 0);
+      if (currentRemaining <= 0) continue;
+
+      const reduction = Math.min(currentRemaining, remainingToReduce);
+      const newRemaining = currentRemaining - reduction;
+
+      await updateDoc(doc(db, "stockBatches", batch.id), {
+        quantityRemaining: newRemaining,
+        status: newRemaining <= 0 ? "closed" : "active",
+        updatedAt: serverTimestamp(),
+      });
+
+      remainingToReduce -= reduction;
+    }
+
+    if (remainingToReduce > 0) {
+      console.warn(
+        `Stock reduced by ${quantityToReduce}, but ${remainingToReduce} could not be matched to batches.`
+      );
+    }
+  };
 
   const resetMovementForm = () => {
     setMovementQty(0);
@@ -345,6 +445,18 @@ const StockSection = ({ site, goBack, user }) => {
         createdBy: user?.uid || null,
       });
 
+      await createStockBatch({
+        stockItemId: docRef.id,
+        stockItemName: newItemName,
+        quantity: Number(newItemQty),
+        measurement: newMeasurement,
+        supplier: newSupplier,
+        location: newLocation,
+        dateReceived: newDateReceived,
+        useByDate: newUseByDate || null,
+        source: "manual-add",
+      });
+
       await addMovementRecord({
         stockItemId: docRef.id,
         stockItemName: newItemName,
@@ -402,6 +514,19 @@ const StockSection = ({ site, goBack, user }) => {
       needsUseByReview: !useByDate,
     });
 
+    await createStockBatch({
+      stockItemId: item.id,
+      stockItemName: item.name,
+      quantity: Number(qty),
+      measurement: item.measurement,
+      supplier: item.supplier,
+      location: item.location,
+      dateReceived: dateReceived || today,
+      useByDate: useByDate || null,
+      price: item.price ?? null,
+      source: "delivery-button",
+    });
+
     await addMovementRecord({
       stockItemId: item.id,
       stockItemName: item.name,
@@ -423,6 +548,8 @@ const StockSection = ({ site, goBack, user }) => {
     if (!item || Number(qty) <= 0) return;
 
     const ref = doc(db, "stockItems", item.id);
+
+    await reduceBatchesOldestFirst(item, qty);
 
     await updateDoc(ref, {
       quantity: increment(-Number(qty)),
@@ -446,6 +573,8 @@ const StockSection = ({ site, goBack, user }) => {
     if (!item || Number(qty) <= 0) return;
 
     const ref = doc(db, "stockItems", item.id);
+
+    await reduceBatchesOldestFirst(item, qty);
 
     await updateDoc(ref, {
       quantity: increment(-Number(qty)),
@@ -478,14 +607,7 @@ const StockSection = ({ site, goBack, user }) => {
       Object.entries(editBuffer).forEach(([id, fields]) => {
         Object.entries(fields).forEach(([field, value]) => {
           const ref = doc(db, "stockItems", id);
-
-          const updateData = { [field]: value };
-
-          if (field === "useByDate") {
-            updateData.needsUseByReview = !value;
-          }
-
-          updateDoc(ref, updateData).catch(console.error);
+          updateDoc(ref, { [field]: value }).catch(console.error);
         });
       });
       setEditBuffer({});
@@ -642,6 +764,19 @@ const StockSection = ({ site, goBack, user }) => {
           createdBy: user?.uid || null,
           ...(it.price != null ? { price: Number(it.price) } : {}),
           ...(it.rawWeight ? { parsedWeight: it.rawWeight } : {}),
+          source: ocrImageName || "ocr",
+        });
+
+        await createStockBatch({
+          stockItemId: docRef.id,
+          stockItemName: it.name,
+          quantity: Number(it.quantity) > 0 ? Number(it.quantity) : 1,
+          measurement: it.measurement || "unit",
+          supplier: it.supplier || newSupplier || "Unknown",
+          location: it.location || "Ambient",
+          dateReceived: it.dateReceived || today,
+          useByDate: it.useByDate || null,
+          price: it.price ?? null,
           source: ocrImageName || "ocr",
         });
 
@@ -1072,8 +1207,8 @@ const StockSection = ({ site, goBack, user }) => {
 
         {!newUseByDate && (
           <div style={{ marginTop: 10, color: "#92400e", fontSize: 13 }}>
-            <FaExclamationTriangle /> No use-by date entered. This will be flagged for
-            management review.
+            <FaExclamationTriangle /> No use-by date entered. This batch will be flagged
+            for management review.
           </div>
         )}
 
@@ -1119,14 +1254,8 @@ const StockSection = ({ site, goBack, user }) => {
               currentHaccpIds.includes(opt.value)
             );
 
-            const useByValue =
-              editBuffer[item.id]?.useByDate ??
-              item.useByDate ??
-              item.expiryDate ??
-              "";
-
-            const dateReceivedValue =
-              editBuffer[item.id]?.dateReceived ?? item.dateReceived ?? "";
+            const activeBatches = getActiveBatchesForItem(item.id);
+            const oldestUseBy = getOldestUseByForItem(item.id);
 
             return (
               <li
@@ -1188,28 +1317,6 @@ const StockSection = ({ site, goBack, user }) => {
                     ))}
                   </select>
 
-                  <div style={fieldWrap}>
-                    <label style={label}>Date received</label>
-                    <input
-                      type="date"
-                      value={dateReceivedValue}
-                      onChange={(e) =>
-                        handleEdit(item.id, "dateReceived", e.target.value)
-                      }
-                      style={smallInput}
-                    />
-                  </div>
-
-                  <div style={fieldWrap}>
-                    <label style={label}>Use-by</label>
-                    <input
-                      type="date"
-                      value={useByValue}
-                      onChange={(e) => handleEdit(item.id, "useByDate", e.target.value)}
-                      style={smallInput}
-                    />
-                  </div>
-
                   <select
                     value={(editBuffer[item.id]?.supplier ?? item.supplier) || ""}
                     onChange={(e) => handleEdit(item.id, "supplier", e.target.value)}
@@ -1256,10 +1363,18 @@ const StockSection = ({ site, goBack, user }) => {
                     />
                   </div>
 
-                  {(item.needsUseByReview || !useByValue) && (
+                  <span style={chip("#f3f4f6", "#111827")}>
+                    {activeBatches.length} batch{activeBatches.length === 1 ? "" : "es"}
+                  </span>
+
+                  {oldestUseBy ? (
+                    <span style={chip("#ecfeff", "#075985")}>
+                      Oldest use-by: {oldestUseBy}
+                    </span>
+                  ) : (
                     <span style={chip("#fef3c7", "#92400e")}>
                       <FaExclamationTriangle />
-                      Review use-by
+                      No batch use-by
                     </span>
                   )}
                 </div>
@@ -1270,7 +1385,7 @@ const StockSection = ({ site, goBack, user }) => {
                       setSelectedItem(item);
                       setMovementType("delivery");
                       setMovementDateReceived(today);
-                      setMovementUseByDate(item.useByDate || item.expiryDate || "");
+                      setMovementUseByDate("");
                     }}
                     style={blueBtn}
                     title="Record delivery increase qty"
@@ -1318,6 +1433,29 @@ const StockSection = ({ site, goBack, user }) => {
                     <FaTimes />
                   </button>
                 </div>
+
+                {activeBatches.length > 0 && (
+                  <div style={{ width: "100%", marginTop: 6, ...subtle }}>
+                    {activeBatches.slice(0, 3).map((batch) => (
+                      <span
+                        key={batch.id}
+                        style={{
+                          ...chip("#f9fafb", "#374151"),
+                          marginRight: 6,
+                          marginTop: 6,
+                        }}
+                      >
+                        {batch.quantityRemaining} {batch.measurement} · received{" "}
+                        {batch.dateReceived || "—"} · use-by {batch.useByDate || "review"}
+                      </span>
+                    ))}
+                    {activeBatches.length > 3 && (
+                      <span style={{ marginLeft: 4 }}>
+                        +{activeBatches.length - 3} more batches
+                      </span>
+                    )}
+                  </div>
+                )}
               </li>
             );
           })}
@@ -1357,7 +1495,7 @@ const StockSection = ({ site, goBack, user }) => {
                 </div>
 
                 <div style={fieldWrap}>
-                  <label style={label}>Use-by date if shown</label>
+                  <label style={label}>Use-by date for this batch</label>
                   <input
                     type="date"
                     value={movementUseByDate}
@@ -1422,8 +1560,14 @@ const StockSection = ({ site, goBack, user }) => {
 
           {movementType === "delivery" && !movementUseByDate && (
             <div style={{ marginTop: 10, color: "#92400e", fontSize: 13 }}>
-              <FaExclamationTriangle /> No use-by date entered. This delivery will be
-              flagged for review.
+              <FaExclamationTriangle /> No use-by date entered. This batch will be flagged
+              for review.
+            </div>
+          )}
+
+          {(movementType === "usage" || movementType === "waste") && (
+            <div style={{ marginTop: 10, ...subtle }}>
+              This will reduce the oldest use-by batch first.
             </div>
           )}
         </div>
