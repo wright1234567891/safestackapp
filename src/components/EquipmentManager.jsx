@@ -33,6 +33,15 @@ const chip = (bg, fg) => ({
   color: fg,
 });
 
+const getDisplayName = (value) => {
+  if (!value) return "Unknown";
+  if (typeof value === "string") return value;
+  if (typeof value === "object") {
+    return value.name || value.displayName || value.email || value.role || "User";
+  }
+  return String(value);
+};
+
 const typeMeta = (type) => {
   const t = (type || "").toString().toLowerCase();
 
@@ -129,7 +138,7 @@ const EquipmentManager = ({
       name: equipmentName.trim(),
       type: equipmentType,
       records: [],
-      addedBy: user || "Unknown",
+      addedBy: getDisplayName(user),
       createdAt: serverTimestamp(),
     };
 
@@ -417,7 +426,7 @@ const EquipmentManager = ({
                         <span style={chip(meta.bg, meta.fg)}>{meta.label}</span>
                         {eq.addedBy && (
                           <span style={chip("#f3f4f6", "#374151")}>
-                            Added by: {eq.addedBy}
+                            Added by: {getDisplayName(eq.addedBy)}
                           </span>
                         )}
                       </div>
