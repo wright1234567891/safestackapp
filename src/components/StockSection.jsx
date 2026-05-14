@@ -276,6 +276,14 @@ const StockSection = ({ site, goBack, user }) => {
     label: ccp.name,
   }));
 
+  const normaliseStockName = (name) =>
+    (name || "").toString().trim().toLowerCase().replace(/\s+/g, " ");
+
+  const findExistingStockItem = (name) => {
+    const target = normaliseStockName(name);
+    return stockItems.find((item) => normaliseStockName(item.name) === target);
+  };
+
   const filteredStockItems = stockItems.filter((item) => {
     const search = stockSearch.toLowerCase().trim();
 
@@ -348,9 +356,7 @@ const StockSection = ({ site, goBack, user }) => {
 
     const batches = getActiveBatchesForItem(item.id);
 
-    if (!batches.length) {
-      return;
-    }
+    if (!batches.length) return;
 
     let remainingToReduce = quantityToReduce;
 
@@ -429,45 +435,61 @@ const StockSection = ({ site, goBack, user }) => {
     }
 
     try {
-      const docRef = await addDoc(collection(db, "stockItems"), {
-        name: newItemName,
-        quantity: Number(newItemQty),
-        measurement: newMeasurement,
-        location: newLocation,
-        dateReceived: newDateReceived,
-        lastReceivedDate: newDateReceived,
-        useByDate: newUseByDate || null,
-        needsUseByReview: !newUseByDate,
-        supplier: newSupplier,
-        haccpPoints: newHACCP || [],
-        site,
-        createdAt: serverTimestamp(),
-        createdBy: user?.uid || null,
-      });
+      const existingItem = findExistingStockItem(newItemName);
+      const qtyToAdd = Number(newItemQty);
+
+      let stockItemId = existingItem?.id;
+      let stockItemName = existingItem?.name || newItemName;
+
+      const measurementToUse = existingItem?.measurement || newMeasurement;
+      const supplierToUse = existingItem?.supplier || newSupplier;
+      const locationToUse = existingItem?.location || newLocation;
+
+      if (existingItem) {
+        await updateDoc(doc(db, "stockItems", existingItem.id), {
+          quantity: increment(qtyToAdd),
+          lastReceivedDate: newDateReceived,
+          updatedAt: serverTimestamp(),
+        });
+      } else {
+        const docRef = await addDoc(collection(db, "stockItems"), {
+          name: newItemName,
+          quantity: qtyToAdd,
+          measurement: newMeasurement,
+          location: newLocation,
+          supplier: newSupplier,
+          haccpPoints: newHACCP || [],
+          site,
+          createdAt: serverTimestamp(),
+          createdBy: user?.uid || null,
+        });
+
+        stockItemId = docRef.id;
+      }
 
       await createStockBatch({
-        stockItemId: docRef.id,
-        stockItemName: newItemName,
-        quantity: Number(newItemQty),
-        measurement: newMeasurement,
-        supplier: newSupplier,
-        location: newLocation,
+        stockItemId,
+        stockItemName,
+        quantity: qtyToAdd,
+        measurement: measurementToUse,
+        supplier: supplierToUse,
+        location: locationToUse,
         dateReceived: newDateReceived,
         useByDate: newUseByDate || null,
-        source: "manual-add",
+        source: existingItem ? "manual-existing-item" : "manual-add",
       });
 
       await addMovementRecord({
-        stockItemId: docRef.id,
-        stockItemName: newItemName,
+        stockItemId,
+        stockItemName,
         type: "delivery",
-        quantity: Number(newItemQty),
-        measurement: newMeasurement,
-        supplier: newSupplier,
-        location: newLocation,
+        quantity: qtyToAdd,
+        measurement: measurementToUse,
+        supplier: supplierToUse,
+        location: locationToUse,
         dateReceived: newDateReceived,
         useByDate: newUseByDate || null,
-        source: "manual-add",
+        source: existingItem ? "manual-existing-item" : "manual-add",
       });
 
       setNewItemName("");
@@ -509,9 +531,7 @@ const StockSection = ({ site, goBack, user }) => {
     await updateDoc(ref, {
       quantity: increment(Number(qty)),
       lastReceivedDate: dateReceived || today,
-      dateReceived: item.dateReceived || dateReceived || today,
-      ...(useByDate ? { useByDate } : {}),
-      needsUseByReview: !useByDate,
+      updatedAt: serverTimestamp(),
     });
 
     await createStockBatch({
@@ -553,6 +573,7 @@ const StockSection = ({ site, goBack, user }) => {
 
     await updateDoc(ref, {
       quantity: increment(-Number(qty)),
+      updatedAt: serverTimestamp(),
     });
 
     await addMovementRecord({
@@ -578,6 +599,7 @@ const StockSection = ({ site, goBack, user }) => {
 
     await updateDoc(ref, {
       quantity: increment(-Number(qty)),
+      updatedAt: serverTimestamp(),
     });
 
     await addMovementRecord({
@@ -591,6 +613,22 @@ const StockSection = ({ site, goBack, user }) => {
       price: item.price ?? null,
       wasteReason: reason,
       source: "waste-button",
+    });
+
+    await addDoc(collection(db, "wasteLogs"), {
+      site,
+      item: item.name,
+      qty: Number(qty),
+      unit: item.measurement || "unit",
+      reason: reason || "Other",
+      notes: "Auto-created from stock waste button",
+      estimatedCost:
+        typeof item.price === "number" ? Number(item.price) * Number(qty) : null,
+      stockItemId: item.id,
+      source: "stock-section",
+      createdAt: serverTimestamp(),
+      createdBy: user?.name || user?.uid || "Unknown",
+      createdByUid: user?.uid || null,
     });
 
     resetMovementForm();
@@ -607,7 +645,9 @@ const StockSection = ({ site, goBack, user }) => {
       Object.entries(editBuffer).forEach(([id, fields]) => {
         Object.entries(fields).forEach(([field, value]) => {
           const ref = doc(db, "stockItems", id);
-          updateDoc(ref, { [field]: value }).catch(console.error);
+          updateDoc(ref, { [field]: value, updatedAt: serverTimestamp() }).catch(
+            console.error
+          );
         });
       });
       setEditBuffer({});
@@ -748,50 +788,66 @@ const StockSection = ({ site, goBack, user }) => {
 
     try {
       for (const it of selected) {
-        const docRef = await addDoc(collection(db, "stockItems"), {
-          name: it.name,
-          quantity: Number(it.quantity) > 0 ? Number(it.quantity) : 1,
-          measurement: it.measurement || "unit",
-          location: it.location || "Ambient",
-          dateReceived: it.dateReceived || today,
-          lastReceivedDate: it.dateReceived || today,
-          useByDate: it.useByDate || null,
-          needsUseByReview: !it.useByDate,
-          supplier: it.supplier || newSupplier || "Unknown",
-          haccpPoints: [],
-          site,
-          createdAt: serverTimestamp(),
-          createdBy: user?.uid || null,
-          ...(it.price != null ? { price: Number(it.price) } : {}),
-          ...(it.rawWeight ? { parsedWeight: it.rawWeight } : {}),
-          source: ocrImageName || "ocr",
-        });
+        const existingItem = findExistingStockItem(it.name);
+        const qtyToAdd = Number(it.quantity) > 0 ? Number(it.quantity) : 1;
+
+        let stockItemId = existingItem?.id;
+        let stockItemName = existingItem?.name || it.name;
+
+        const measurementToUse = existingItem?.measurement || it.measurement || "unit";
+        const supplierToUse = existingItem?.supplier || it.supplier || newSupplier || "Unknown";
+        const locationToUse = existingItem?.location || it.location || "Ambient";
+
+        if (existingItem) {
+          await updateDoc(doc(db, "stockItems", existingItem.id), {
+            quantity: increment(qtyToAdd),
+            lastReceivedDate: it.dateReceived || today,
+            updatedAt: serverTimestamp(),
+          });
+        } else {
+          const docRef = await addDoc(collection(db, "stockItems"), {
+            name: it.name,
+            quantity: qtyToAdd,
+            measurement: measurementToUse,
+            location: locationToUse,
+            supplier: supplierToUse,
+            haccpPoints: [],
+            site,
+            createdAt: serverTimestamp(),
+            createdBy: user?.uid || null,
+            ...(it.price != null ? { price: Number(it.price) } : {}),
+            ...(it.rawWeight ? { parsedWeight: it.rawWeight } : {}),
+            source: ocrImageName || "ocr",
+          });
+
+          stockItemId = docRef.id;
+        }
 
         await createStockBatch({
-          stockItemId: docRef.id,
-          stockItemName: it.name,
-          quantity: Number(it.quantity) > 0 ? Number(it.quantity) : 1,
-          measurement: it.measurement || "unit",
-          supplier: it.supplier || newSupplier || "Unknown",
-          location: it.location || "Ambient",
+          stockItemId,
+          stockItemName,
+          quantity: qtyToAdd,
+          measurement: measurementToUse,
+          supplier: supplierToUse,
+          location: locationToUse,
           dateReceived: it.dateReceived || today,
           useByDate: it.useByDate || null,
           price: it.price ?? null,
-          source: ocrImageName || "ocr",
+          source: existingItem ? "ocr-existing-item" : ocrImageName || "ocr",
         });
 
         await addMovementRecord({
-          stockItemId: docRef.id,
-          stockItemName: it.name,
+          stockItemId,
+          stockItemName,
           type: "delivery",
-          quantity: Number(it.quantity) > 0 ? Number(it.quantity) : 1,
-          measurement: it.measurement || "unit",
-          supplier: it.supplier || newSupplier || "Unknown",
-          location: it.location || "Ambient",
+          quantity: qtyToAdd,
+          measurement: measurementToUse,
+          supplier: supplierToUse,
+          location: locationToUse,
           dateReceived: it.dateReceived || today,
           useByDate: it.useByDate || null,
           price: it.price ?? null,
-          source: ocrImageName || "ocr",
+          source: existingItem ? "ocr-existing-item" : ocrImageName || "ocr",
         });
       }
 
