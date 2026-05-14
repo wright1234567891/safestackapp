@@ -50,6 +50,7 @@ const StockSection = ({ site, goBack, user }) => {
   const [movementQty, setMovementQty] = useState(0);
   const [movementDateReceived, setMovementDateReceived] = useState(today);
   const [movementUseByDate, setMovementUseByDate] = useState("");
+  const [wasteReason, setWasteReason] = useState("Out of date");
 
   const [newSupplierName, setNewSupplierName] = useState("");
   const [editBuffer, setEditBuffer] = useState({});
@@ -282,6 +283,7 @@ const StockSection = ({ site, goBack, user }) => {
     setMovementQty(0);
     setMovementDateReceived(today);
     setMovementUseByDate("");
+    setWasteReason("Out of date");
     setSelectedItem(null);
     setMovementType("delivery");
   };
@@ -298,6 +300,7 @@ const StockSection = ({ site, goBack, user }) => {
     useByDate = null,
     price = null,
     source = "manual",
+    wasteReason = null,
   }) => {
     await addDoc(collection(db, "stockMovements"), {
       stockItemId,
@@ -311,6 +314,7 @@ const StockSection = ({ site, goBack, user }) => {
       useByDate: useByDate || null,
       needsUseByReview: type === "delivery" && !useByDate,
       price: price !== null && price !== "" ? Number(price) : null,
+      wasteReason: wasteReason || null,
       source,
       site,
       createdAt: serverTimestamp(),
@@ -433,6 +437,31 @@ const StockSection = ({ site, goBack, user }) => {
       supplier: item.supplier,
       location: item.location,
       source: "usage-button",
+    });
+
+    resetMovementForm();
+  };
+
+  const wasteStock = async (item, qty, reason) => {
+    if (!item || Number(qty) <= 0) return;
+
+    const ref = doc(db, "stockItems", item.id);
+
+    await updateDoc(ref, {
+      quantity: increment(-Number(qty)),
+    });
+
+    await addMovementRecord({
+      stockItemId: item.id,
+      stockItemName: item.name,
+      type: "waste",
+      quantity: Number(qty),
+      measurement: item.measurement,
+      supplier: item.supplier,
+      location: item.location,
+      price: item.price ?? null,
+      wasteReason: reason,
+      source: "waste-button",
     });
 
     resetMovementForm();
@@ -640,6 +669,13 @@ const StockSection = ({ site, goBack, user }) => {
       alert("Failed to save one or more items.");
     }
   };
+
+  const movementTitle =
+    movementType === "delivery"
+      ? "Record delivery"
+      : movementType === "waste"
+      ? "Record waste"
+      : "Use stock";
 
   return (
     <div style={wrap}>
@@ -1260,6 +1296,21 @@ const StockSection = ({ site, goBack, user }) => {
                   </button>
 
                   <button
+                    onClick={() => {
+                      setSelectedItem(item);
+                      setMovementType("waste");
+                      setWasteReason("Out of date");
+                    }}
+                    style={redBtn}
+                    title="Record waste decrease qty"
+                  >
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                      <FaExclamationTriangle />
+                      Waste
+                    </span>
+                  </button>
+
+                  <button
                     onClick={() => deleteStockItem(item.id)}
                     style={redBtn}
                     title="Delete item"
@@ -1277,7 +1328,7 @@ const StockSection = ({ site, goBack, user }) => {
         <div style={card}>
           <div style={sectionHeader}>
             <FaBoxOpen color="#16a34a" />
-            {movementType === "delivery" ? "Record delivery" : "Use stock"} —{" "}
+            {movementTitle} —{" "}
             <span style={{ color: "#16a34a" }}>{selectedItem.name}</span>
           </div>
 
@@ -1317,6 +1368,26 @@ const StockSection = ({ site, goBack, user }) => {
               </>
             )}
 
+            {movementType === "waste" && (
+              <div style={fieldWrap}>
+                <label style={label}>Waste reason</label>
+                <select
+                  value={wasteReason}
+                  onChange={(e) => setWasteReason(e.target.value)}
+                  style={input}
+                >
+                  <option value="Out of date">Out of date</option>
+                  <option value="Spoiled">Spoiled</option>
+                  <option value="Damaged">Damaged</option>
+                  <option value="Overproduction">Overproduction</option>
+                  <option value="Dropped/spillage">Dropped/spillage</option>
+                  <option value="Temperature issue">Temperature issue</option>
+                  <option value="Customer return">Customer return</option>
+                  <option value="Other">Other</option>
+                </select>
+              </div>
+            )}
+
             {movementType === "delivery" ? (
               <button
                 onClick={() =>
@@ -1330,6 +1401,13 @@ const StockSection = ({ site, goBack, user }) => {
                 style={blueBtn}
               >
                 + Confirm delivery
+              </button>
+            ) : movementType === "waste" ? (
+              <button
+                onClick={() => wasteStock(selectedItem, movementQty, wasteReason)}
+                style={redBtn}
+              >
+                - Confirm waste
               </button>
             ) : (
               <button onClick={() => useStock(selectedItem, movementQty)} style={orangeBtn}>
