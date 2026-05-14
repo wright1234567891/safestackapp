@@ -26,6 +26,8 @@ import {
   FaBoxOpen,
   FaIndustry,
   FaExclamationTriangle,
+  FaChevronDown,
+  FaChevronUp,
 } from "react-icons/fa";
 
 const StockSection = ({ site, goBack, user }) => {
@@ -56,6 +58,7 @@ const StockSection = ({ site, goBack, user }) => {
   const [newSupplierName, setNewSupplierName] = useState("");
   const [editBuffer, setEditBuffer] = useState({});
   const [stockSearch, setStockSearch] = useState("");
+  const [expandedBatches, setExpandedBatches] = useState({});
 
   const [ocrLoading, setOcrLoading] = useState(false);
   const [ocrError, setOcrError] = useState("");
@@ -316,6 +319,13 @@ const StockSection = ({ site, goBack, user }) => {
   const getOldestUseByForItem = (stockItemId) => {
     const batches = getActiveBatchesForItem(stockItemId);
     return batches[0]?.useByDate || "";
+  };
+
+  const toggleBatches = (itemId) => {
+    setExpandedBatches((prev) => ({
+      ...prev,
+      [itemId]: !prev[itemId],
+    }));
   };
 
   const createStockBatch = async ({
@@ -1312,6 +1322,7 @@ const StockSection = ({ site, goBack, user }) => {
 
             const activeBatches = getActiveBatchesForItem(item.id);
             const oldestUseBy = getOldestUseByForItem(item.id);
+            const isExpanded = !!expandedBatches[item.id];
 
             return (
               <li
@@ -1419,9 +1430,20 @@ const StockSection = ({ site, goBack, user }) => {
                     />
                   </div>
 
-                  <span style={chip("#f3f4f6", "#111827")}>
-                    {activeBatches.length} batch{activeBatches.length === 1 ? "" : "es"}
-                  </span>
+                  <button
+                    onClick={() => toggleBatches(item.id)}
+                    style={{
+                      ...button("#f3f4f6", "#111827"),
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 6,
+                    }}
+                    title="Show batch details"
+                  >
+                    {isExpanded ? <FaChevronUp /> : <FaChevronDown />}
+                    {activeBatches.length} batch
+                    {activeBatches.length === 1 ? "" : "es"}
+                  </button>
 
                   {oldestUseBy ? (
                     <span style={chip("#ecfeff", "#075985")}>
@@ -1490,25 +1512,80 @@ const StockSection = ({ site, goBack, user }) => {
                   </button>
                 </div>
 
-                {activeBatches.length > 0 && (
-                  <div style={{ width: "100%", marginTop: 6, ...subtle }}>
-                    {activeBatches.slice(0, 3).map((batch) => (
-                      <span
-                        key={batch.id}
-                        style={{
-                          ...chip("#f9fafb", "#374151"),
-                          marginRight: 6,
-                          marginTop: 6,
-                        }}
-                      >
-                        {batch.quantityRemaining} {batch.measurement} · received{" "}
-                        {batch.dateReceived || "—"} · use-by {batch.useByDate || "review"}
-                      </span>
-                    ))}
-                    {activeBatches.length > 3 && (
-                      <span style={{ marginLeft: 4 }}>
-                        +{activeBatches.length - 3} more batches
-                      </span>
+                {isExpanded && (
+                  <div
+                    style={{
+                      width: "100%",
+                      marginTop: 10,
+                      padding: 12,
+                      borderRadius: 12,
+                      background: "#f9fafb",
+                      border: "1px solid #e5e7eb",
+                    }}
+                  >
+                    <div style={{ fontWeight: 700, marginBottom: 8 }}>
+                      Batches for {item.name}
+                    </div>
+
+                    {activeBatches.length === 0 ? (
+                      <div style={subtle}>No active batches found.</div>
+                    ) : (
+                      activeBatches.map((batch) => (
+                        <div
+                          key={batch.id}
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))",
+                            gap: 8,
+                            padding: "10px 0",
+                            borderBottom: "1px solid #e5e7eb",
+                            fontSize: 13,
+                          }}
+                        >
+                          <div>
+                            <strong>Remaining</strong>
+                            <br />
+                            {batch.quantityRemaining} {batch.measurement}
+                          </div>
+
+                          <div>
+                            <strong>Received</strong>
+                            <br />
+                            {batch.dateReceived || "—"}
+                          </div>
+
+                          <div>
+                            <strong>Use-by</strong>
+                            <br />
+                            {batch.useByDate || "Review needed"}
+                          </div>
+
+                          <div>
+                            <strong>Supplier</strong>
+                            <br />
+                            {batch.supplier || "—"}
+                          </div>
+
+                          <div>
+                            <strong>Location</strong>
+                            <br />
+                            {batch.location || "—"}
+                          </div>
+
+                          <div>
+                            <strong>Source</strong>
+                            <br />
+                            {batch.source || "—"}
+                          </div>
+
+                          {batch.price !== null && batch.price !== undefined && (
+                            <div>
+                              <strong>Price</strong>
+                              <br />£{Number(batch.price).toFixed(2)}
+                            </div>
+                          )}
+                        </div>
+                      ))
                     )}
                   </div>
                 )}
