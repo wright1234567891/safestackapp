@@ -1,10 +1,26 @@
 // src/components/EquipmentManager.jsx
 import React, { useEffect, useMemo, useState } from "react";
-import { collection, addDoc, onSnapshot, query, where, deleteDoc, doc } from "firebase/firestore";
+import {
+  collection,
+  addDoc,
+  onSnapshot,
+  query,
+  where,
+  deleteDoc,
+  doc,
+  serverTimestamp,
+} from "firebase/firestore";
 import { db } from "../firebase";
-import { FaChevronLeft, FaPlus, FaTrash, FaTools, FaThermometerHalf, FaSnowflake, FaFire } from "react-icons/fa";
+import {
+  FaChevronLeft,
+  FaPlus,
+  FaTrash,
+  FaTools,
+  FaThermometerHalf,
+  FaSnowflake,
+  FaFire,
+} from "react-icons/fa";
 
-// Small chip helper (same vibe as SitePage)
 const chip = (bg, fg) => ({
   display: "inline-flex",
   alignItems: "center",
@@ -19,35 +35,75 @@ const chip = (bg, fg) => ({
 
 const typeMeta = (type) => {
   const t = (type || "").toString().toLowerCase();
-  if (t === "fridge") return { label: "Fridge", icon: <FaThermometerHalf />, bg: "#fee2e2", fg: "#991b1b" };
-  if (t === "freezer") return { label: "Freezer", icon: <FaSnowflake />, bg: "#e0f2fe", fg: "#075985" };
-  if (t === "cooking") return { label: "Cooking", icon: <FaFire />, bg: "#fef3c7", fg: "#92400e" };
-  return { label: "Other", icon: <FaTools />, bg: "#f3f4f6", fg: "#374151" };
+
+  if (t === "fridge")
+    return {
+      label: "Fridge",
+      icon: <FaThermometerHalf />,
+      bg: "#fee2e2",
+      fg: "#991b1b",
+    };
+
+  if (t === "freezer")
+    return {
+      label: "Freezer",
+      icon: <FaSnowflake />,
+      bg: "#e0f2fe",
+      fg: "#075985",
+    };
+
+  if (t === "cooking")
+    return {
+      label: "Cooking",
+      icon: <FaFire />,
+      bg: "#fef3c7",
+      fg: "#92400e",
+    };
+
+  return {
+    label: "Other",
+    icon: <FaTools />,
+    bg: "#f3f4f6",
+    fg: "#374151",
+  };
 };
 
-const EquipmentManager = ({ site, user, tempChecks, setTempChecks, goBack }) => {
+const EquipmentManager = ({
+  site,
+  user,
+  tempChecks = [],
+  setTempChecks = () => {},
+  goBack = () => {},
+}) => {
   const [equipmentName, setEquipmentName] = useState("");
   const [equipmentType, setEquipmentType] = useState("Other");
   const [equipmentList, setEquipmentList] = useState([]);
   const [busy, setBusy] = useState(false);
 
-  // Live subscription: equipment for this site only (fast + always current)
   useEffect(() => {
     if (!site) return;
 
+    const equipmentQuery = query(
+      collection(db, "equipment"),
+      where("site", "==", site)
+    );
+
     const unsub = onSnapshot(
-      query(collection(db, "equipment"), where("site", "==", site)),
+      equipmentQuery,
       (snap) => {
-        const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-        // optional: stable ordering (newest first if createdAt exists)
+        const rows = snap.docs.map((d) => ({
+          id: d.id,
+          ...d.data(),
+        }));
+
         rows.sort((a, b) => {
-          const ta = a.createdAt?.toMillis?.() ?? (a.createdAt instanceof Date ? a.createdAt.getTime() : 0);
-          const tb = b.createdAt?.toMillis?.() ?? (b.createdAt instanceof Date ? b.createdAt.getTime() : 0);
+          const ta = a.createdAt?.toMillis?.() ?? 0;
+          const tb = b.createdAt?.toMillis?.() ?? 0;
           return tb - ta;
         });
 
         setEquipmentList(rows);
-        setTempChecks(rows); // keep TempSection/CookingSection in sync
+        setTempChecks(rows);
       },
       (err) => {
         console.error("Equipment subscribe error:", err);
@@ -59,27 +115,29 @@ const EquipmentManager = ({ site, user, tempChecks, setTempChecks, goBack }) => 
     return () => unsub();
   }, [site, setTempChecks]);
 
-  const canSave = useMemo(() => equipmentName.trim().length > 0 && !busy, [equipmentName, busy]);
+  const canSave = useMemo(() => {
+    return equipmentName.trim().length > 0 && !busy && !!site;
+  }, [equipmentName, busy, site]);
 
   const addEquipment = async () => {
-    if (!equipmentName.trim()) return;
+    if (!canSave) return;
+
     setBusy(true);
 
     const newEquipment = {
       site,
       name: equipmentName.trim(),
       type: equipmentType,
-      records: [], // always initialize
+      records: [],
       addedBy: user || "Unknown",
-      createdAt: new Date(),
+      createdAt: serverTimestamp(),
     };
 
     try {
       await addDoc(collection(db, "equipment"), newEquipment);
       setEquipmentName("");
       setEquipmentType("Other");
-      // no need to manually update list/tempChecks: onSnapshot will do it
-      goBack(); // match your current flow (save then return to dashboard)
+      goBack();
     } catch (error) {
       console.error("Error adding equipment:", error);
       alert("Couldn’t save equipment. Check connection / permissions.");
@@ -91,14 +149,17 @@ const EquipmentManager = ({ site, user, tempChecks, setTempChecks, goBack }) => 
   const removeEquipment = async (eq) => {
     if (!eq?.id) return;
 
-    const ok = window.confirm(`Remove "${eq.name}"? This will delete it from this venue.`);
+    const ok = window.confirm(
+      `Remove "${eq.name}"? This will delete it from this venue.`
+    );
+
     if (!ok) return;
 
     setBusy(true);
+
     try {
       await deleteDoc(doc(db, "equipment", eq.id));
 
-      // snapshot will refresh list, but we also defensively keep tempChecks clean in case
       const next = (tempChecks || []).filter((x) => x.id !== eq.id);
       setTempChecks(next);
     } catch (error) {
@@ -110,8 +171,23 @@ const EquipmentManager = ({ site, user, tempChecks, setTempChecks, goBack }) => 
   };
 
   return (
-    <div style={{ maxWidth: 900, margin: "0 auto", padding: "40px 20px", fontFamily: "'Inter', sans-serif" }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+    <div
+      style={{
+        maxWidth: 900,
+        margin: "0 auto",
+        padding: "40px 20px",
+        fontFamily: "'Inter', sans-serif",
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 12,
+          flexWrap: "wrap",
+        }}
+      >
         <button
           onClick={goBack}
           style={{
@@ -125,24 +201,35 @@ const EquipmentManager = ({ site, user, tempChecks, setTempChecks, goBack }) => 
             cursor: "pointer",
             fontWeight: 700,
           }}
-          onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#f9fafb")}
-          onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#fff")}
         >
           <FaChevronLeft /> Back
         </button>
 
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <div style={{ width: 38, height: 38, borderRadius: 12, background: "#f3f4f6", display: "grid", placeItems: "center" }}>
+          <div
+            style={{
+              width: 38,
+              height: 38,
+              borderRadius: 12,
+              background: "#f3f4f6",
+              display: "grid",
+              placeItems: "center",
+            }}
+          >
             <FaTools color="#374151" />
           </div>
+
           <div>
-            <div style={{ fontSize: 20, fontWeight: 800, color: "#111" }}>Equipment</div>
-            <div style={{ fontSize: 12, color: "#6b7280" }}>{site}</div>
+            <div style={{ fontSize: 20, fontWeight: 800, color: "#111" }}>
+              Equipment
+            </div>
+            <div style={{ fontSize: 12, color: "#6b7280" }}>
+              {site || "No site selected"}
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Add card */}
       <div
         style={{
           marginTop: 18,
@@ -152,12 +239,27 @@ const EquipmentManager = ({ site, user, tempChecks, setTempChecks, goBack }) => 
           boxShadow: "0 2px 6px rgba(0,0,0,0.08)",
         }}
       >
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: 10,
+            flexWrap: "wrap",
+          }}
+        >
           <div style={{ fontWeight: 800, color: "#111" }}>Add equipment</div>
           <span style={chip("#eef2ff", "#3730a3")}>Saved per venue</span>
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 220px", gap: 12, marginTop: 14 }}>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 220px",
+            gap: 12,
+            marginTop: 14,
+          }}
+        >
           <input
             type="text"
             placeholder="Equipment name e.g. Fridge 1, Tall Freezer, Griddle"
@@ -207,23 +309,16 @@ const EquipmentManager = ({ site, user, tempChecks, setTempChecks, goBack }) => 
               cursor: canSave ? "pointer" : "not-allowed",
               fontWeight: 800,
             }}
-            onMouseEnter={(e) => {
-              if (canSave) e.currentTarget.style.backgroundColor = "#1d4ed8";
-            }}
-            onMouseLeave={(e) => {
-              if (canSave) e.currentTarget.style.backgroundColor = "#2563eb";
-            }}
           >
             <FaPlus /> {busy ? "Saving..." : "Save equipment"}
           </button>
 
           <div style={{ fontSize: 12, color: "#6b7280", alignSelf: "center" }}>
-            Tip: Use consistent names (e.g. “Fridge 1”, “Fridge 2”) so temp checks are tidy.
+            Tip: Use consistent names e.g. “Fridge 1”, “Fridge 2”.
           </div>
         </div>
       </div>
 
-      {/* List card */}
       <div
         style={{
           marginTop: 18,
@@ -233,9 +328,21 @@ const EquipmentManager = ({ site, user, tempChecks, setTempChecks, goBack }) => 
           boxShadow: "0 2px 6px rgba(0,0,0,0.08)",
         }}
       >
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-          <div style={{ fontWeight: 800, color: "#111" }}>Existing equipment</div>
-          <span style={chip("#f3f4f6", "#111827")}>{equipmentList.length} item(s)</span>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: 10,
+            flexWrap: "wrap",
+          }}
+        >
+          <div style={{ fontWeight: 800, color: "#111" }}>
+            Existing equipment
+          </div>
+          <span style={chip("#f3f4f6", "#111827")}>
+            {equipmentList.length} item(s)
+          </span>
         </div>
 
         {equipmentList.length === 0 ? (
@@ -246,6 +353,7 @@ const EquipmentManager = ({ site, user, tempChecks, setTempChecks, goBack }) => 
           <div style={{ marginTop: 14, display: "grid", gap: 10 }}>
             {equipmentList.map((eq) => {
               const meta = typeMeta(eq.type);
+
               return (
                 <div
                   key={eq.id}
@@ -257,20 +365,16 @@ const EquipmentManager = ({ site, user, tempChecks, setTempChecks, goBack }) => 
                     border: "1px solid #e5e7eb",
                     borderRadius: 14,
                     padding: 14,
-                    transition: "all 0.2s ease",
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.boxShadow = "0 6px 12px rgba(0,0,0,0.08)";
-                    e.currentTarget.style.transform = "translateY(-2px)";
-                    e.currentTarget.style.backgroundColor = "#f9fafb";
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.boxShadow = "none";
-                    e.currentTarget.style.transform = "translateY(0)";
-                    e.currentTarget.style.backgroundColor = "#fff";
                   }}
                 >
-                  <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 12,
+                      minWidth: 0,
+                    }}
+                  >
                     <div
                       style={{
                         width: 40,
@@ -282,18 +386,40 @@ const EquipmentManager = ({ site, user, tempChecks, setTempChecks, goBack }) => 
                         placeItems: "center",
                         flex: "0 0 auto",
                       }}
-                      title={meta.label}
                     >
                       {meta.icon}
                     </div>
 
                     <div style={{ minWidth: 0 }}>
-                      <div style={{ fontWeight: 800, color: "#111", fontSize: 15, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      <div
+                        style={{
+                          fontWeight: 800,
+                          color: "#111",
+                          fontSize: 15,
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
                         {eq.name || "Untitled"}
                       </div>
-                      <div style={{ fontSize: 12, color: "#6b7280", marginTop: 2, display: "flex", gap: 10, flexWrap: "wrap" }}>
+
+                      <div
+                        style={{
+                          fontSize: 12,
+                          color: "#6b7280",
+                          marginTop: 2,
+                          display: "flex",
+                          gap: 10,
+                          flexWrap: "wrap",
+                        }}
+                      >
                         <span style={chip(meta.bg, meta.fg)}>{meta.label}</span>
-                        {eq.addedBy && <span style={chip("#f3f4f6", "#374151")}>Added by: {eq.addedBy}</span>}
+                        {eq.addedBy && (
+                          <span style={chip("#f3f4f6", "#374151")}>
+                            Added by: {eq.addedBy}
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -313,12 +439,6 @@ const EquipmentManager = ({ site, user, tempChecks, setTempChecks, goBack }) => 
                       color: "#b91c1c",
                       cursor: busy ? "not-allowed" : "pointer",
                       fontWeight: 800,
-                    }}
-                    onMouseEnter={(e) => {
-                      if (!busy) e.currentTarget.style.backgroundColor = "#fef2f2";
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.backgroundColor = "#fff";
                     }}
                   >
                     <FaTrash /> Remove
