@@ -53,6 +53,7 @@ const StockSection = ({ site, goBack, user }) => {
 
   const [newSupplierName, setNewSupplierName] = useState("");
   const [editBuffer, setEditBuffer] = useState({});
+  const [stockSearch, setStockSearch] = useState("");
 
   const [ocrLoading, setOcrLoading] = useState(false);
   const [ocrError, setOcrError] = useState("");
@@ -263,6 +264,19 @@ const StockSection = ({ site, goBack, user }) => {
     value: ccp.id,
     label: ccp.name,
   }));
+
+  const filteredStockItems = stockItems.filter((item) => {
+    const search = stockSearch.toLowerCase().trim();
+
+    if (!search) return true;
+
+    return (
+      item.name?.toLowerCase().includes(search) ||
+      item.supplier?.toLowerCase().includes(search) ||
+      item.location?.toLowerCase().includes(search) ||
+      item.measurement?.toLowerCase().includes(search)
+    );
+  });
 
   const resetMovementForm = () => {
     setMovementQty(0);
@@ -1043,8 +1057,25 @@ const StockSection = ({ site, goBack, user }) => {
           Current stock
         </div>
 
+        <input
+          type="text"
+          placeholder="Search stock by item, supplier, location or measurement..."
+          value={stockSearch}
+          onChange={(e) => setStockSearch(e.target.value)}
+          style={{
+            ...input,
+            width: "100%",
+            marginBottom: "10px",
+            boxSizing: "border-box",
+          }}
+        />
+
+        <div style={{ ...subtle, marginBottom: "10px" }}>
+          Showing {filteredStockItems.length} of {stockItems.length} stock items
+        </div>
+
         <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
-          {stockItems.map((item) => {
+          {filteredStockItems.map((item) => {
             const currentHaccpIds =
               editBuffer[item.id]?.haccpPoints ?? item.haccpPoints ?? [];
 
