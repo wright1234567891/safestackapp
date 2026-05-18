@@ -16,7 +16,7 @@ import {
   FaUserGraduate,
   FaUserCheck,
   FaTrashAlt,
-  FaRegCalendarCheck
+  FaRegCalendarCheck,
 } from "react-icons/fa";
 
 import { db } from "../firebase";
@@ -47,7 +47,6 @@ const sites = [
   { id: "micklegate", label: "50 Micklegate" },
 ];
 
-// Helpers for id/label compatibility
 const siteLabelForId = (id) => sites.find((s) => s.id === id)?.label ?? id;
 
 const siteKeysForSelected = (selectedSite) => {
@@ -66,8 +65,8 @@ const TEMP_LIMITS = {
   Freezer: { max: -18 },
 };
 
-// ---- Small date helpers ----
 const toDate = (ts) => (ts?.toDate ? ts.toDate() : ts instanceof Date ? ts : null);
+
 const isSameDay = (a, b) =>
   a &&
   b &&
@@ -95,7 +94,6 @@ const isToday = (d) => {
   return isSameDay(dd, now);
 };
 
-// Simple chip style
 const chip = (bg, fg) => ({
   display: "inline-flex",
   alignItems: "center",
@@ -108,7 +106,6 @@ const chip = (bg, fg) => ({
   color: fg,
 });
 
-// Donut progress (pure SVG)
 const Donut = ({ size = 130, stroke = 12, percent = 0, label = "" }) => {
   const clamped = Math.max(0, Math.min(100, percent || 0));
   const r = (size - stroke) / 2;
@@ -149,20 +146,20 @@ const Donut = ({ size = 130, stroke = 12, percent = 0, label = "" }) => {
   );
 };
 
-// Small hook to choose mobile/desktop sizes
 const useIsMobile = (breakpoint = 520) => {
   const [isMobile, setIsMobile] = useState(() =>
     typeof window !== "undefined" ? window.innerWidth <= breakpoint : false
   );
+
   useEffect(() => {
     const onResize = () => setIsMobile(window.innerWidth <= breakpoint);
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
   }, [breakpoint]);
+
   return isMobile;
 };
 
-// normalize titles for fuzzy match fallback
 const norm = (s = "") =>
   s
     .toString()
@@ -171,7 +168,6 @@ const norm = (s = "") =>
     .replace(/\s+/g, " ")
     .replace(/[^\w\s]/g, "");
 
-// Build effective checklists from templates + siteTemplates
 const buildChecklistsFromTemplates = (siteId, siteTemplateRows, templatesRows) => {
   const tplMap = new Map(templatesRows.map((t) => [t.id, t]));
   const enabledLinks = siteTemplateRows.filter((st) => st.enabled !== false);
@@ -185,13 +181,13 @@ const buildChecklistsFromTemplates = (siteId, siteTemplateRows, templatesRows) =
       const qOverrides = st.overrides?.questions || {};
 
       const questions = (tpl.questions || []).map((q) => {
-        const base = q; // template questions already have ids
+        const base = q;
         const o = qOverrides[base.id];
         return { ...base, enabled: o?.enabled ?? base.enabled ?? true };
       });
 
       return {
-        id: tpl.id, // checklist id == template id
+        id: tpl.id,
         site: siteId,
         title: overrideTitle || tpl.title,
         frequency: tpl.frequency || "Ad hoc",
@@ -205,12 +201,12 @@ const buildChecklistsFromTemplates = (siteId, siteTemplateRows, templatesRows) =
 
 const SitePage = ({ user, onLogout }) => {
   const isManager =
-  (user?.role || "").toLowerCase() === "manager" ||
-  ["chris", "chloe"].includes((user?.name || "").toLowerCase());
+    (user?.role || "").toLowerCase() === "manager" ||
+    ["chris", "chloe"].includes((user?.name || "").toLowerCase());
+
   const [selectedSite, setSelectedSite] = useState(null);
   const [activeSection, setActiveSection] = useState(null);
 
-  // Raw data
   const [templates, setTemplates] = useState([]);
   const [siteTemplates, setSiteTemplates] = useState([]);
   const [legacyChecklists, setLegacyChecklists] = useState([]);
@@ -219,10 +215,8 @@ const SitePage = ({ user, onLogout }) => {
   const [equipment, setEquipment] = useState([]);
   const [cleanLogs, setCleanLogs] = useState([]);
 
-  // Effective checklists shown on dashboard overview
   const [checklists, setChecklists] = useState([]);
 
-  // pass into child sections (kept from your structure)
   const [tempChecks, setTempChecks] = useState([]);
   const [cleaningRecords, setCleaningRecords] = useState([]);
 
@@ -232,10 +226,8 @@ const SitePage = ({ user, onLogout }) => {
   const selectedSiteKeys = useMemo(() => siteKeysForSelected(selectedSite), [selectedSite]);
   const selectedSiteLabel = useMemo(() => (selectedSite ? siteLabelForId(selectedSite) : ""), [selectedSite]);
 
-  // Legacy rule: docs missing `site` are assumed to be Thorganby
   const assumeMissingSiteAsThisVenue = selectedSite === "thorganby";
 
-  // Filter helper (used for all collections)
   const filterForSelectedSite = useMemo(() => {
     const keys = selectedSiteKeys;
     return (docData) => {
@@ -246,7 +238,6 @@ const SitePage = ({ user, onLogout }) => {
     };
   }, [selectedSiteKeys, assumeMissingSiteAsThisVenue]);
 
-  // --- Live subscriptions for site data ---
   useEffect(() => {
     if (!selectedSite) return;
 
@@ -301,9 +292,7 @@ const SitePage = ({ user, onLogout }) => {
     const unsubEquip = onSnapshot(
       collection(db, "equipment"),
       (snap) => {
-        const rows = snap.docs
-          .map((d) => ({ id: d.id, ...d.data() }))
-          .filter(filterForSelectedSite);
+        const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() })).filter(filterForSelectedSite);
         setEquipment(rows);
       },
       () => setEquipment([])
@@ -312,9 +301,7 @@ const SitePage = ({ user, onLogout }) => {
     const unsubClean = onSnapshot(
       collection(db, COLLECTIONS.cleaningLogs),
       (snap) => {
-        const rows = snap.docs
-          .map((d) => ({ id: d.id, ...d.data() }))
-          .filter(filterForSelectedSite);
+        const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() })).filter(filterForSelectedSite);
         setCleanLogs(rows);
       },
       () => setCleanLogs([])
@@ -330,7 +317,6 @@ const SitePage = ({ user, onLogout }) => {
     };
   }, [selectedSite, filterForSelectedSite]);
 
-  // ✅ Build "effective" checklists (templates if linked, otherwise legacy)
   useEffect(() => {
     if (!selectedSite) return;
 
@@ -341,7 +327,6 @@ const SitePage = ({ user, onLogout }) => {
     }
   }, [selectedSite, siteTemplates, templates, legacyChecklists]);
 
-  // --- Compute “due” vs “done” by frequency (scheduled checklist progress) ---
   const overview = useMemo(() => {
     const today = new Date();
 
@@ -427,9 +412,7 @@ const SitePage = ({ user, onLogout }) => {
     return { buckets, totalDue, totalDone, percent, label };
   }, [checklists, completed, overviewMode]);
 
-  // ======= Combined “today” compliance across Checklists + Temps + Cleaning =======
   const todayCompliance = useMemo(() => {
-    // 1) Checklists — PASS if no corrective action entered
     let clPass = 0;
     let clTotal = 0;
 
@@ -447,7 +430,6 @@ const SitePage = ({ user, onLogout }) => {
       });
     });
 
-    // 2) Temperatures — derive from equipment.records written by TempSection
     const todayStr = new Date().toLocaleDateString();
     let tPass = 0;
     let tTotal = 0;
@@ -469,14 +451,15 @@ const SitePage = ({ user, onLogout }) => {
             const { max } = TEMP_LIMITS.Freezer;
             pass = temp <= max;
           }
+
           if (pass) tPass += 1;
           tTotal += 1;
         });
       });
 
-    // 3) Cleaning — "done" vs the rest
     let cPass = 0;
     let cTotal = 0;
+
     cleanLogs.forEach((log) => {
       if (!isToday(log.createdAt)) return;
       const status = (log?.status || "").toString().trim().toLowerCase();
@@ -489,17 +472,13 @@ const SitePage = ({ user, onLogout }) => {
     const total = clTotal + tTotal + cTotal;
     const pct = total ? Math.round((totalPass / total) * 100) : 100;
 
-    const pctCl = clTotal ? Math.round((clPass / clTotal) * 100) : 0;
-    const pctT = tTotal ? Math.round((tPass / tTotal) * 100) : 0;
-    const pctC = cTotal ? Math.round((cPass / cTotal) * 100) : 0;
-
     return {
       totalPass,
       total,
       pct,
-      cl: { pass: clPass, total: clTotal, pct: pctCl },
-      t: { pass: tPass, total: tTotal, pct: pctT },
-      c: { pass: cPass, total: cTotal, pct: pctC },
+      cl: { pass: clPass, total: clTotal, pct: clTotal ? Math.round((clPass / clTotal) * 100) : 0 },
+      t: { pass: tPass, total: tTotal, pct: tTotal ? Math.round((tPass / tTotal) * 100) : 0 },
+      c: { pass: cPass, total: cTotal, pct: cTotal ? Math.round((cPass / cTotal) * 100) : 0 },
     };
   }, [completed, equipment, cleanLogs]);
 
@@ -515,7 +494,6 @@ const SitePage = ({ user, onLogout }) => {
     setCleanLogs([]);
   };
 
-  // Section routing
   if (selectedSite && activeSection === "equipment") {
     return (
       <EquipmentManager
@@ -527,13 +505,16 @@ const SitePage = ({ user, onLogout }) => {
       />
     );
   }
+
   if (selectedSite && activeSection === "checklists") {
     return <ChecklistSection goBack={() => setActiveSection(null)} site={selectedSite} user={user} />;
   }
+
   if (selectedSite && activeSection === "temp") {
     const siteTempChecks = tempChecks.filter(
       (e) => selectedSiteKeys.includes(e.site) && (e.type === "Fridge" || e.type === "Freezer")
     );
+
     return (
       <TempSection
         goBack={() => setActiveSection(null)}
@@ -544,28 +525,19 @@ const SitePage = ({ user, onLogout }) => {
       />
     );
   }
+
   if (selectedSite && activeSection === "fridgeLog") {
-  return (
-    <FridgeLogSection
-      goBack={() => setActiveSection(null)}
-      site={selectedSite}
-      user={user}
-      equipment={equipment}
-    />
-  );
-}
-if (selectedSite && activeSection === "wasteLog") {
-  return (
-    <WasteLogSection
-      goBack={() => setActiveSection(null)}
-      site={selectedSite}
-      user={user}
-    />
-  );
-}
-if (selectedSite && activeSection === "howto") {
-  return <HowToSection site={selectedSite} user={user} goBack={() => setActiveSection(null)} />;
-}
+    return <FridgeLogSection goBack={() => setActiveSection(null)} site={selectedSite} user={user} equipment={equipment} />;
+  }
+
+  if (selectedSite && activeSection === "wasteLog") {
+    return <WasteLogSection goBack={() => setActiveSection(null)} site={selectedSite} user={user} />;
+  }
+
+  if (selectedSite && activeSection === "howto") {
+    return <HowToSection site={selectedSite} user={user} goBack={() => setActiveSection(null)} />;
+  }
+
   if (selectedSite && activeSection === "cleaning") {
     return (
       <CleaningSection
@@ -577,8 +549,10 @@ if (selectedSite && activeSection === "howto") {
       />
     );
   }
+
   if (selectedSite && activeSection === "cooking") {
     const cookingEquipment = tempChecks.filter((e) => selectedSiteKeys.includes(e.site) && e.type === "Cooking");
+
     return (
       <CookingSection
         goBack={() => setActiveSection(null)}
@@ -589,42 +563,39 @@ if (selectedSite && activeSection === "howto") {
       />
     );
   }
+
   if (selectedSite && activeSection === "stock") {
     return <StockSection goBack={() => setActiveSection(null)} site={selectedSite} user={user} />;
   }
+
   if (selectedSite && activeSection === "reports") {
     return <Reports goBack={() => setActiveSection(null)} site={selectedSite} user={user} />;
   }
+
   if (selectedSite && activeSection === "ccp") {
     return <CCPSection goBack={() => setActiveSection(null)} site={selectedSite} user={user} />;
   }
+
   if (selectedSite && activeSection === "haccpDashboard") {
     return <HaccpDashboard goBack={() => setActiveSection(null)} site={selectedSite} />;
   }
+
   if (selectedSite && activeSection === "dishes") {
     return <DishesSection goBack={() => setActiveSection(null)} site={selectedSite} user={user} />;
   }
+
   if (selectedSite && activeSection === "training") {
     return <StaffTrainingSection goBack={() => setActiveSection(null)} site={selectedSite} user={user} />;
   }
-  if (selectedSite && activeSection === "myRota") {
-  return (
-    <MyRota
-      goBack={() => setActiveSection(null)}
-      user={user}
-    />
-  );
-}
-  if (selectedSite && activeSection === "staff") {
-  return (
-    <StaffManager
-      goBack={() => setActiveSection(null)}
-      user={user}
-    />
-  );
-}
 
-  // Site selection screen
+  if (selectedSite && activeSection === "myRota") {
+    return <MyRota goBack={() => setActiveSection(null)} user={user} />;
+  }
+
+  if (selectedSite && activeSection === "staff") {
+    return <StaffManager goBack={() => setActiveSection(null)} user={user} />;
+  }
+
   if (!selectedSite) {
     return (
       <div style={{ maxWidth: "500px", margin: "0 auto", padding: "40px 20px", fontFamily: "'Inter', sans-serif" }}>
@@ -710,32 +681,53 @@ if (selectedSite && activeSection === "howto") {
     );
   }
 
-  // Dashboard with overview + icon cards
-const sections = [
-  { label: "Checklists", key: "checklists", icon: <FaClipboardCheck size={24} color="#2563eb" /> },
-  { label: "Temp Checks", key: "temp", icon: <FaThermometerHalf size={24} color="#ef4444" /> },
-  { label: "Fridge Log", key: "fridgeLog", icon: <FaThermometerHalf size={24} color="#0ea5e9" /> },
-  { label: "Waste Log", key: "wasteLog", icon: <FaTrashAlt size={24} color="#111" /> },
+  const sections = [
+    { label: "Checklists", key: "checklists", icon: <FaClipboardCheck size={24} color="#2563eb" /> },
+    { label: "Temp Checks", key: "temp", icon: <FaThermometerHalf size={24} color="#ef4444" /> },
+    { label: "Fridge Log", key: "fridgeLog", icon: <FaThermometerHalf size={24} color="#0ea5e9" /> },
+    { label: "Waste Log", key: "wasteLog", icon: <FaTrashAlt size={24} color="#111" /> },
     { label: "My Rota", key: "myRota", icon: <FaRegCalendarCheck size={24} color="#111827" /> },
-  { label: "How To", key: "howto", icon: <FaUtensils size={24} /> },
-  { label: "Cleaning", key: "cleaning", icon: <FaBroom size={24} color="#10b981" /> },
-  { label: "Cooking & Cooling", key: "cooking", icon: <FaDrumstickBite size={24} color="#f59e0b" /> },
-  { label: "Stock", key: "stock", icon: <FaBoxes size={24} color="#6366f1" /> },
-  { label: "Reports", key: "reports", icon: <FaChartBar size={24} color="#9333ea" /> },
-  { label: "Dishes", key: "dishes", icon: <FaUtensils size={24} color="#0ea5e9" /> },
-  { label: "Staff Training", key: "training", icon: <FaUserGraduate size={24} color="#0ea5e9" /> },
-
-  // 👇 manager only
-  ...(isManager
-    ? [{ label: "Staff", key: "staff", icon: <FaUserCheck size={24} color="#111" /> }]
-    : []),
-
-  { label: "HACCP Dashboard", key: "haccpDashboard", icon: <FaExclamationTriangle size={24} color="#16a34a" /> },
-  { label: "CCPs", key: "ccp", icon: <FaExclamationTriangle size={24} color="#dc2626" /> },
-  { label: "Add Equipment", key: "equipment", icon: <FaTools size={24} color="#374151" /> },
-];
+    { label: "How To", key: "howto", icon: <FaUtensils size={24} /> },
+    { label: "Cleaning", key: "cleaning", icon: <FaBroom size={24} color="#10b981" /> },
+    { label: "Cooking & Cooling", key: "cooking", icon: <FaDrumstickBite size={24} color="#f59e0b" /> },
+    { label: "Stock", key: "stock", icon: <FaBoxes size={24} color="#6366f1" /> },
+    { label: "Reports", key: "reports", icon: <FaChartBar size={24} color="#9333ea" /> },
+    { label: "Dishes", key: "dishes", icon: <FaUtensils size={24} color="#0ea5e9" /> },
+    { label: "Staff Training", key: "training", icon: <FaUserGraduate size={24} color="#0ea5e9" /> },
+    ...(isManager ? [{ label: "Staff", key: "staff", icon: <FaUserCheck size={24} color="#111" /> }] : []),
+    { label: "HACCP Dashboard", key: "haccpDashboard", icon: <FaExclamationTriangle size={24} color="#16a34a" /> },
+    { label: "CCPs", key: "ccp", icon: <FaExclamationTriangle size={24} color="#dc2626" /> },
+    { label: "Add Equipment", key: "equipment", icon: <FaTools size={24} color="#374151" /> },
+  ];
 
   const { buckets, totalDue, totalDone, percent, label } = overview;
+
+  const actionWidgets = useMemo(() => {
+    const failedTempsToday = todayCompliance.t.total - todayCompliance.t.pass;
+    const overdueDailyChecks = buckets.daily.total - buckets.daily.done;
+    const incompleteCleaning = todayCompliance.c.total - todayCompliance.c.pass;
+
+    return [
+      {
+        label: "Overdue daily checks",
+        value: overdueDailyChecks,
+        tone: overdueDailyChecks > 0 ? "bad" : "good",
+        onClick: () => setActiveSection("checklists"),
+      },
+      {
+        label: "Failed temps today",
+        value: failedTempsToday,
+        tone: failedTempsToday > 0 ? "bad" : "good",
+        onClick: () => setActiveSection("temp"),
+      },
+      {
+        label: "Cleaning incomplete",
+        value: incompleteCleaning,
+        tone: incompleteCleaning > 0 ? "warn" : "good",
+        onClick: () => setActiveSection("cleaning"),
+      },
+    ];
+  }, [todayCompliance, buckets]);
 
   const toggleBtn = (active) => ({
     padding: "8px 10px",
@@ -758,66 +750,91 @@ const sections = [
         }
       `}</style>
 
-<div
-  style={{
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    gap: 12,
-    flexWrap: "wrap",
-    marginBottom: 20,
-  }}
->
-  <div>
-    <h1
-      style={{
-        fontSize: "30px",
-        margin: 0,
-        color: "#111",
-        fontWeight: 600,
-      }}
-    >
-      {selectedSiteLabel}
-    </h1>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          gap: 12,
+          flexWrap: "wrap",
+          marginBottom: 20,
+        }}
+      >
+        <div>
+          <h1 style={{ fontSize: "30px", margin: 0, color: "#111", fontWeight: 600 }}>{selectedSiteLabel}</h1>
 
-    <div
-      style={{
-        marginTop: 8,
-        display: "inline-flex",
-        alignItems: "center",
-        gap: 8,
-        padding: "8px 12px",
-        borderRadius: 999,
-        background: "#f3f4f6",
-        color: "#111827",
-        fontSize: 13,
-        fontWeight: 700,
-      }}
-    >
-      <FaUserCheck />
-      Logged in as {user?.name || "Unknown"} ({user?.role || "Staff"})
-    </div>
-  </div>
+          <div
+            style={{
+              marginTop: 8,
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 8,
+              padding: "8px 12px",
+              borderRadius: 999,
+              background: "#f3f4f6",
+              color: "#111827",
+              fontSize: 13,
+              fontWeight: 700,
+            }}
+          >
+            <FaUserCheck />
+            Logged in as {user?.name || "Unknown"} ({user?.role || "Staff"})
+          </div>
+        </div>
 
-  <button
-    onClick={onLogout}
-    style={{
-      padding: "12px 18px",
-      borderRadius: "12px",
-      cursor: "pointer",
-      backgroundColor: "#dc2626",
-      fontSize: "14px",
-      color: "#fff",
-      fontWeight: 700,
-      border: "none",
-      transition: "all 0.2s ease",
-    }}
-    onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#b91c1c")}
-    onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#dc2626")}
-  >
-    Logout
-  </button>
-</div>
+        <button
+          onClick={onLogout}
+          style={{
+            padding: "12px 18px",
+            borderRadius: "12px",
+            cursor: "pointer",
+            backgroundColor: "#dc2626",
+            fontSize: "14px",
+            color: "#fff",
+            fontWeight: 700,
+            border: "none",
+            transition: "all 0.2s ease",
+          }}
+          onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#b91c1c")}
+          onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#dc2626")}
+        >
+          Logout
+        </button>
+      </div>
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+          gap: 12,
+          marginBottom: 18,
+        }}
+      >
+        {actionWidgets.map((w) => {
+          const bg = w.tone === "bad" ? "#fee2e2" : w.tone === "warn" ? "#fef3c7" : "#dcfce7";
+          const fg = w.tone === "bad" ? "#991b1b" : w.tone === "warn" ? "#92400e" : "#166534";
+
+          return (
+            <button
+              key={w.label}
+              onClick={w.onClick}
+              style={{
+                background: bg,
+                color: fg,
+                border: "none",
+                borderRadius: 14,
+                padding: 16,
+                cursor: "pointer",
+                textAlign: "left",
+                boxShadow: "0 2px 6px rgba(0,0,0,0.08)",
+              }}
+            >
+              <div style={{ fontSize: 28, fontWeight: 900 }}>{w.value}</div>
+              <div style={{ fontSize: 13, fontWeight: 800 }}>{w.label}</div>
+            </button>
+          );
+        })}
+      </div>
 
       <div
         className="overview-card"
@@ -923,48 +940,27 @@ const sections = [
         ))}
       </div>
 
-<div style={{ marginTop: "40px", display: "flex", justifyContent: "center" }}>
-
+      <div style={{ marginTop: "40px", display: "flex", justifyContent: "center" }}>
         <button
-
           onClick={resetSite}
-
           style={{
-
             padding: "12px 24px",
-
             borderRadius: "10px",
-
             cursor: "pointer",
-
             backgroundColor: "#f3f4f6",
-
             fontSize: "15px",
-
             fontWeight: 500,
-
             border: "none",
-
             transition: "all 0.25s",
-
           }}
-
           onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#e0e3e8")}
-
           onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#f3f4f6")}
-
         >
-
           Back
-
         </button>
-
       </div>
-
     </div>
-
   );
-
 };
 
 function BreakdownRow({ label, pct, detail, hint, color = "#2563eb" }) {
