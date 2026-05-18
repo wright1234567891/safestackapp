@@ -742,25 +742,27 @@ const SitePage = ({ user, onLogout }) => {
           background: #fff !important;
         }
 
-        @media (max-width: 820px) {
-          .safestack-shell {
-            grid-template-columns: 1fr;
-          }
+@media (max-width: 820px) {
 
-          .safestack-sidebar {
-            position: relative;
-            height: auto;
-          }
+  .safestack-shell {
 
-          .nav-list {
-            display: grid !important;
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-          }
+    grid-template-columns: 1fr;
 
-          .safestack-main {
-            padding: 16px;
-          }
-        }
+  }
+
+  .safestack-sidebar {
+
+    display: none;
+
+  }
+
+  .safestack-main {
+
+    padding: 16px;
+
+  }
+
+}
       `}</style>
 
       <div className="safestack-shell">
