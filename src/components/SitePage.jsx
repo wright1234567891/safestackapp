@@ -57,7 +57,7 @@ const siteKeysForSelected = (selectedSite) => {
 
 const COLLECTIONS = {
   completedChecklists: "completed",
-  cleaningLogs: "cleaningLogs",
+  cleaningLogs: "cleaningRecords",
 };
 
 const TEMP_LIMITS = {
@@ -459,13 +459,17 @@ const SitePage = ({ user, onLogout }) => {
     let cPass = 0;
     let cTotal = 0;
 
-    cleanLogs.forEach((log) => {
-      if (!isToday(log.createdAt)) return;
-      const status = (log?.status || "").toString().trim().toLowerCase();
-      if (!status) return;
-      if (status === "done") cPass += 1;
-      cTotal += 1;
-    });
+cleanLogs.forEach((log) => {
+
+  if (!isToday(log.createdAt)) return;
+
+  // Every cleaning record added counts as completed
+
+  cPass += 1;
+
+  cTotal += 1;
+
+});
 
     const totalPass = clPass + tPass + cPass;
     const total = clTotal + tTotal + cTotal;
