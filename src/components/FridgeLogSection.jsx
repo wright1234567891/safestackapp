@@ -16,7 +16,6 @@ import {
 } from "firebase/firestore";
 import { FaChevronLeft, FaPlus, FaCircle, FaTrash, FaFireAlt, FaEdit, FaSave, FaTimes } from "react-icons/fa";
 
-// ---- small helpers ----
 const chip = (bg, fg) => ({
   display: "inline-flex",
   alignItems: "center",
@@ -50,6 +49,8 @@ const inputStyle = {
   outline: "none",
 };
 
+const norm = (v = "") => String(v).trim().toLowerCase();
+
 function toYmd(d) {
   if (!d) return "";
   const dd = d instanceof Date ? d : new Date(d);
@@ -63,7 +64,6 @@ function parseYmd(ymd) {
   if (!ymd) return null;
   const [y, m, d] = ymd.split("-").map((x) => parseInt(x, 10));
   if (!y || !m || !d) return null;
-  // midday avoids timezone “previous day” issues in some browsers
   return new Date(y, m - 1, d, 12, 0, 0, 0);
 }
 
@@ -89,22 +89,25 @@ function flagDot(flag) {
   return "#16a34a";
 }
 
+function stockUseByToDate(useByDate) {
+  if (!useByDate) return null;
+  return parseYmd(useByDate);
+}
+
 export default function FridgeLogSection({ site, user, equipment, goBack }) {
   const [batches, setBatches] = useState([]);
+  const [stockBatches, setStockBatches] = useState([]);
   const [loading, setLoading] = useState(true);
   const [errMsg, setErrMsg] = useState("");
 
-  // Add form
   const [selectedEqId, setSelectedEqId] = useState("");
   const [itemName, setItemName] = useState("");
   const [useByYmd, setUseByYmd] = useState("");
   const [notes, setNotes] = useState("");
   const [busy, setBusy] = useState(false);
 
-  // UI options
   const [showDiscarded, setShowDiscarded] = useState(false);
 
-  // Edit state
   const [editingId, setEditingId] = useState(null);
   const [editBusy, setEditBusy] = useState(false);
   const [editErr, setEditErr] = useState("");
@@ -123,13 +126,11 @@ export default function FridgeLogSection({ site, user, equipment, goBack }) {
     );
   }, [equipment]);
 
-  // default select first fridge/freezer when available
   useEffect(() => {
     if (selectedEqId) return;
     if (coldEquipment.length > 0) setSelectedEqId(coldEquipment[0].id);
   }, [coldEquipment, selectedEqId]);
 
-  // ---- Firestore subscribe ----
   useEffect(() => {
     if (!site) return;
 
@@ -151,24 +152,66 @@ export default function FridgeLogSection({ site, user, equipment, goBack }) {
       (err) => {
         console.error("fridgeBatches subscribe error:", err);
         setLoading(false);
-
-        const msg = (err?.message || "Could not load fridge log.").toString();
-        if (msg.toLowerCase().includes("index")) {
-          setErrMsg(
-            "Firestore needs an index for this query (site + useBy). Open the browser console and click the Firestore index link, then create the index."
-          );
-        } else {
-          setErrMsg(msg);
-        }
+        setErrMsg(err?.message || "Could not load fridge log.");
       }
     );
 
     return () => unsub();
   }, [site]);
 
+  useEffect(() => {
+    if (!site) return;
+
+    const qRef = query(collection(db, "stockBatches"), where("site", "==", site));
+
+    const unsub = onSnapshot(qRef, (snap) => {
+      setStockBatches(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+    });
+
+    return () => unsub();
+  }, [site]);
+
+  const linkedStockBatches = useMemo(() => {
+    return stockBatches
+      .filter((b) => {
+        const remaining = Number(b.quantityRemaining || 0);
+        if (remaining <= 0) return false;
+        if (String(b.status || "").toLowerCase() === "closed") return false;
+
+        return coldEquipment.some(
+          (eq) => norm(b.location) === norm(eq.name) || norm(b.location) === norm(eq.id)
+        );
+      })
+      .map((b) => {
+        const eq = coldEquipment.find(
+          (e) => norm(b.location) === norm(e.name) || norm(b.location) === norm(e.id)
+        );
+
+        const useByDate = stockUseByToDate(b.useByDate);
+
+        return {
+          id: `stock-${b.id}`,
+          _source: "stock",
+          stockBatchId: b.id,
+          site: b.site,
+          equipmentId: eq?.id || b.location || "",
+          equipmentName: eq?.name || b.location || "Unknown location",
+          equipmentType: eq?.type || "Fridge",
+          itemName: b.stockItemName || "Untitled stock item",
+          useBy: useByDate,
+          notes: `Stock batch • Remaining: ${b.quantityRemaining} ${b.measurement || ""}`,
+          status: "IN_USE",
+          reheats: 0,
+          maxReheats: 0,
+          openedAt: null,
+        };
+      });
+  }, [stockBatches, coldEquipment]);
+
   const batchesWithFlags = useMemo(() => {
-    return batches.map((b) => ({ ...b, _flag: flagForUseBy(b.useBy) }));
-  }, [batches]);
+    const combined = [...batches, ...linkedStockBatches];
+    return combined.map((b) => ({ ...b, _flag: flagForUseBy(b.useBy) }));
+  }, [batches, linkedStockBatches]);
 
   const filteredBatches = useMemo(() => {
     if (showDiscarded) return batchesWithFlags;
@@ -196,13 +239,7 @@ export default function FridgeLogSection({ site, user, equipment, goBack }) {
   }, [coldEquipment, filteredBatches]);
 
   const canAdd = useMemo(() => {
-    return (
-      !!site &&
-      !!selectedEqId &&
-      itemName.trim().length > 0 &&
-      !!useByYmd &&
-      !busy
-    );
+    return !!site && !!selectedEqId && itemName.trim().length > 0 && !!useByYmd && !busy;
   }, [site, selectedEqId, itemName, useByYmd, busy]);
 
   const addBatch = async () => {
@@ -219,7 +256,7 @@ export default function FridgeLogSection({ site, user, equipment, goBack }) {
         equipmentName: eq?.name || "",
         equipmentType: eq?.type || "",
         itemName: itemName.trim(),
-        useBy: useByDate, // stored as Timestamp
+        useBy: useByDate,
         notes: notes.trim(),
         status: "IN_USE",
         reheats: 0,
@@ -263,7 +300,7 @@ export default function FridgeLogSection({ site, user, equipment, goBack }) {
   };
 
   const discard = async (batchId) => {
-    const ok = window.confirm("Discard this batch? (It will stay in the log as DISCARDED)");
+    const ok = window.confirm("Discard this batch? It will stay in the log as DISCARDED.");
     if (!ok) return;
     try {
       await updateDoc(doc(db, "fridgeBatches", batchId), {
@@ -278,9 +315,7 @@ export default function FridgeLogSection({ site, user, equipment, goBack }) {
   };
 
   const hardDelete = async (batchId) => {
-    const ok = window.confirm(
-      "Permanently delete this batch? This cannot be undone."
-    );
+    const ok = window.confirm("Permanently delete this batch? This cannot be undone.");
     if (!ok) return;
     try {
       await deleteDoc(doc(db, "fridgeBatches", batchId));
@@ -291,6 +326,8 @@ export default function FridgeLogSection({ site, user, equipment, goBack }) {
   };
 
   const startEdit = (b) => {
+    if (b._source === "stock") return;
+
     setEditErr("");
     setEditingId(b.id);
 
@@ -331,7 +368,7 @@ export default function FridgeLogSection({ site, user, equipment, goBack }) {
     const maxRh = Number(editMaxReheats || 1);
 
     if (!Number.isFinite(maxRh) || maxRh < 0 || maxRh > 50) {
-      setEditErr("Max reheats must be a sensible number (0–50).");
+      setEditErr("Max reheats must be a sensible number between 0 and 50.");
       return;
     }
 
@@ -363,7 +400,6 @@ export default function FridgeLogSection({ site, user, equipment, goBack }) {
 
   return (
     <div style={{ maxWidth: 900, margin: "0 auto", padding: "40px 20px", fontFamily: "'Inter', sans-serif" }}>
-      {/* Header */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
         <button
           onClick={goBack}
@@ -386,7 +422,6 @@ export default function FridgeLogSection({ site, user, equipment, goBack }) {
         <span style={chip("#eef2ff", "#3730a3")}>{site}</span>
       </div>
 
-      {/* Error / loading */}
       {errMsg && (
         <div
           style={{
@@ -404,7 +439,6 @@ export default function FridgeLogSection({ site, user, equipment, goBack }) {
         </div>
       )}
 
-      {/* Add batch */}
       <div
         style={{
           marginTop: 18,
@@ -416,7 +450,7 @@ export default function FridgeLogSection({ site, user, equipment, goBack }) {
       >
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
           <div style={{ fontWeight: 900, color: "#111" }}>Add batch to fridge/freezer</div>
-          <span style={chip("#f3f4f6", "#111827")}>Tracks use-by + reheats</span>
+          <span style={chip("#f3f4f6", "#111827")}>Manual fridge-only batch</span>
         </div>
 
         {coldEquipment.length === 0 ? (
@@ -424,54 +458,47 @@ export default function FridgeLogSection({ site, user, equipment, goBack }) {
             No fridges/freezers found for this venue. Add them in <strong>Add Equipment</strong>.
           </div>
         ) : (
-          <div style={{ marginTop: 14, display: "grid", gridTemplateColumns: "220px 1fr 170px", gap: 12 }}>
-            <select value={selectedEqId} onChange={(e) => setSelectedEqId(e.target.value)} style={{ ...inputStyle, cursor: "pointer" }}>
-              {coldEquipment.map((eq) => (
-                <option key={eq.id} value={eq.id}>
-                  {eq.name} ({eq.type})
-                </option>
-              ))}
-            </select>
+          <>
+            <div style={{ marginTop: 14, display: "grid", gridTemplateColumns: "220px 1fr 170px", gap: 12 }}>
+              <select value={selectedEqId} onChange={(e) => setSelectedEqId(e.target.value)} style={{ ...inputStyle, cursor: "pointer" }}>
+                {coldEquipment.map((eq) => (
+                  <option key={eq.id} value={eq.id}>
+                    {eq.name} ({eq.type})
+                  </option>
+                ))}
+              </select>
 
-            <input
-              value={itemName}
-              onChange={(e) => setItemName(e.target.value)}
-              placeholder="Item e.g. Sliced brisket (vac pack), pulled pork, chicken"
-              style={inputStyle}
-            />
+              <input
+                value={itemName}
+                onChange={(e) => setItemName(e.target.value)}
+                placeholder="Item e.g. Sliced brisket, pulled pork, chicken"
+                style={inputStyle}
+              />
 
-            <input
-              type="date"
-              value={useByYmd}
-              onChange={(e) => setUseByYmd(e.target.value)}
-              style={inputStyle}
-              title="Use-by date"
-            />
-          </div>
-        )}
+              <input
+                type="date"
+                value={useByYmd}
+                onChange={(e) => setUseByYmd(e.target.value)}
+                style={inputStyle}
+              />
+            </div>
 
-        {coldEquipment.length > 0 && (
-          <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "1fr auto", gap: 12, alignItems: "center" }}>
-            <input
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              placeholder="Notes (optional) e.g. opened for service / allergen / batch info"
-              style={inputStyle}
-            />
+            <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "1fr auto", gap: 12, alignItems: "center" }}>
+              <input
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                placeholder="Notes optional"
+                style={inputStyle}
+              />
 
-            <button
-              onClick={addBatch}
-              disabled={!canAdd}
-              style={btn(canAdd ? "#2563eb" : "#93c5fd", "#fff")}
-              title={!canAdd ? "Select equipment, enter item name, choose use-by" : "Add batch"}
-            >
-              <FaPlus /> {busy ? "Adding..." : "Add"}
-            </button>
-          </div>
+              <button onClick={addBatch} disabled={!canAdd} style={btn(canAdd ? "#2563eb" : "#93c5fd", "#fff")}>
+                <FaPlus /> {busy ? "Adding..." : "Add"}
+              </button>
+            </div>
+          </>
         )}
       </div>
 
-      {/* List */}
       <div
         style={{
           marginTop: 18,
@@ -485,11 +512,7 @@ export default function FridgeLogSection({ site, user, equipment, goBack }) {
           <div style={{ fontWeight: 900, color: "#111" }}>Batches</div>
 
           <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-            <button
-              onClick={() => setShowDiscarded((v) => !v)}
-              style={btn("#f3f4f6", "#111827")}
-              title="Toggle discarded items"
-            >
+            <button onClick={() => setShowDiscarded((v) => !v)} style={btn("#f3f4f6", "#111827")}>
               {showDiscarded ? "Hide discarded" : "Show discarded"}
             </button>
 
@@ -502,9 +525,7 @@ export default function FridgeLogSection({ site, user, equipment, goBack }) {
         </div>
 
         {!loading && filteredBatches.length === 0 ? (
-          <div style={{ marginTop: 12, color: "#6b7280", fontSize: 13 }}>
-            No batches logged yet.
-          </div>
+          <div style={{ marginTop: 12, color: "#6b7280", fontSize: 13 }}>No batches logged yet.</div>
         ) : (
           <div style={{ marginTop: 14, display: "grid", gap: 14 }}>
             {byEquipment.map(({ eq, rows }) => {
@@ -530,15 +551,13 @@ export default function FridgeLogSection({ site, user, equipment, goBack }) {
                         const flag = b._flag;
                         const dot = flagDot(flag);
                         const status = String(b.status || "IN_USE").toUpperCase();
-
-                        const useByDate = b.useBy?.toDate?.() || null;
+                        const useByDate = b.useBy?.toDate?.() || (b.useBy instanceof Date ? b.useBy : null);
                         const useByStr = useByDate ? toYmd(useByDate) : "—";
-
                         const opened = !!b.openedAt;
                         const reheats = Number(b.reheats || 0);
-                        const maxReheats = Number(b.maxReheats || 1);
-
+                        const maxReheats = Number(b.maxReheats || 0);
                         const isEditing = editingId === b.id;
+                        const isStock = b._source === "stock";
 
                         return (
                           <div
@@ -550,14 +569,16 @@ export default function FridgeLogSection({ site, user, equipment, goBack }) {
                               background: status === "DISCARDED" ? "#f9fafb" : "#fff",
                             }}
                           >
-                            {/* Row top */}
                             <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 12, alignItems: "center" }}>
                               <div style={{ minWidth: 0 }}>
                                 <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
                                   <FaCircle size={10} color={dot} title={flag} />
+
                                   <div style={{ fontWeight: 900, color: "#111", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                                     {b.itemName || "Untitled"}
                                   </div>
+
+                                  {isStock && <span style={chip("#dcfce7", "#166534")}>From stock</span>}
 
                                   {status === "DISCARDED" ? (
                                     <span style={chip("#e5e7eb", "#111827")}>DISCARDED</span>
@@ -567,9 +588,11 @@ export default function FridgeLogSection({ site, user, equipment, goBack }) {
 
                                   {opened && <span style={chip("#dcfce7", "#166534")}>Opened</span>}
 
-                                  <span style={chip("#f3f4f6", "#111827")}>
-                                    Reheats: {reheats}/{maxReheats}
-                                  </span>
+                                  {!isStock && (
+                                    <span style={chip("#f3f4f6", "#111827")}>
+                                      Reheats: {reheats}/{maxReheats}
+                                    </span>
+                                  )}
                                 </div>
 
                                 {b.notes ? (
@@ -577,68 +600,47 @@ export default function FridgeLogSection({ site, user, equipment, goBack }) {
                                 ) : null}
                               </div>
 
-                              {/* Actions */}
                               <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
-                                {!isEditing && (
-                                  <button onClick={() => startEdit(b)} style={btn("#2563eb", "#fff")} title="Edit batch">
+                                {!isEditing && !isStock && (
+                                  <button onClick={() => startEdit(b)} style={btn("#2563eb", "#fff")}>
                                     <FaEdit /> Edit
                                   </button>
                                 )}
 
-                                {status !== "DISCARDED" && !isEditing && (
+                                {status !== "DISCARDED" && !isEditing && !isStock && (
                                   <>
-                                    <button onClick={() => markOpened(b.id)} style={btn("#111827", "#fff")} title="Mark pack as opened">
+                                    <button onClick={() => markOpened(b.id)} style={btn("#111827", "#fff")}>
                                       Opened
                                     </button>
 
-                                    <button onClick={() => reheat(b.id, reheats, maxReheats)} style={btn("#f59e0b", "#111")} title="Log one reheat">
+                                    <button onClick={() => reheat(b.id, reheats, maxReheats)} style={btn("#f59e0b", "#111")}>
                                       <FaFireAlt /> Reheat
                                     </button>
 
-                                    <button onClick={() => discard(b.id)} style={btn("#dc2626", "#fff")} title="Discard this batch (soft delete)">
+                                    <button onClick={() => discard(b.id)} style={btn("#dc2626", "#fff")}>
                                       <FaTrash /> Discard
                                     </button>
                                   </>
                                 )}
 
-                                {!isEditing && (
-                                  <button
-                                    onClick={() => hardDelete(b.id)}
-                                    style={btn("#6b7280", "#fff")}
-                                    title="Delete permanently"
-                                  >
+                                {!isEditing && !isStock && (
+                                  <button onClick={() => hardDelete(b.id)} style={btn("#6b7280", "#fff")}>
                                     <FaTrash /> Delete
                                   </button>
                                 )}
                               </div>
                             </div>
 
-                            {/* Edit panel */}
                             {isEditing && (
                               <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid #e5e7eb" }}>
                                 {editErr && (
-                                  <div
-                                    style={{
-                                      marginBottom: 10,
-                                      padding: 12,
-                                      borderRadius: 12,
-                                      border: "1px solid #fee2e2",
-                                      background: "#fef2f2",
-                                      color: "#991b1b",
-                                      fontWeight: 800,
-                                      fontSize: 13,
-                                    }}
-                                  >
+                                  <div style={{ marginBottom: 10, padding: 12, borderRadius: 12, border: "1px solid #fee2e2", background: "#fef2f2", color: "#991b1b", fontWeight: 800, fontSize: 13 }}>
                                     {editErr}
                                   </div>
                                 )}
 
                                 <div style={{ display: "grid", gridTemplateColumns: "220px 1fr 170px", gap: 12 }}>
-                                  <select
-                                    value={editEqId}
-                                    onChange={(e) => setEditEqId(e.target.value)}
-                                    style={{ ...inputStyle, cursor: "pointer" }}
-                                  >
+                                  <select value={editEqId} onChange={(e) => setEditEqId(e.target.value)} style={{ ...inputStyle, cursor: "pointer" }}>
                                     {coldEquipment.map((eq2) => (
                                       <option key={eq2.id} value={eq2.id}>
                                         {eq2.name} ({eq2.type})
@@ -646,66 +648,28 @@ export default function FridgeLogSection({ site, user, equipment, goBack }) {
                                     ))}
                                   </select>
 
-                                  <input
-                                    value={editItemName}
-                                    onChange={(e) => setEditItemName(e.target.value)}
-                                    placeholder="Item name"
-                                    style={inputStyle}
-                                  />
+                                  <input value={editItemName} onChange={(e) => setEditItemName(e.target.value)} placeholder="Item name" style={inputStyle} />
 
-                                  <input
-                                    type="date"
-                                    value={editUseByYmd}
-                                    onChange={(e) => setEditUseByYmd(e.target.value)}
-                                    style={inputStyle}
-                                    title="Use-by date"
-                                  />
+                                  <input type="date" value={editUseByYmd} onChange={(e) => setEditUseByYmd(e.target.value)} style={inputStyle} />
                                 </div>
 
                                 <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "1fr 170px 170px", gap: 12 }}>
-                                  <input
-                                    value={editNotes}
-                                    onChange={(e) => setEditNotes(e.target.value)}
-                                    placeholder="Notes"
-                                    style={inputStyle}
-                                  />
+                                  <input value={editNotes} onChange={(e) => setEditNotes(e.target.value)} placeholder="Notes" style={inputStyle} />
 
-                                  <input
-                                    value={editMaxReheats}
-                                    onChange={(e) => setEditMaxReheats(e.target.value)}
-                                    style={inputStyle}
-                                    inputMode="numeric"
-                                    placeholder="Max reheats"
-                                    title="Max reheats"
-                                  />
+                                  <input value={editMaxReheats} onChange={(e) => setEditMaxReheats(e.target.value)} style={inputStyle} inputMode="numeric" placeholder="Max reheats" />
 
-                                  <select
-                                    value={editStatus}
-                                    onChange={(e) => setEditStatus(e.target.value)}
-                                    style={{ ...inputStyle, cursor: "pointer" }}
-                                    title="Status"
-                                  >
+                                  <select value={editStatus} onChange={(e) => setEditStatus(e.target.value)} style={{ ...inputStyle, cursor: "pointer" }}>
                                     <option value="IN_USE">IN_USE</option>
                                     <option value="DISCARDED">DISCARDED</option>
                                   </select>
                                 </div>
 
                                 <div style={{ marginTop: 12, display: "flex", gap: 10, justifyContent: "flex-end", flexWrap: "wrap" }}>
-                                  <button
-                                    onClick={cancelEdit}
-                                    disabled={editBusy}
-                                    style={btn("#e5e7eb", "#111827")}
-                                    title="Cancel"
-                                  >
+                                  <button onClick={cancelEdit} disabled={editBusy} style={btn("#e5e7eb", "#111827")}>
                                     <FaTimes /> Cancel
                                   </button>
 
-                                  <button
-                                    onClick={() => saveEdit(b.id)}
-                                    disabled={editBusy}
-                                    style={btn(editBusy ? "#93c5fd" : "#16a34a", "#fff")}
-                                    title="Save changes"
-                                  >
+                                  <button onClick={() => saveEdit(b.id)} disabled={editBusy} style={btn(editBusy ? "#93c5fd" : "#16a34a", "#fff")}>
                                     <FaSave /> {editBusy ? "Saving..." : "Save"}
                                   </button>
                                 </div>
