@@ -58,6 +58,7 @@ const siteKeysForSelected = (selectedSite) => {
 const COLLECTIONS = {
   completedChecklists: "completed",
   cleaningLogs: "cleaningRecords",
+  stockBatches: "stockBatches",
 };
 
 const TEMP_LIMITS = {
@@ -214,6 +215,7 @@ const SitePage = ({ user, onLogout }) => {
   const [completed, setCompleted] = useState([]);
   const [equipment, setEquipment] = useState([]);
   const [cleanLogs, setCleanLogs] = useState([]);
+  const [stockBatches, setStockBatches] = useState([]);
   const [checklists, setChecklists] = useState([]);
 
   const [tempChecks, setTempChecks] = useState([]);
@@ -306,6 +308,15 @@ const SitePage = ({ user, onLogout }) => {
       () => setCleanLogs([])
     );
 
+    const unsubStockBatches = onSnapshot(
+      collection(db, COLLECTIONS.stockBatches),
+      (snap) => {
+        const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() })).filter(filterForSelectedSite);
+        setStockBatches(rows);
+      },
+      () => setStockBatches([])
+    );
+
     return () => {
       unsubSiteTemplates();
       unsubTemplates();
@@ -313,6 +324,7 @@ const SitePage = ({ user, onLogout }) => {
       unsubDone();
       unsubEquip();
       unsubClean();
+      unsubStockBatches();
     };
   }, [selectedSite, filterForSelectedSite]);
 
@@ -459,17 +471,11 @@ const SitePage = ({ user, onLogout }) => {
     let cPass = 0;
     let cTotal = 0;
 
-cleanLogs.forEach((log) => {
-
-  if (!isToday(log.createdAt)) return;
-
-  // Every cleaning record added counts as completed
-
-  cPass += 1;
-
-  cTotal += 1;
-
-});
+    cleanLogs.forEach((log) => {
+      if (!isToday(log.createdAt)) return;
+      cPass += 1;
+      cTotal += 1;
+    });
 
     const totalPass = clPass + tPass + cPass;
     const total = clTotal + tTotal + cTotal;
@@ -485,12 +491,27 @@ cleanLogs.forEach((log) => {
     };
   }, [completed, equipment, cleanLogs]);
 
+  const stockAlerts = useMemo(() => {
+    return stockBatches.filter((batch) => {
+      const status = (batch.status || "active").toString().toLowerCase();
+      const remaining = Number(batch.quantityRemaining ?? batch.quantity ?? 0);
+
+      const isActive = status === "active";
+      const hasStockRemaining = remaining > 0;
+      const missingUseBy = !batch.useByDate;
+      const needsReview = batch.needsUseByReview === true;
+
+      return isActive && hasStockRemaining && (missingUseBy || needsReview);
+    });
+  }, [stockBatches]);
+
   const { buckets, totalDue, totalDone, percent, label } = overview;
 
   const actionWidgets = useMemo(() => {
     const failedTempsToday = todayCompliance.t.total - todayCompliance.t.pass;
     const overdueDailyChecks = buckets.daily.total - buckets.daily.done;
     const incompleteCleaning = todayCompliance.c.total - todayCompliance.c.pass;
+    const stockUseByAlerts = stockAlerts.length;
 
     return [
       {
@@ -511,8 +532,14 @@ cleanLogs.forEach((log) => {
         tone: incompleteCleaning > 0 ? "warn" : "good",
         onClick: () => setActiveSection("cleaning"),
       },
+      {
+        label: "Stock use-by alerts",
+        value: stockUseByAlerts,
+        tone: stockUseByAlerts > 0 ? "warn" : "good",
+        onClick: () => setActiveSection("stock"),
+      },
     ];
-  }, [todayCompliance, buckets]);
+  }, [todayCompliance, buckets, stockAlerts]);
 
   const resetSite = () => {
     setSelectedSite(null);
@@ -524,6 +551,7 @@ cleanLogs.forEach((log) => {
     setCompleted([]);
     setEquipment([]);
     setCleanLogs([]);
+    setStockBatches([]);
   };
 
   const toggleBtn = (active) => ({
@@ -789,7 +817,7 @@ cleanLogs.forEach((log) => {
           <div style={{ display: "grid", gap: 8 }}>
             <BreakdownRow color="#2563eb" label="Checklists" pct={todayCompliance.cl.pct} detail={`${todayCompliance.cl.pass}/${todayCompliance.cl.total} pass`} hint="Pass = no corrective action entered" />
             <BreakdownRow color="#ef4444" label="Temperatures" pct={todayCompliance.t.pct} detail={`${todayCompliance.t.pass}/${todayCompliance.t.total} pass`} hint="Fridge 0–5°C, Freezer ≤ -18°C" />
-            <BreakdownRow color="#10b981" label="Cleaning" pct={todayCompliance.c.pct} detail={`${todayCompliance.c.pass}/${todayCompliance.c.total} pass`} hint="Done vs missed" />
+            <BreakdownRow color="#10b981" label="Cleaning" pct={todayCompliance.c.pct} detail={`${todayCompliance.c.pass}/${todayCompliance.c.total} pass`} hint="Every cleaning record counts as completed" />
           </div>
 
           <div style={{ height: 1, background: "#e5e7eb", margin: "6px 0" }} />
