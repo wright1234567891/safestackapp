@@ -924,25 +924,47 @@ const sections = [
       </div>
 
 <div style={{ marginTop: "40px", display: "flex", justifyContent: "center" }}>
-  <button
-    onClick={resetSite}
-    style={{
-      padding: "12px 24px",
-      borderRadius: "10px",
-      cursor: "pointer",
-      backgroundColor: "#f3f4f6",
-      fontSize: "15px",
-      fontWeight: 500,
-      border: "none",
-      transition: "all 0.25s",
-    }}
-    onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#e0e3e8")}
-    onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#f3f4f6")}
-  >
-    Back
-  </button>
-</div>
+
+        <button
+
+          onClick={resetSite}
+
+          style={{
+
+            padding: "12px 24px",
+
+            borderRadius: "10px",
+
+            cursor: "pointer",
+
+            backgroundColor: "#f3f4f6",
+
+            fontSize: "15px",
+
+            fontWeight: 500,
+
+            border: "none",
+
+            transition: "all 0.25s",
+
+          }}
+
+          onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#e0e3e8")}
+
+          onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#f3f4f6")}
+
+        >
+
+          Back
+
+        </button>
+
+      </div>
+
+    </div>
+
   );
+
 };
 
 function BreakdownRow({ label, pct, detail, hint, color = "#2563eb" }) {
