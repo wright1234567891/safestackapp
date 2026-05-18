@@ -8,6 +8,8 @@ const STAFF_COLLECTION = "stafflogin";
 const LoginPage = ({ setUser }) => {
   const [staff, setStaff] = useState([]);
   const [selectedId, setSelectedId] = useState("");
+  const [pin, setPin] = useState("");
+  const [error, setError] = useState("");
 
   useEffect(() => {
     const unsub = onSnapshot(
@@ -15,8 +17,8 @@ const LoginPage = ({ setUser }) => {
       (snap) => {
         const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 
-        // Filter active client-side (avoids where/index quirks and keeps it simple)
-        const activeRows = rows.filter((s) => s.active === true);
+        // Treat missing active as active, same as StaffManager
+        const activeRows = rows.filter((s) => s.active !== false);
 
         setStaff(activeRows);
         setSelectedId((prev) => prev || activeRows[0]?.id || "");
@@ -36,10 +38,24 @@ const LoginPage = ({ setUser }) => {
   );
 
   const handleLogin = () => {
+    setError("");
+
     if (!selectedUser) return;
+
+    if (!selectedUser.pin) {
+      setError("No PIN set for this user. Ask a manager to add one.");
+      return;
+    }
+
+    if (pin.trim() !== String(selectedUser.pin).trim()) {
+      setError("Incorrect PIN.");
+      return;
+    }
+
     setUser({
       id: selectedUser.id,
       name: selectedUser.name,
+      email: selectedUser.email || "",
       role: selectedUser.role || "Staff",
     });
   };
@@ -50,7 +66,7 @@ const LoginPage = ({ setUser }) => {
         SafeStack Login
       </h1>
       <p style={{ textAlign: "center", color: "rgba(255,255,255,0.75)", marginBottom: 18 }}>
-        Choose your name to start logging
+        Choose your name and enter your PIN
       </p>
 
       <div style={{ background: "#fff", borderRadius: 16, padding: 18, boxShadow: "0 2px 6px rgba(0,0,0,0.20)" }}>
@@ -58,7 +74,11 @@ const LoginPage = ({ setUser }) => {
 
         <select
           value={selectedId}
-          onChange={(e) => setSelectedId(e.target.value)}
+          onChange={(e) => {
+            setSelectedId(e.target.value);
+            setPin("");
+            setError("");
+          }}
           style={{
             width: "100%",
             padding: 12,
@@ -76,19 +96,49 @@ const LoginPage = ({ setUser }) => {
           ))}
         </select>
 
+        <input
+          type="password"
+          inputMode="numeric"
+          value={pin}
+          onChange={(e) => {
+            setPin(e.target.value);
+            setError("");
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") handleLogin();
+          }}
+          placeholder="Enter PIN"
+          style={{
+            marginTop: 12,
+            width: "100%",
+            padding: 12,
+            borderRadius: 12,
+            border: "1px solid #e5e7eb",
+            background: "#fff",
+            fontSize: 15,
+            outline: "none",
+          }}
+        />
+
+        {error && (
+          <div style={{ marginTop: 10, fontSize: 13, color: "#b91c1c", fontWeight: 800 }}>
+            {error}
+          </div>
+        )}
+
         <button
           onClick={handleLogin}
-          disabled={!selectedUser}
+          disabled={!selectedUser || !pin.trim()}
           style={{
             marginTop: 14,
             width: "100%",
             padding: 12,
             borderRadius: 12,
             border: "none",
-            background: selectedUser ? "#2563eb" : "#93c5fd",
+            background: selectedUser && pin.trim() ? "#2563eb" : "#93c5fd",
             color: "#fff",
             fontWeight: 900,
-            cursor: selectedUser ? "pointer" : "not-allowed",
+            cursor: selectedUser && pin.trim() ? "pointer" : "not-allowed",
           }}
         >
           Login
@@ -96,7 +146,7 @@ const LoginPage = ({ setUser }) => {
 
         {!staff.length && (
           <div style={{ marginTop: 12, fontSize: 12, color: "#6b7280" }}>
-            No active users found. Add at least one in Staff Manager (or Firestore) and try again.
+            No active users found. Add at least one in Staff Manager and try again.
           </div>
         )}
       </div>

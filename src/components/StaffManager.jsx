@@ -55,8 +55,8 @@ const pad2 = (n) => String(n).padStart(2, "0");
 const startOfWeekMonday = (d) => {
   const x = new Date(d);
   x.setHours(0, 0, 0, 0);
-  const day = x.getDay(); // 0 Sun ... 6 Sat
-  const diff = (day === 0 ? -6 : 1) - day; // back to Monday
+  const day = x.getDay();
+  const diff = (day === 0 ? -6 : 1) - day;
   x.setDate(x.getDate() + diff);
   return x;
 };
@@ -120,7 +120,7 @@ const overlayStyle = {
 };
 
 const modalStyle = {
-  width: "min(760px, 100%)",
+  width: "min(860px, 100%)",
   background: "#fff",
   borderRadius: 16,
   boxShadow: "0 12px 30px rgba(0,0,0,0.25)",
@@ -128,31 +128,27 @@ const modalStyle = {
 };
 
 export default function StaffManager({ goBack }) {
-  // staff
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  const [pin, setPin] = useState("");
   const [role, setRole] = useState("Staff");
   const [staff, setStaff] = useState([]);
   const [busy, setBusy] = useState(false);
   const [showInactive, setShowInactive] = useState(false);
 
-  // edit staff modal
   const [editStaff, setEditStaff] = useState(null);
   const [editStaffName, setEditStaffName] = useState("");
   const [editStaffEmail, setEditStaffEmail] = useState("");
+  const [editStaffPin, setEditStaffPin] = useState("");
   const [editStaffRole, setEditStaffRole] = useState("Staff");
 
-  // tabs
-  const [tab, setTab] = useState("staff"); // "staff" | "rota"
+  const [tab, setTab] = useState("staff");
 
-  // rota
   const [weekStart, setWeekStart] = useState(() => startOfWeekMonday(new Date()));
   const [shifts, setShifts] = useState([]);
 
-  // view
-  const [rotaView, setRotaView] = useState("list"); // "list" | "grid"
+  const [rotaView, setRotaView] = useState("list");
 
-  // add/edit shift modal fields (shared)
   const [showAddShift, setShowAddShift] = useState(false);
   const [shiftStaffId, setShiftStaffId] = useState("");
   const [shiftRole, setShiftRole] = useState("Staff");
@@ -162,7 +158,6 @@ export default function StaffManager({ goBack }) {
   const [shiftNotes, setShiftNotes] = useState("");
   const [shiftLocation, setShiftLocation] = useState("");
 
-  // edit shift
   const [editShift, setEditShift] = useState(null);
 
   useEffect(() => {
@@ -211,12 +206,15 @@ export default function StaffManager({ goBack }) {
       await addDoc(collection(db, STAFF_COLLECTION), {
         name: name.trim(),
         email: email.trim() || "",
+        pin: pin.trim() || "",
         role,
         active: true,
         createdAt: new Date(),
       });
+
       setName("");
       setEmail("");
+      setPin("");
       setRole("Staff");
     } catch (e) {
       console.error("Add staff failed:", e);
@@ -239,12 +237,12 @@ export default function StaffManager({ goBack }) {
     }
   };
 
-  // edit staff
   const openEditStaff = (s) => {
     if (!s?.id) return;
     setEditStaff(s);
     setEditStaffName(s.name || "");
     setEditStaffEmail(s.email || "");
+    setEditStaffPin(s.pin || "");
     setEditStaffRole(s.role || "Staff");
   };
 
@@ -261,6 +259,7 @@ export default function StaffManager({ goBack }) {
       await updateDoc(doc(db, STAFF_COLLECTION, editStaff.id), {
         name: editStaffName.trim(),
         email: editStaffEmail.trim() || "",
+        pin: editStaffPin.trim() || "",
         role: editStaffRole || "Staff",
       });
       setEditStaff(null);
@@ -272,7 +271,6 @@ export default function StaffManager({ goBack }) {
     }
   };
 
-  // ---------- ROTA ----------
   const weekEnd = useMemo(() => addDays(weekStart, 7), [weekStart]);
   const days = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)), [weekStart]);
 
@@ -376,20 +374,20 @@ export default function StaffManager({ goBack }) {
       const startAt = combineDateTimeToTimestamp(shiftDate, shiftStart);
       const endAt = combineDateTimeToTimestamp(shiftDate, shiftEnd);
 
-await addDoc(collection(db, SHIFTS_COLLECTION), {
-  staffId: shiftStaffId,
-  staffName: s?.name || "",
-  staffEmail: (s?.email || "").trim().toLowerCase(),
-  role: shiftRole || s?.role || "Staff",
-  startAt,
-  endAt,
-  location: shiftLocation?.trim() || "",
-  notes: shiftNotes?.trim() || "",
-  status: "draft",
-  publishedAt: null,
-  emailedAt: null,
-  createdAt: Timestamp.now(),
-});
+      await addDoc(collection(db, SHIFTS_COLLECTION), {
+        staffId: shiftStaffId,
+        staffName: s?.name || "",
+        staffEmail: (s?.email || "").trim().toLowerCase(),
+        role: shiftRole || s?.role || "Staff",
+        startAt,
+        endAt,
+        location: shiftLocation?.trim() || "",
+        notes: shiftNotes?.trim() || "",
+        status: "draft",
+        publishedAt: null,
+        emailedAt: null,
+        createdAt: Timestamp.now(),
+      });
 
       setShowAddShift(false);
     } catch (e) {
@@ -420,9 +418,7 @@ await addDoc(collection(db, SHIFTS_COLLECTION), {
     try {
       await updateDoc(doc(db, SHIFTS_COLLECTION, shiftId), {
         status,
-        ...(status === "published"
-          ? { publishedAt: Timestamp.now(), emailedAt: null } // reset email flag on publish
-          : {}),
+        ...(status === "published" ? { publishedAt: Timestamp.now(), emailedAt: null } : {}),
       });
     } catch (e) {
       console.error("Set shift status failed:", e);
@@ -470,7 +466,6 @@ await addDoc(collection(db, SHIFTS_COLLECTION), {
     return `mailto:${staffEmail}?subject=${subject}&body=${body}`;
   };
 
-  // One email per staff member for all newly published (not emailed) shifts in a range
   const buildStaffRotaMailto = (staffEmail, staffName, shiftsList, rangeLabel) => {
     if (!staffEmail) return null;
 
@@ -520,7 +515,6 @@ await addDoc(collection(db, SHIFTS_COLLECTION), {
         return;
       }
 
-      // group by staffId
       const byStaff = new Map();
       for (const s of items) {
         const key = s.staffId || "unknown";
@@ -528,7 +522,6 @@ await addDoc(collection(db, SHIFTS_COLLECTION), {
         byStaff.get(key).push(s);
       }
 
-      // open one mailto per staff member, and ONLY mark those shifts as emailed
       let opened = 0;
       let missingEmailCount = 0;
       const shiftIdsToMark = [];
@@ -558,7 +551,6 @@ await addDoc(collection(db, SHIFTS_COLLECTION), {
         return;
       }
 
-      // Mark only the shifts we actually prepared an email for
       const batch = writeBatch(db);
       const now = Timestamp.now();
       shiftIdsToMark.forEach((id) => batch.update(doc(db, SHIFTS_COLLECTION, id), { emailedAt: now }));
@@ -608,24 +600,22 @@ await addDoc(collection(db, SHIFTS_COLLECTION), {
       const endAt = combineDateTimeToTimestamp(shiftDate, shiftEnd);
       const st = staffById.get(shiftStaffId);
 
-const patch = {
-  staffId: shiftStaffId,
-  staffName: st?.name || "",
-  staffEmail: (st?.email || "").trim().toLowerCase(),
-  role: shiftRole || st?.role || "Staff",
-  startAt,
-  endAt,
-  location: shiftLocation?.trim() || "",
-  notes: shiftNotes?.trim() || "",
-};
+      const patch = {
+        staffId: shiftStaffId,
+        staffName: st?.name || "",
+        staffEmail: (st?.email || "").trim().toLowerCase(),
+        role: shiftRole || st?.role || "Staff",
+        startAt,
+        endAt,
+        location: shiftLocation?.trim() || "",
+        notes: shiftNotes?.trim() || "",
+      };
 
-      // if editing a published shift, force it back into "new email" bucket
       if (editShift?.status === "published") {
         patch.emailedAt = null;
       }
 
       await updateDoc(doc(db, SHIFTS_COLLECTION, editShift.id), patch);
-
       setEditShift(null);
     } catch (e) {
       console.error("Edit shift failed:", e);
@@ -667,7 +657,6 @@ const patch = {
 
   return (
     <div style={{ maxWidth: 1100, margin: "0 auto", padding: "40px 20px", fontFamily: "'Inter', sans-serif" }}>
-      {/* Header row */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
         <button
           onClick={goBack}
@@ -708,7 +697,6 @@ const patch = {
         </div>
       </div>
 
-      {/* Tabs */}
       <div style={{ display: "flex", gap: 10, marginTop: 16, flexWrap: "wrap" }}>
         <button style={tabBtn(tab === "staff")} onClick={() => setTab("staff")}>
           Staff
@@ -740,10 +728,8 @@ const patch = {
         </div>
       </div>
 
-      {/* STAFF TAB */}
       {tab === "staff" ? (
         <>
-          {/* Add staff card */}
           <div
             style={{
               marginTop: 18,
@@ -758,9 +744,17 @@ const patch = {
               <span style={chip("#eef2ff", "#3730a3")}>Shows on login</span>
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 220px", gap: 12, marginTop: 14 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 160px 220px", gap: 12, marginTop: 14 }}>
               <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Name e.g. Sam" style={inputStyle} />
               <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email (optional)" style={inputStyle} />
+              <input
+                value={pin}
+                onChange={(e) => setPin(e.target.value)}
+                placeholder="PIN e.g. 1234"
+                type="password"
+                inputMode="numeric"
+                style={inputStyle}
+              />
               <select value={role} onChange={(e) => setRole(e.target.value)} style={{ ...inputStyle, cursor: "pointer" }}>
                 <option value="Manager">Manager</option>
                 <option value="Staff">Staff</option>
@@ -791,7 +785,6 @@ const patch = {
             </div>
           </div>
 
-          {/* List card */}
           <div
             style={{
               marginTop: 18,
@@ -830,11 +823,16 @@ const patch = {
                           {s.active !== false ? "Active" : "Inactive"}
                         </span>
                       </div>
-                      <div style={{ fontSize: 12, color: "#6b7280", marginTop: 6 }}>
+                      <div style={{ fontSize: 12, color: "#6b7280", marginTop: 6, display: "flex", gap: 8, flexWrap: "wrap" }}>
                         {s.email ? (
                           <span style={chip("#f3f4f6", "#111827")}>{s.email}</span>
                         ) : (
                           <span style={chip("#fff7ed", "#9a3412")}>No email</span>
+                        )}
+                        {s.pin ? (
+                          <span style={chip("#ecfdf5", "#166534")}>PIN set</span>
+                        ) : (
+                          <span style={chip("#fff7ed", "#9a3412")}>No PIN</span>
                         )}
                       </div>
                     </div>
@@ -856,7 +854,7 @@ const patch = {
                           color: "#111827",
                           whiteSpace: "nowrap",
                         }}
-                        title="Edit name / email / role"
+                        title="Edit name / email / PIN / role"
                       >
                         <FaPen /> Edit
                       </button>
@@ -887,23 +885,30 @@ const patch = {
             )}
           </div>
 
-          {/* Edit staff modal */}
           {editStaff ? (
             <div style={overlayStyle} onClick={() => !busy && setEditStaff(null)}>
               <div style={modalStyle} onClick={(e) => e.stopPropagation()}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
                   <div>
                     <div style={{ fontWeight: 900, color: "#111", fontSize: 16 }}>Edit staff</div>
-                    <div style={{ fontSize: 12, color: "#6b7280", marginTop: 4 }}>Update email so you can send shifts</div>
+                    <div style={{ fontSize: 12, color: "#6b7280", marginTop: 4 }}>Update staff login details and shift email</div>
                   </div>
                   <button style={toggleBtn(false)} onClick={() => !busy && setEditStaff(null)}>
                     Close
                   </button>
                 </div>
 
-                <div style={{ marginTop: 14, display: "grid", gridTemplateColumns: "1fr 1fr 220px", gap: 12 }}>
+                <div style={{ marginTop: 14, display: "grid", gridTemplateColumns: "1fr 1fr 160px 220px", gap: 12 }}>
                   <input value={editStaffName} onChange={(e) => setEditStaffName(e.target.value)} placeholder="Name" style={inputStyle} />
                   <input value={editStaffEmail} onChange={(e) => setEditStaffEmail(e.target.value)} placeholder="Email" style={inputStyle} />
+                  <input
+                    value={editStaffPin}
+                    onChange={(e) => setEditStaffPin(e.target.value)}
+                    placeholder="PIN e.g. 1234"
+                    type="password"
+                    inputMode="numeric"
+                    style={inputStyle}
+                  />
                   <select
                     value={editStaffRole}
                     onChange={(e) => setEditStaffRole(e.target.value)}
@@ -948,7 +953,6 @@ const patch = {
         </>
       ) : null}
 
-      {/* ROTA TAB */}
       {tab === "rota" ? (
         <>
           <div
@@ -1014,7 +1018,7 @@ const patch = {
                     fontWeight: 900,
                     cursor: busy ? "not-allowed" : "pointer",
                   }}
-                  title="One email per staff member for newly published (not yet emailed) shifts this week"
+                  title="One email per staff member for newly published shifts this week"
                 >
                   <FaEnvelope /> Email new (week)
                 </button>
@@ -1039,14 +1043,13 @@ const patch = {
                     fontWeight: 900,
                     cursor: busy ? "not-allowed" : "pointer",
                   }}
-                  title="One email per staff member for newly published (not yet emailed) shifts this month"
+                  title="One email per staff member for newly published shifts this month"
                 >
                   <FaEnvelope /> Email new (month)
                 </button>
               </div>
             </div>
 
-            {/* LIST VIEW */}
             {rotaView === "list" ? (
               <div style={{ marginTop: 14, display: "grid", gap: 10 }}>
                 {days.map((d) => {
@@ -1219,7 +1222,6 @@ const patch = {
               </div>
             ) : null}
 
-            {/* GRID VIEW */}
             {rotaView === "grid" ? (
               <div style={{ marginTop: 14, overflowX: "auto" }}>
                 <div style={{ minWidth: 980, border: "1px solid #e5e7eb", borderRadius: 14, overflow: "hidden" }}>
@@ -1350,7 +1352,6 @@ const patch = {
             ) : null}
           </div>
 
-          {/* Add shift modal */}
           {showAddShift ? (
             <div style={overlayStyle} onClick={() => !busy && setShowAddShift(false)}>
               <div style={modalStyle} onClick={(e) => e.stopPropagation()}>
@@ -1441,7 +1442,6 @@ const patch = {
             </div>
           ) : null}
 
-          {/* Edit shift modal */}
           {editShift ? (
             <div style={overlayStyle} onClick={() => !busy && setEditShift(null)}>
               <div style={modalStyle} onClick={(e) => e.stopPropagation()}>
