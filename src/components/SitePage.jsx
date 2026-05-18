@@ -128,6 +128,7 @@ const Donut = ({ size = 130, stroke = 12, percent = 0, label = "" }) => {
           transform={`rotate(-90 ${size / 2} ${size / 2})`}
         />
       </svg>
+
       <div
         style={{
           position: "absolute",
@@ -211,10 +212,8 @@ const SitePage = ({ user, onLogout }) => {
   const [siteTemplates, setSiteTemplates] = useState([]);
   const [legacyChecklists, setLegacyChecklists] = useState([]);
   const [completed, setCompleted] = useState([]);
-
   const [equipment, setEquipment] = useState([]);
   const [cleanLogs, setCleanLogs] = useState([]);
-
   const [checklists, setChecklists] = useState([]);
 
   const [tempChecks, setTempChecks] = useState([]);
@@ -482,6 +481,35 @@ const SitePage = ({ user, onLogout }) => {
     };
   }, [completed, equipment, cleanLogs]);
 
+  const { buckets, totalDue, totalDone, percent, label } = overview;
+
+  const actionWidgets = useMemo(() => {
+    const failedTempsToday = todayCompliance.t.total - todayCompliance.t.pass;
+    const overdueDailyChecks = buckets.daily.total - buckets.daily.done;
+    const incompleteCleaning = todayCompliance.c.total - todayCompliance.c.pass;
+
+    return [
+      {
+        label: "Overdue daily checks",
+        value: overdueDailyChecks,
+        tone: overdueDailyChecks > 0 ? "bad" : "good",
+        onClick: () => setActiveSection("checklists"),
+      },
+      {
+        label: "Failed temps today",
+        value: failedTempsToday,
+        tone: failedTempsToday > 0 ? "bad" : "good",
+        onClick: () => setActiveSection("temp"),
+      },
+      {
+        label: "Cleaning incomplete",
+        value: incompleteCleaning,
+        tone: incompleteCleaning > 0 ? "warn" : "good",
+        onClick: () => setActiveSection("cleaning"),
+      },
+    ];
+  }, [todayCompliance, buckets]);
+
   const resetSite = () => {
     setSelectedSite(null);
     setActiveSection(null);
@@ -493,6 +521,16 @@ const SitePage = ({ user, onLogout }) => {
     setEquipment([]);
     setCleanLogs([]);
   };
+
+  const toggleBtn = (active) => ({
+    padding: "8px 10px",
+    borderRadius: 10,
+    border: "1px solid #e5e7eb",
+    background: active ? "#2563eb" : "#fff",
+    color: active ? "#fff" : "#111",
+    fontWeight: 700,
+    cursor: "pointer",
+  });
 
   if (selectedSite && activeSection === "equipment") {
     return (
@@ -619,8 +657,6 @@ const SitePage = ({ user, onLogout }) => {
                 cursor: "pointer",
                 transition: "all 0.2s ease",
               }}
-              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#f9fafb")}
-              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#fff")}
             >
               <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
                 <FaMapMarkerAlt size={20} color="#ef4444" />
@@ -646,8 +682,6 @@ const SitePage = ({ user, onLogout }) => {
               cursor: "pointer",
               transition: "all 0.2s ease",
             }}
-            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#f9fafb")}
-            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#fff")}
           >
             <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
               <FaPlus size={18} color="#555" />
@@ -670,10 +704,7 @@ const SitePage = ({ user, onLogout }) => {
             color: "#fff",
             border: "none",
             fontWeight: "600",
-            transition: "all 0.2s",
           }}
-          onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#ff3f3f")}
-          onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#ff5f5f")}
         >
           Logout
         </button>
@@ -700,45 +731,6 @@ const SitePage = ({ user, onLogout }) => {
     { label: "Add Equipment", key: "equipment", icon: <FaTools size={24} color="#374151" /> },
   ];
 
-  const { buckets, totalDue, totalDone, percent, label } = overview;
-
-  const actionWidgets = useMemo(() => {
-    const failedTempsToday = todayCompliance.t.total - todayCompliance.t.pass;
-    const overdueDailyChecks = buckets.daily.total - buckets.daily.done;
-    const incompleteCleaning = todayCompliance.c.total - todayCompliance.c.pass;
-
-    return [
-      {
-        label: "Overdue daily checks",
-        value: overdueDailyChecks,
-        tone: overdueDailyChecks > 0 ? "bad" : "good",
-        onClick: () => setActiveSection("checklists"),
-      },
-      {
-        label: "Failed temps today",
-        value: failedTempsToday,
-        tone: failedTempsToday > 0 ? "bad" : "good",
-        onClick: () => setActiveSection("temp"),
-      },
-      {
-        label: "Cleaning incomplete",
-        value: incompleteCleaning,
-        tone: incompleteCleaning > 0 ? "warn" : "good",
-        onClick: () => setActiveSection("cleaning"),
-      },
-    ];
-  }, [todayCompliance, buckets]);
-
-  const toggleBtn = (active) => ({
-    padding: "8px 10px",
-    borderRadius: 10,
-    border: "1px solid #e5e7eb",
-    background: active ? "#2563eb" : "#fff",
-    color: active ? "#fff" : "#111",
-    fontWeight: 700,
-    cursor: "pointer",
-  });
-
   return (
     <div style={{ maxWidth: "900px", margin: "0 auto", padding: "40px 20px", fontFamily: "'Inter', sans-serif" }}>
       <style>{`
@@ -750,33 +742,11 @@ const SitePage = ({ user, onLogout }) => {
         }
       `}</style>
 
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          gap: 12,
-          flexWrap: "wrap",
-          marginBottom: 20,
-        }}
-      >
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 20 }}>
         <div>
           <h1 style={{ fontSize: "30px", margin: 0, color: "#111", fontWeight: 600 }}>{selectedSiteLabel}</h1>
 
-          <div
-            style={{
-              marginTop: 8,
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 8,
-              padding: "8px 12px",
-              borderRadius: 999,
-              background: "#f3f4f6",
-              color: "#111827",
-              fontSize: 13,
-              fontWeight: 700,
-            }}
-          >
+          <div style={{ marginTop: 8, display: "inline-flex", alignItems: "center", gap: 8, padding: "8px 12px", borderRadius: 999, background: "#f3f4f6", color: "#111827", fontSize: 13, fontWeight: 700 }}>
             <FaUserCheck />
             Logged in as {user?.name || "Unknown"} ({user?.role || "Staff"})
           </div>
@@ -784,51 +754,19 @@ const SitePage = ({ user, onLogout }) => {
 
         <button
           onClick={onLogout}
-          style={{
-            padding: "12px 18px",
-            borderRadius: "12px",
-            cursor: "pointer",
-            backgroundColor: "#dc2626",
-            fontSize: "14px",
-            color: "#fff",
-            fontWeight: 700,
-            border: "none",
-            transition: "all 0.2s ease",
-          }}
-          onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#b91c1c")}
-          onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#dc2626")}
+          style={{ padding: "12px 18px", borderRadius: "12px", cursor: "pointer", backgroundColor: "#dc2626", fontSize: "14px", color: "#fff", fontWeight: 700, border: "none" }}
         >
           Logout
         </button>
       </div>
 
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-          gap: 12,
-          marginBottom: 18,
-        }}
-      >
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12, marginBottom: 18 }}>
         {actionWidgets.map((w) => {
           const bg = w.tone === "bad" ? "#fee2e2" : w.tone === "warn" ? "#fef3c7" : "#dcfce7";
           const fg = w.tone === "bad" ? "#991b1b" : w.tone === "warn" ? "#92400e" : "#166534";
 
           return (
-            <button
-              key={w.label}
-              onClick={w.onClick}
-              style={{
-                background: bg,
-                color: fg,
-                border: "none",
-                borderRadius: 14,
-                padding: 16,
-                cursor: "pointer",
-                textAlign: "left",
-                boxShadow: "0 2px 6px rgba(0,0,0,0.08)",
-              }}
-            >
+            <button key={w.label} onClick={w.onClick} style={{ background: bg, color: fg, border: "none", borderRadius: 14, padding: 16, cursor: "pointer", textAlign: "left", boxShadow: "0 2px 6px rgba(0,0,0,0.08)" }}>
               <div style={{ fontSize: 28, fontWeight: 900 }}>{w.value}</div>
               <div style={{ fontSize: 13, fontWeight: 800 }}>{w.label}</div>
             </button>
@@ -836,49 +774,18 @@ const SitePage = ({ user, onLogout }) => {
         })}
       </div>
 
-      <div
-        className="overview-card"
-        style={{
-          background: "#fff",
-          borderRadius: 16,
-          padding: 18,
-          marginBottom: 22,
-          boxShadow: "0 2px 6px rgba(0,0,0,0.08)",
-        }}
-      >
+      <div className="overview-card" style={{ background: "#fff", borderRadius: 16, padding: 18, marginBottom: 22, boxShadow: "0 2px 6px rgba(0,0,0,0.08)" }}>
         <div className="overview-left">
-          <Donut
-            percent={todayCompliance.pct}
-            label={`Overall today (${todayCompliance.total ? `${todayCompliance.totalPass}/${todayCompliance.total}` : "0/0"})`}
-            size={isMobile ? 110 : 130}
-            stroke={isMobile ? 10 : 12}
-          />
+          <Donut percent={todayCompliance.pct} label={`Overall today (${todayCompliance.total ? `${todayCompliance.totalPass}/${todayCompliance.total}` : "0/0"})`} size={isMobile ? 110 : 130} stroke={isMobile ? 10 : 12} />
         </div>
 
         <div className="overview-right" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           <div style={{ fontWeight: 800, fontSize: 16, color: "#111" }}>Today’s Compliance</div>
+
           <div style={{ display: "grid", gap: 8 }}>
-            <BreakdownRow
-              color="#2563eb"
-              label="Checklists"
-              pct={todayCompliance.cl.pct}
-              detail={`${todayCompliance.cl.pass}/${todayCompliance.cl.total} pass`}
-              hint="Pass = no corrective action entered"
-            />
-            <BreakdownRow
-              color="#ef4444"
-              label="Temperatures"
-              pct={todayCompliance.t.pct}
-              detail={`${todayCompliance.t.pass}/${todayCompliance.t.total} pass`}
-              hint="Fridge 0–5°C, Freezer ≤ -18°C"
-            />
-            <BreakdownRow
-              color="#10b981"
-              label="Cleaning"
-              pct={todayCompliance.c.pct}
-              detail={`${todayCompliance.c.pass}/${todayCompliance.c.total} pass`}
-              hint="Done vs missed"
-            />
+            <BreakdownRow color="#2563eb" label="Checklists" pct={todayCompliance.cl.pct} detail={`${todayCompliance.cl.pass}/${todayCompliance.cl.total} pass`} hint="Pass = no corrective action entered" />
+            <BreakdownRow color="#ef4444" label="Temperatures" pct={todayCompliance.t.pct} detail={`${todayCompliance.t.pass}/${todayCompliance.t.total} pass`} hint="Fridge 0–5°C, Freezer ≤ -18°C" />
+            <BreakdownRow color="#10b981" label="Cleaning" pct={todayCompliance.c.pct} detail={`${todayCompliance.c.pass}/${todayCompliance.c.total} pass`} hint="Done vs missed" />
           </div>
 
           <div style={{ height: 1, background: "#e5e7eb", margin: "6px 0" }} />
@@ -911,28 +818,7 @@ const SitePage = ({ user, onLogout }) => {
           <div
             key={sec.key}
             onClick={() => setActiveSection(sec.key)}
-            style={{
-              background: "#fff",
-              borderRadius: "14px",
-              padding: "20px",
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              justifyContent: "center",
-              cursor: "pointer",
-              boxShadow: "0 2px 6px rgba(0,0,0,0.08)",
-              transition: "all 0.2s ease",
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.transform = "translateY(-4px)";
-              e.currentTarget.style.boxShadow = "0 6px 12px rgba(0,0,0,0.12)";
-              e.currentTarget.style.backgroundColor = "#f9fafb";
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.transform = "translateY(0)";
-              e.currentTarget.style.boxShadow = "0 2px 6px rgba(0,0,0,0.08)";
-              e.currentTarget.style.backgroundColor = "#fff";
-            }}
+            style={{ background: "#fff", borderRadius: "14px", padding: "20px", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", cursor: "pointer", boxShadow: "0 2px 6px rgba(0,0,0,0.08)" }}
           >
             <div style={{ marginBottom: "10px" }}>{sec.icon}</div>
             <div style={{ fontWeight: "600", fontSize: "15px", color: "#111", textAlign: "center" }}>{sec.label}</div>
@@ -941,21 +827,7 @@ const SitePage = ({ user, onLogout }) => {
       </div>
 
       <div style={{ marginTop: "40px", display: "flex", justifyContent: "center" }}>
-        <button
-          onClick={resetSite}
-          style={{
-            padding: "12px 24px",
-            borderRadius: "10px",
-            cursor: "pointer",
-            backgroundColor: "#f3f4f6",
-            fontSize: "15px",
-            fontWeight: 500,
-            border: "none",
-            transition: "all 0.25s",
-          }}
-          onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#e0e3e8")}
-          onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#f3f4f6")}
-        >
+        <button onClick={resetSite} style={{ padding: "12px 24px", borderRadius: "10px", cursor: "pointer", backgroundColor: "#f3f4f6", fontSize: "15px", fontWeight: 500, border: "none" }}>
           Back
         </button>
       </div>
