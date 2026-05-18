@@ -434,7 +434,8 @@ const StockSection = ({ site, goBack, user }) => {
       source,
       site,
       createdAt: serverTimestamp(),
-      createdBy: user?.uid || null,
+      createdBy: user?.name || user?.displayName || user?.email || "Unknown",
+createdByUid: user?.uid || user?.id || null,
     });
   };
 
