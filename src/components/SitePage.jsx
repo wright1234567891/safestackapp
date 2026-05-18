@@ -758,9 +758,66 @@ const sections = [
         }
       `}</style>
 
-      <h1 style={{ fontSize: "30px", marginBottom: "20px", color: "#111", fontWeight: 600, textAlign: "center" }}>
-        {selectedSiteLabel}
-      </h1>
+<div
+  style={{
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 12,
+    flexWrap: "wrap",
+    marginBottom: 20,
+  }}
+>
+  <div>
+    <h1
+      style={{
+        fontSize: "30px",
+        margin: 0,
+        color: "#111",
+        fontWeight: 600,
+      }}
+    >
+      {selectedSiteLabel}
+    </h1>
+
+    <div
+      style={{
+        marginTop: 8,
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 8,
+        padding: "8px 12px",
+        borderRadius: 999,
+        background: "#f3f4f6",
+        color: "#111827",
+        fontSize: 13,
+        fontWeight: 700,
+      }}
+    >
+      <FaUserCheck />
+      Logged in as {user?.name || "Unknown"} ({user?.role || "Staff"})
+    </div>
+  </div>
+
+  <button
+    onClick={onLogout}
+    style={{
+      padding: "12px 18px",
+      borderRadius: "12px",
+      cursor: "pointer",
+      backgroundColor: "#dc2626",
+      fontSize: "14px",
+      color: "#fff",
+      fontWeight: 700,
+      border: "none",
+      transition: "all 0.2s ease",
+    }}
+    onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#b91c1c")}
+    onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#dc2626")}
+  >
+    Logout
+  </button>
+</div>
 
       <div
         className="overview-card"
@@ -866,44 +923,25 @@ const sections = [
         ))}
       </div>
 
-      <div style={{ marginTop: "40px", display: "flex", gap: "16px", justifyContent: "center", flexWrap: "wrap" }}>
-        <button
-          onClick={resetSite}
-          style={{
-            padding: "12px 24px",
-            borderRadius: "10px",
-            cursor: "pointer",
-            backgroundColor: "#f3f4f6",
-            fontSize: "15px",
-            fontWeight: 500,
-            border: "none",
-            transition: "all 0.25s",
-          }}
-          onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#e0e3e8")}
-          onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#f3f4f6")}
-        >
-          Back
-        </button>
-        <button
-          onClick={onLogout}
-          style={{
-            padding: "12px 24px",
-            borderRadius: "10px",
-            cursor: "pointer",
-            backgroundColor: "#ff5f5f",
-            fontSize: "15px",
-            color: "#fff",
-            fontWeight: 500,
-            border: "none",
-            transition: "all 0.25s",
-          }}
-          onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#ff3f3f")}
-          onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#ff5f5f")}
-        >
-          Logout
-        </button>
-      </div>
-    </div>
+<div style={{ marginTop: "40px", display: "flex", justifyContent: "center" }}>
+  <button
+    onClick={resetSite}
+    style={{
+      padding: "12px 24px",
+      borderRadius: "10px",
+      cursor: "pointer",
+      backgroundColor: "#f3f4f6",
+      fontSize: "15px",
+      fontWeight: 500,
+      border: "none",
+      transition: "all 0.25s",
+    }}
+    onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#e0e3e8")}
+    onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#f3f4f6")}
+  >
+    Back
+  </button>
+</div>
   );
 };
 
