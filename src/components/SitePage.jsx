@@ -102,10 +102,18 @@ const chip = (bg, fg) => ({
   padding: "6px 10px",
   borderRadius: 999,
   fontSize: 12,
-  fontWeight: 700,
+  fontWeight: 800,
   background: bg,
   color: fg,
 });
+
+const norm = (s = "") =>
+  s
+    .toString()
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, " ")
+    .replace(/[^\w\s]/g, "");
 
 const Donut = ({ size = 130, stroke = 12, percent = 0, label = "" }) => {
   const clamped = Math.max(0, Math.min(100, percent || 0));
@@ -141,14 +149,14 @@ const Donut = ({ size = 130, stroke = 12, percent = 0, label = "" }) => {
           fontFamily: "'Inter', sans-serif",
         }}
       >
-        <div style={{ fontSize: 22, fontWeight: 800, color: "#111" }}>{Math.round(clamped)}%</div>
+        <div style={{ fontSize: 22, fontWeight: 900, color: "#111" }}>{Math.round(clamped)}%</div>
         <div style={{ fontSize: 12, color: "#6b7280", textAlign: "center" }}>{label}</div>
       </div>
     </div>
   );
 };
 
-const useIsMobile = (breakpoint = 520) => {
+const useIsMobile = (breakpoint = 760) => {
   const [isMobile, setIsMobile] = useState(() =>
     typeof window !== "undefined" ? window.innerWidth <= breakpoint : false
   );
@@ -161,14 +169,6 @@ const useIsMobile = (breakpoint = 520) => {
 
   return isMobile;
 };
-
-const norm = (s = "") =>
-  s
-    .toString()
-    .toLowerCase()
-    .trim()
-    .replace(/\s+/g, " ")
-    .replace(/[^\w\s]/g, "");
 
 const buildChecklistsFromTemplates = (siteId, siteTemplateRows, templatesRows) => {
   const tplMap = new Map(templatesRows.map((t) => [t.id, t]));
@@ -257,16 +257,12 @@ const SitePage = ({ user, onLogout }) => {
     const unsubLegacy = onSnapshot(
       collection(db, "checklists"),
       (snap) => {
-        const rows = snap.docs
-          .map((d) => ({ id: d.id, ...d.data() }))
-          .filter(filterForSelectedSite);
-
+        const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() })).filter(filterForSelectedSite);
         rows.sort((a, b) => {
           const ta = a.createdAt?.toMillis?.() ?? 0;
           const tb = b.createdAt?.toMillis?.() ?? 0;
           return tb - ta;
         });
-
         setLegacyChecklists(rows);
       },
       () => setLegacyChecklists([])
@@ -275,16 +271,12 @@ const SitePage = ({ user, onLogout }) => {
     const unsubDone = onSnapshot(
       collection(db, COLLECTIONS.completedChecklists),
       (snap) => {
-        const rows = snap.docs
-          .map((d) => ({ id: d.id, ...d.data() }))
-          .filter(filterForSelectedSite);
-
+        const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() })).filter(filterForSelectedSite);
         rows.sort((a, b) => {
           const ta = a.completedAt?.toMillis?.() ?? a.createdAt?.toMillis?.() ?? 0;
           const tb = b.completedAt?.toMillis?.() ?? b.createdAt?.toMillis?.() ?? 0;
           return tb - ta;
         });
-
         setCompleted(rows);
       },
       () => setCompleted([])
@@ -349,8 +341,8 @@ const SitePage = ({ user, onLogout }) => {
 
         if (cl._source === "template") {
           if (tid && tid === cl.id) return true;
-        } else {
-          if (cid && cid === cl.id) return true;
+        } else if (cid && cid === cl.id) {
+          return true;
         }
 
         const ct = norm(c.title || c.checklistTitle || "");
@@ -384,10 +376,14 @@ const SitePage = ({ user, onLogout }) => {
       if (freq === "daily") {
         buckets.daily.total += 1;
         if (latestDate && isSameDay(latestDate, today)) buckets.daily.done += 1;
-      } else if (freq === "weekly") {
+      }
+
+      if (freq === "weekly") {
         buckets.weekly.total += 1;
         if (latestDate && withinLastDays(latestDate, 7)) buckets.weekly.done += 1;
-      } else if (freq === "monthly") {
+      }
+
+      if (freq === "monthly") {
         buckets.monthly.total += 1;
         if (latestDate && sameMonth(latestDate, today)) buckets.monthly.done += 1;
       }
@@ -430,10 +426,12 @@ const SitePage = ({ user, onLogout }) => {
     completed.forEach((run) => {
       const t = run.completedAt || run.createdAt;
       if (!isToday(t)) return;
+
       const qs = Array.isArray(run.questions) ? run.questions : [];
       qs.forEach((q) => {
         const hasAnswer = (q?.answer ?? "") !== "";
         if (!hasAnswer) return;
+
         const corrective = (q?.corrective || "").toString().trim();
         const isPass = corrective.length === 0;
         if (isPass) clPass += 1;
@@ -451,10 +449,12 @@ const SitePage = ({ user, onLogout }) => {
         const recs = Array.isArray(eq.records) ? eq.records : [];
         recs.forEach((r) => {
           if (r?.date !== todayStr) return;
+
           const temp = Number(r?.temp);
           if (Number.isNaN(temp)) return;
 
           let pass = false;
+
           if (eq.type === "Fridge") {
             const { min, max } = TEMP_LIMITS.Fridge;
             pass = temp >= min && temp <= max;
@@ -554,26 +554,29 @@ const SitePage = ({ user, onLogout }) => {
     setStockBatches([]);
   };
 
-  const toggleBtn = (active) => ({
-    padding: "8px 10px",
-    borderRadius: 10,
-    border: "1px solid #e5e7eb",
-    background: active ? "#2563eb" : "#fff",
-    color: active ? "#fff" : "#111",
-    fontWeight: 700,
-    cursor: "pointer",
-  });
+  const sections = [
+    { label: "Checklists", key: "checklists", icon: <FaClipboardCheck size={18} /> },
+    { label: "Temp Checks", key: "temp", icon: <FaThermometerHalf size={18} /> },
+    { label: "Fridge Log", key: "fridgeLog", icon: <FaThermometerHalf size={18} /> },
+    { label: "Waste Log", key: "wasteLog", icon: <FaTrashAlt size={18} /> },
+    { label: "My Rota", key: "myRota", icon: <FaRegCalendarCheck size={18} /> },
+    { label: "How To", key: "howto", icon: <FaUtensils size={18} /> },
+    { label: "Cleaning", key: "cleaning", icon: <FaBroom size={18} /> },
+    { label: "Cooking & Cooling", key: "cooking", icon: <FaDrumstickBite size={18} /> },
+    { label: "Stock", key: "stock", icon: <FaBoxes size={18} /> },
+    { label: "Reports", key: "reports", icon: <FaChartBar size={18} /> },
+    { label: "Dishes", key: "dishes", icon: <FaUtensils size={18} /> },
+    { label: "Staff Training", key: "training", icon: <FaUserGraduate size={18} /> },
+    ...(isManager ? [{ label: "Staff", key: "staff", icon: <FaUserCheck size={18} /> }] : []),
+    { label: "HACCP Dashboard", key: "haccpDashboard", icon: <FaExclamationTriangle size={18} /> },
+    { label: "CCPs", key: "ccp", icon: <FaExclamationTriangle size={18} /> },
+    { label: "Add Equipment", key: "equipment", icon: <FaTools size={18} /> },
+  ];
+
+  const openSection = (sectionKey) => setActiveSection(sectionKey);
 
   if (selectedSite && activeSection === "equipment") {
-    return (
-      <EquipmentManager
-        goBack={() => setActiveSection(null)}
-        tempChecks={tempChecks}
-        setTempChecks={setTempChecks}
-        site={selectedSite}
-        user={user}
-      />
-    );
+    return <EquipmentManager goBack={() => setActiveSection(null)} tempChecks={tempChecks} setTempChecks={setTempChecks} site={selectedSite} user={user} />;
   }
 
   if (selectedSite && activeSection === "checklists") {
@@ -585,15 +588,7 @@ const SitePage = ({ user, onLogout }) => {
       (e) => selectedSiteKeys.includes(e.site) && (e.type === "Fridge" || e.type === "Freezer")
     );
 
-    return (
-      <TempSection
-        goBack={() => setActiveSection(null)}
-        tempChecks={siteTempChecks}
-        setTempChecks={setTempChecks}
-        site={selectedSite}
-        user={user}
-      />
-    );
+    return <TempSection goBack={() => setActiveSection(null)} tempChecks={siteTempChecks} setTempChecks={setTempChecks} site={selectedSite} user={user} />;
   }
 
   if (selectedSite && activeSection === "fridgeLog") {
@@ -623,15 +618,7 @@ const SitePage = ({ user, onLogout }) => {
   if (selectedSite && activeSection === "cooking") {
     const cookingEquipment = tempChecks.filter((e) => selectedSiteKeys.includes(e.site) && e.type === "Cooking");
 
-    return (
-      <CookingSection
-        goBack={() => setActiveSection(null)}
-        cookingEquipment={cookingEquipment}
-        setTempChecks={setTempChecks}
-        site={selectedSite}
-        user={user}
-      />
-    );
+    return <CookingSection goBack={() => setActiveSection(null)} cookingEquipment={cookingEquipment} setTempChecks={setTempChecks} site={selectedSite} user={user} />;
   }
 
   if (selectedSite && activeSection === "stock") {
@@ -668,218 +655,402 @@ const SitePage = ({ user, onLogout }) => {
 
   if (!selectedSite) {
     return (
-      <div style={{ maxWidth: "500px", margin: "0 auto", padding: "40px 20px", fontFamily: "'Inter', sans-serif" }}>
-        <h1 style={{ fontSize: "30px", fontWeight: "700", marginBottom: "25px", color: "#111", textAlign: "center" }}>
-          Venues
-        </h1>
+      <div style={{ minHeight: "100vh", background: "#0f4f4c", padding: 24, fontFamily: "'Inter', sans-serif" }}>
+        <div style={{ maxWidth: 520, margin: "0 auto", padding: "34px 0" }}>
+          <div style={{ textAlign: "center", color: "#fff", marginBottom: 24 }}>
+            <div style={{ fontSize: 32, fontWeight: 950 }}>SafeStack</div>
+            <div style={{ marginTop: 6, opacity: 0.85, fontSize: 14 }}>Choose a venue</div>
+          </div>
 
-        <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-          {sites.map((s) => (
-            <div
-              key={s.id}
-              onClick={() => setSelectedSite(s.id)}
+          <div style={{ display: "grid", gap: 14 }}>
+            {sites.map((s) => (
+              <button
+                key={s.id}
+                onClick={() => setSelectedSite(s.id)}
+                style={{
+                  width: "100%",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  background: "#fff",
+                  border: "none",
+                  borderRadius: 20,
+                  padding: "18px 20px",
+                  boxShadow: "0 14px 35px rgba(0,0,0,0.18)",
+                  cursor: "pointer",
+                  textAlign: "left",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <span
+                    style={{
+                      width: 38,
+                      height: 38,
+                      borderRadius: 14,
+                      background: "#ecfeff",
+                      display: "grid",
+                      placeItems: "center",
+                      color: "#0f766e",
+                    }}
+                  >
+                    <FaMapMarkerAlt />
+                  </span>
+                  <div>
+                    <div style={{ fontWeight: 900, color: "#111827" }}>{s.label}</div>
+                    <div style={{ fontSize: 12, color: "#6b7280" }}>Open site dashboard</div>
+                  </div>
+                </div>
+                <FaChevronRight color="#9ca3af" />
+              </button>
+            ))}
+
+            <button
+              onClick={() => alert("Setup new venue flow coming soon")}
               style={{
+                width: "100%",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "space-between",
-                background: "#fff",
-                borderRadius: "12px",
-                padding: "16px 20px",
-                boxShadow: "0 2px 6px rgba(0,0,0,0.08)",
+                background: "rgba(255,255,255,0.14)",
+                color: "#fff",
+                border: "1px solid rgba(255,255,255,0.24)",
+                borderRadius: 20,
+                padding: "18px 20px",
                 cursor: "pointer",
-                transition: "all 0.2s ease",
+                textAlign: "left",
               }}
             >
-              <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                <FaMapMarkerAlt size={20} color="#ef4444" />
-                <div>
-                  <div style={{ fontWeight: "600", fontSize: "16px", color: "#111" }}>{s.label}</div>
-                  <div style={{ fontSize: "13px", color: "#666" }}>Tap to enter venue</div>
-                </div>
-              </div>
-              <FaChevronRight size={16} color="#999" />
-            </div>
-          ))}
+              <span style={{ display: "flex", alignItems: "center", gap: 12, fontWeight: 900 }}>
+                <FaPlus /> Set up a new venue
+              </span>
+              <FaChevronRight />
+            </button>
+          </div>
 
-          <div
-            onClick={() => alert("Setup new venue flow coming soon")}
+          <button
+            onClick={onLogout}
             style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              background: "#fff",
-              borderRadius: "12px",
-              padding: "16px 20px",
-              boxShadow: "0 2px 6px rgba(0,0,0,0.08)",
+              marginTop: 22,
+              width: "100%",
+              padding: "14px 18px",
+              borderRadius: 16,
               cursor: "pointer",
-              transition: "all 0.2s ease",
+              backgroundColor: "#dc2626",
+              color: "#fff",
+              border: "none",
+              fontWeight: 900,
             }}
           >
-            <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-              <FaPlus size={18} color="#555" />
-              <div style={{ fontWeight: "600", fontSize: "16px", color: "#111" }}>Set up a new venue</div>
-            </div>
-            <FaChevronRight size={16} color="#999" />
-          </div>
+            Logout
+          </button>
         </div>
-
-        <button
-          onClick={onLogout}
-          style={{
-            marginTop: "30px",
-            width: "100%",
-            padding: "12px 20px",
-            borderRadius: "10px",
-            cursor: "pointer",
-            backgroundColor: "#ff5f5f",
-            fontSize: "16px",
-            color: "#fff",
-            border: "none",
-            fontWeight: "600",
-          }}
-        >
-          Logout
-        </button>
       </div>
     );
   }
 
-  const sections = [
-    { label: "Checklists", key: "checklists", icon: <FaClipboardCheck size={24} color="#2563eb" /> },
-    { label: "Temp Checks", key: "temp", icon: <FaThermometerHalf size={24} color="#ef4444" /> },
-    { label: "Fridge Log", key: "fridgeLog", icon: <FaThermometerHalf size={24} color="#0ea5e9" /> },
-    { label: "Waste Log", key: "wasteLog", icon: <FaTrashAlt size={24} color="#111" /> },
-    { label: "My Rota", key: "myRota", icon: <FaRegCalendarCheck size={24} color="#111827" /> },
-    { label: "How To", key: "howto", icon: <FaUtensils size={24} /> },
-    { label: "Cleaning", key: "cleaning", icon: <FaBroom size={24} color="#10b981" /> },
-    { label: "Cooking & Cooling", key: "cooking", icon: <FaDrumstickBite size={24} color="#f59e0b" /> },
-    { label: "Stock", key: "stock", icon: <FaBoxes size={24} color="#6366f1" /> },
-    { label: "Reports", key: "reports", icon: <FaChartBar size={24} color="#9333ea" /> },
-    { label: "Dishes", key: "dishes", icon: <FaUtensils size={24} color="#0ea5e9" /> },
-    { label: "Staff Training", key: "training", icon: <FaUserGraduate size={24} color="#0ea5e9" /> },
-    ...(isManager ? [{ label: "Staff", key: "staff", icon: <FaUserCheck size={24} color="#111" /> }] : []),
-    { label: "HACCP Dashboard", key: "haccpDashboard", icon: <FaExclamationTriangle size={24} color="#16a34a" /> },
-    { label: "CCPs", key: "ccp", icon: <FaExclamationTriangle size={24} color="#dc2626" /> },
-    { label: "Add Equipment", key: "equipment", icon: <FaTools size={24} color="#374151" /> },
-  ];
-
   return (
-    <div style={{ maxWidth: "900px", margin: "0 auto", padding: "40px 20px", fontFamily: "'Inter', sans-serif" }}>
+    <div style={{ minHeight: "100vh", background: "#0f4f4c", fontFamily: "'Inter', sans-serif", padding: isMobile ? 14 : 24 }}>
       <style>{`
-        .overview-card { display:grid; grid-template-columns: auto 1fr; gap:16px; align-items:center; }
-        @media (max-width: 520px) {
-          .overview-card { grid-template-columns: 1fr; }
-          .overview-right { order: 2; }
-          .overview-left { order: 1; display:flex; justify-content:center; }
+        .safestack-shell {
+          max-width: 1240px;
+          margin: 0 auto;
+          display: grid;
+          grid-template-columns: 260px 1fr;
+          gap: 18px;
+        }
+
+        .safestack-sidebar {
+          background: rgba(255,255,255,0.12);
+          border: 1px solid rgba(255,255,255,0.16);
+          border-radius: 28px;
+          padding: 18px;
+          color: #fff;
+          min-height: calc(100vh - 48px);
+          position: sticky;
+          top: 24px;
+        }
+
+        .safestack-main {
+          min-width: 0;
+        }
+
+        .safestack-card {
+          background: #fff;
+          border-radius: 28px;
+          box-shadow: 0 18px 45px rgba(0,0,0,0.14);
+        }
+
+        .nav-button:hover,
+        .tile-button:hover,
+        .alert-button:hover {
+          transform: translateY(-2px);
+        }
+
+        @media (max-width: 760px) {
+          .safestack-shell {
+            grid-template-columns: 1fr;
+          }
+
+          .safestack-sidebar {
+            position: relative;
+            top: 0;
+            min-height: auto;
+          }
+
+          .nav-list {
+            display: grid !important;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+          }
         }
       `}</style>
 
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 20 }}>
-        <div>
-          <h1 style={{ fontSize: "30px", margin: 0, color: "#111", fontWeight: 600 }}>{selectedSiteLabel}</h1>
-
-          <div style={{ marginTop: 8, display: "inline-flex", alignItems: "center", gap: 8, padding: "8px 12px", borderRadius: 999, background: "#f3f4f6", color: "#111827", fontSize: 13, fontWeight: 700 }}>
-            <FaUserCheck />
-            Logged in as {user?.name || "Unknown"} ({user?.role || "Staff"})
-          </div>
-        </div>
-
-        <button
-          onClick={onLogout}
-          style={{ padding: "12px 18px", borderRadius: "12px", cursor: "pointer", backgroundColor: "#dc2626", fontSize: "14px", color: "#fff", fontWeight: 700, border: "none" }}
-        >
-          Logout
-        </button>
-      </div>
-
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12, marginBottom: 18 }}>
-        {actionWidgets.map((w) => {
-          const bg = w.tone === "bad" ? "#fee2e2" : w.tone === "warn" ? "#fef3c7" : "#dcfce7";
-          const fg = w.tone === "bad" ? "#991b1b" : w.tone === "warn" ? "#92400e" : "#166534";
-
-          return (
-            <button key={w.label} onClick={w.onClick} style={{ background: bg, color: fg, border: "none", borderRadius: 14, padding: 16, cursor: "pointer", textAlign: "left", boxShadow: "0 2px 6px rgba(0,0,0,0.08)" }}>
-              <div style={{ fontSize: 28, fontWeight: 900 }}>{w.value}</div>
-              <div style={{ fontSize: 13, fontWeight: 800 }}>{w.label}</div>
-            </button>
-          );
-        })}
-      </div>
-
-      <div className="overview-card" style={{ background: "#fff", borderRadius: 16, padding: 18, marginBottom: 22, boxShadow: "0 2px 6px rgba(0,0,0,0.08)" }}>
-        <div className="overview-left">
-          <Donut percent={todayCompliance.pct} label={`Overall today (${todayCompliance.total ? `${todayCompliance.totalPass}/${todayCompliance.total}` : "0/0"})`} size={isMobile ? 110 : 130} stroke={isMobile ? 10 : 12} />
-        </div>
-
-        <div className="overview-right" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          <div style={{ fontWeight: 800, fontSize: 16, color: "#111" }}>Today’s Compliance</div>
-
-          <div style={{ display: "grid", gap: 8 }}>
-            <BreakdownRow color="#2563eb" label="Checklists" pct={todayCompliance.cl.pct} detail={`${todayCompliance.cl.pass}/${todayCompliance.cl.total} pass`} hint="Pass = no corrective action entered" />
-            <BreakdownRow color="#ef4444" label="Temperatures" pct={todayCompliance.t.pct} detail={`${todayCompliance.t.pass}/${todayCompliance.t.total} pass`} hint="Fridge 0–5°C, Freezer ≤ -18°C" />
-            <BreakdownRow color="#10b981" label="Cleaning" pct={todayCompliance.c.pct} detail={`${todayCompliance.c.pass}/${todayCompliance.c.total} pass`} hint="Every cleaning record counts as completed" />
-          </div>
-
-          <div style={{ height: 1, background: "#e5e7eb", margin: "6px 0" }} />
-
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-            <div style={{ fontWeight: 800, fontSize: 16, color: "#111" }}>Checklist Overview</div>
-            <div style={{ display: "flex", gap: 8 }}>
-              <button onClick={() => setOverviewMode("ALL")} style={toggleBtn(overviewMode === "ALL")}>All</button>
-              <button onClick={() => setOverviewMode("DAILY")} style={toggleBtn(overviewMode === "DAILY")}>Daily</button>
-              <button onClick={() => setOverviewMode("WEEKLY")} style={toggleBtn(overviewMode === "WEEKLY")}>Weekly</button>
-              <button onClick={() => setOverviewMode("MONTHLY")} style={toggleBtn(overviewMode === "MONTHLY")}>Monthly</button>
+      <div className="safestack-shell">
+        <aside className="safestack-sidebar">
+          <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 18 }}>
+            <div
+              style={{
+                width: 46,
+                height: 46,
+                borderRadius: 16,
+                background: "#fff",
+                color: "#0f4f4c",
+                display: "grid",
+                placeItems: "center",
+                fontWeight: 950,
+                fontSize: 20,
+              }}
+            >
+              SS
+            </div>
+            <div>
+              <div style={{ fontWeight: 950, fontSize: 20 }}>SafeStack</div>
+              <div style={{ fontSize: 12, opacity: 0.8 }}>Food safety dashboard</div>
             </div>
           </div>
 
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <span style={chip("#ecfeff", "#075985")}>Daily: <strong>{buckets.daily.done}/{buckets.daily.total}</strong></span>
-            <span style={chip("#f5f3ff", "#5b21b6")}>Weekly: <strong>{buckets.weekly.done}/{buckets.weekly.total}</strong></span>
-            <span style={chip("#fef3c7", "#92400e")}>Monthly: <strong>{buckets.monthly.done}/{buckets.monthly.total}</strong></span>
-            {totalDue === 0 && <span style={chip("#e5e7eb", "#111827")}>No scheduled checklists</span>}
+          <div style={{ padding: 14, borderRadius: 20, background: "rgba(255,255,255,0.12)", marginBottom: 16 }}>
+            <div style={{ fontSize: 12, opacity: 0.75, fontWeight: 800 }}>VENUE</div>
+            <div style={{ fontSize: 18, fontWeight: 950, marginTop: 4 }}>{selectedSiteLabel}</div>
+            <div style={{ marginTop: 8, fontSize: 12, opacity: 0.8 }}>
+              {user?.name || "Unknown"} · {user?.role || "Staff"}
+            </div>
           </div>
 
-          <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 2 }}>
-            Scheduled progress: {Math.round(percent)}% ({totalDone}/{totalDue || 0}) • {label}
+          <div className="nav-list" style={{ display: "grid", gap: 8 }}>
+            {sections.map((sec) => (
+              <button
+                key={sec.key}
+                className="nav-button"
+                onClick={() => openSection(sec.key)}
+                style={{
+                  width: "100%",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  border: "none",
+                  borderRadius: 16,
+                  padding: "11px 12px",
+                  cursor: "pointer",
+                  background: "rgba(255,255,255,0.10)",
+                  color: "#fff",
+                  fontWeight: 850,
+                  transition: "all 0.18s ease",
+                  textAlign: "left",
+                }}
+              >
+                <span style={{ width: 24, display: "grid", placeItems: "center" }}>{sec.icon}</span>
+                <span style={{ fontSize: 13 }}>{sec.label}</span>
+              </button>
+            ))}
           </div>
-        </div>
-      </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "20px" }}>
-        {sections.map((sec) => (
-          <div
-            key={sec.key}
-            onClick={() => setActiveSection(sec.key)}
-            style={{ background: "#fff", borderRadius: "14px", padding: "20px", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", cursor: "pointer", boxShadow: "0 2px 6px rgba(0,0,0,0.08)" }}
-          >
-            <div style={{ marginBottom: "10px" }}>{sec.icon}</div>
-            <div style={{ fontWeight: "600", fontSize: "15px", color: "#111", textAlign: "center" }}>{sec.label}</div>
+          <div style={{ display: "grid", gap: 10, marginTop: 18 }}>
+            <button
+              onClick={resetSite}
+              style={{
+                border: "none",
+                borderRadius: 16,
+                padding: "12px 14px",
+                background: "#fff",
+                color: "#0f4f4c",
+                fontWeight: 950,
+                cursor: "pointer",
+              }}
+            >
+              Change venue
+            </button>
+
+            <button
+              onClick={onLogout}
+              style={{
+                border: "1px solid rgba(255,255,255,0.18)",
+                borderRadius: 16,
+                padding: "12px 14px",
+                background: "rgba(220,38,38,0.9)",
+                color: "#fff",
+                fontWeight: 950,
+                cursor: "pointer",
+              }}
+            >
+              Logout
+            </button>
           </div>
-        ))}
-      </div>
+        </aside>
 
-      <div style={{ marginTop: "40px", display: "flex", justifyContent: "center" }}>
-        <button onClick={resetSite} style={{ padding: "12px 24px", borderRadius: "10px", cursor: "pointer", backgroundColor: "#f3f4f6", fontSize: "15px", fontWeight: 500, border: "none" }}>
-          Back
-        </button>
+        <main className="safestack-main">
+          <div className="safestack-card" style={{ padding: isMobile ? 18 : 26, marginBottom: 18 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 18, flexWrap: "wrap" }}>
+              <div>
+                <div style={{ ...chip("#ecfeff", "#0f766e"), marginBottom: 10 }}>Live site overview</div>
+                <h1 style={{ margin: 0, fontSize: isMobile ? 28 : 38, color: "#111827", fontWeight: 950 }}>
+                  {selectedSiteLabel}
+                </h1>
+                <div style={{ marginTop: 8, color: "#6b7280", fontSize: 14 }}>
+                  Daily checks, temperatures, cleaning and stock alerts in one place.
+                </div>
+              </div>
+
+              <Donut
+                percent={todayCompliance.pct}
+                label={`Today ${todayCompliance.total ? `${todayCompliance.totalPass}/${todayCompliance.total}` : "0/0"}`}
+                size={isMobile ? 112 : 132}
+                stroke={12}
+              />
+            </div>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(185px, 1fr))", gap: 14, marginBottom: 18 }}>
+            {actionWidgets.map((w) => {
+              const bg = w.tone === "bad" ? "#fee2e2" : w.tone === "warn" ? "#fef3c7" : "#dcfce7";
+              const fg = w.tone === "bad" ? "#991b1b" : w.tone === "warn" ? "#92400e" : "#166534";
+
+              return (
+                <button
+                  key={w.label}
+                  className="alert-button"
+                  onClick={w.onClick}
+                  style={{
+                    background: bg,
+                    color: fg,
+                    border: "none",
+                    borderRadius: 24,
+                    padding: 18,
+                    cursor: "pointer",
+                    textAlign: "left",
+                    boxShadow: "0 12px 30px rgba(0,0,0,0.12)",
+                    transition: "all 0.18s ease",
+                  }}
+                >
+                  <div style={{ fontSize: 34, fontWeight: 950 }}>{w.value}</div>
+                  <div style={{ fontSize: 13, fontWeight: 900 }}>{w.label}</div>
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="safestack-card" style={{ padding: isMobile ? 18 : 24, marginBottom: 18 }}>
+            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "180px 1fr", gap: 20, alignItems: "center" }}>
+              <div style={{ display: "flex", justifyContent: "center" }}>
+                <Donut
+                  percent={percent}
+                  label={label}
+                  size={isMobile ? 120 : 148}
+                  stroke={12}
+                />
+              </div>
+
+              <div>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+                  <div>
+                    <div style={{ fontSize: 20, fontWeight: 950, color: "#111827" }}>Checklist progress</div>
+                    <div style={{ fontSize: 13, color: "#6b7280", marginTop: 4 }}>
+                      Scheduled progress: {Math.round(percent)}% ({totalDone}/{totalDue || 0})
+                    </div>
+                  </div>
+
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    {["ALL", "DAILY", "WEEKLY", "MONTHLY"].map((mode) => (
+                      <button
+                        key={mode}
+                        onClick={() => setOverviewMode(mode)}
+                        style={{
+                          padding: "9px 12px",
+                          borderRadius: 14,
+                          border: "1px solid #e5e7eb",
+                          background: overviewMode === mode ? "#2563eb" : "#fff",
+                          color: overviewMode === mode ? "#fff" : "#111827",
+                          fontWeight: 900,
+                          cursor: "pointer",
+                        }}
+                      >
+                        {mode === "ALL" ? "All" : mode.charAt(0) + mode.slice(1).toLowerCase()}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 18 }}>
+                  <span style={chip("#ecfeff", "#075985")}>Daily: <strong>{buckets.daily.done}/{buckets.daily.total}</strong></span>
+                  <span style={chip("#f5f3ff", "#5b21b6")}>Weekly: <strong>{buckets.weekly.done}/{buckets.weekly.total}</strong></span>
+                  <span style={chip("#fef3c7", "#92400e")}>Monthly: <strong>{buckets.monthly.done}/{buckets.monthly.total}</strong></span>
+                  {totalDue === 0 && <span style={chip("#e5e7eb", "#111827")}>No scheduled checklists</span>}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="safestack-card" style={{ padding: isMobile ? 18 : 24 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
+              <div>
+                <div style={{ fontSize: 20, fontWeight: 950, color: "#111827" }}>Quick actions</div>
+                <div style={{ fontSize: 13, color: "#6b7280", marginTop: 4 }}>Open a section from the main dashboard.</div>
+              </div>
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 14 }}>
+              {sections.map((sec) => (
+                <button
+                  key={sec.key}
+                  className="tile-button"
+                  onClick={() => openSection(sec.key)}
+                  style={{
+                    background: "#f9fafb",
+                    border: "1px solid #eef2f7",
+                    borderRadius: 22,
+                    padding: "20px 16px",
+                    minHeight: 112,
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    cursor: "pointer",
+                    transition: "all 0.18s ease",
+                    color: "#111827",
+                  }}
+                >
+                  <div
+                    style={{
+                      width: 42,
+                      height: 42,
+                      borderRadius: 16,
+                      background: "#fff",
+                      display: "grid",
+                      placeItems: "center",
+                      marginBottom: 10,
+                      boxShadow: "0 8px 18px rgba(0,0,0,0.08)",
+                    }}
+                  >
+                    {sec.icon}
+                  </div>
+                  <div style={{ fontWeight: 950, fontSize: 14, textAlign: "center" }}>{sec.label}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+        </main>
       </div>
     </div>
   );
 };
-
-function BreakdownRow({ label, pct, detail, hint, color = "#2563eb" }) {
-  return (
-    <div style={{ display: "grid", gridTemplateColumns: "120px 1fr 70px", gap: 10, alignItems: "center" }}>
-      <div style={{ color: "#111", fontWeight: 700 }}>{label}</div>
-      <div style={{ height: 10, background: "#e5e7eb", borderRadius: 999, overflow: "hidden" }}>
-        <div style={{ width: `${pct}%`, height: "100%", background: color, transition: "width 0.6s ease" }} />
-      </div>
-      <div style={{ textAlign: "right", color: "#111", fontWeight: 700 }}>{pct}%</div>
-      <div style={{ gridColumn: "1 / span 3", fontSize: 11, color: "#6b7280" }}>
-        {detail} • {hint}
-      </div>
-    </div>
-  );
-}
 
 export default SitePage;
