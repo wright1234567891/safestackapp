@@ -49,12 +49,27 @@ export default function WasteLogSection({ site, user, goBack }) {
     const q = query(collection(db, "wasteLogs"), where("site", "==", site));
 
     const unsub = onSnapshot(q, (snap) => {
-      const rows = snap.docs.map((d) => ({
-        id: `manual-${d.id}`,
-        sourceType: "manual",
-        ...d.data(),
-      }));
-      setManualRows(rows);
+const rows = snap.docs
+
+  .map((d) => ({
+
+    id: `manual-${d.id}`,
+
+    sourceType: "manual",
+
+    ...d.data(),
+
+  }))
+
+  .filter((r) => {
+
+    const notes = (r.notes || "").toLowerCase();
+
+    return !notes.includes("auto-created from stock waste button");
+
+  });
+
+setManualRows(rows);
     });
 
     return () => unsub();
@@ -90,8 +105,8 @@ export default function WasteLogSection({ site, user, goBack }) {
           notes: data.notes || "Logged from stock section",
           estimatedCost: estimated,
           createdAt: data.createdAt,
-          createdBy: data.createdBy || data.createdByUid || "Unknown",
-          createdByUid: data.createdByUid || data.createdBy || null,
+createdBy: data.createdBy || data.createdByName || "Unknown",
+createdByUid: data.createdByUid || null,
         };
       });
 
