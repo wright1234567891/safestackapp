@@ -660,7 +660,7 @@ const SitePage = ({ user, onLogout }) => {
     setStockBatches([]);
   };
 
-  const sections = [
+  const sections = useMemo(() => [
     { label: "Dashboard", key: "dashboard", icon: <FaHome size={17} /> },
     { label: "Checklists", key: "checklists", icon: <FaClipboardCheck size={17} />, color: "#15985f" },
     { label: "Temp Checks", key: "temp", icon: <FaThermometerHalf size={17} />, color: "#dc2626" },
@@ -678,7 +678,7 @@ const SitePage = ({ user, onLogout }) => {
     { label: "HACCP Dashboard", key: "haccpDashboard", icon: <FaExclamationTriangle size={17} />, color: "#15985f" },
     { label: "CCPs", key: "ccp", icon: <FaExclamationTriangle size={17} />, color: "#dc2626" },
     { label: "Add Equipment", key: "equipment", icon: <FaTools size={17} />, color: "#111827" },
-  ];
+  ], [isManager]);
 
   const defaultDashboardSections = useMemo(
     () => [
