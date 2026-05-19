@@ -609,6 +609,56 @@ const SitePage = ({ user, onLogout }) => {
     });
   }, [stockBatches]);
 
+  const failedTempAlerts = useMemo(() => {
+
+  const todayStr = new Date().toLocaleDateString();
+
+  return equipment.flatMap((eq) => {
+
+    if (eq.type !== "Fridge" && eq.type !== "Freezer") return [];
+
+    const recs = Array.isArray(eq.records) ? eq.records : [];
+
+    return recs
+
+      .filter((r) => r?.date === todayStr)
+
+      .map((r, index) => {
+
+        const temp = Number(r?.temp);
+
+        const failed =
+
+          eq.type === "Fridge"
+
+            ? !Number.isNaN(temp) && (temp < TEMP_LIMITS.Fridge.min || temp > TEMP_LIMITS.Fridge.max)
+
+            : !Number.isNaN(temp) && temp > TEMP_LIMITS.Freezer.max;
+
+        if (!failed) return null;
+
+        return {
+
+          id: `${eq.id}-${r.date}-${index}`,
+
+          equipmentName: eq.name || eq.type || "Equipment",
+
+          equipmentType: eq.type,
+
+          temp,
+
+          corrective: r.corrective || r.correctiveAction || "Corrective action needed",
+
+        };
+
+      })
+
+      .filter(Boolean);
+
+  });
+
+}, [equipment]);
+
   const { buckets, totalDue, totalDone, percent, label } = overview;
 
   const actionWidgets = useMemo(() => {
