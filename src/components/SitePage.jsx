@@ -20,10 +20,36 @@ import {
   FaHome,
   FaShieldAlt,
   FaBell,
+  FaGripVertical,
+  FaEye,
+  FaEyeSlash,
 } from "react-icons/fa";
 
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  useSensor,
+  useSensors,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  arrayMove,
+  rectSortingStrategy,
+  useSortable,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+
 import { db } from "../firebase";
-import { collection, onSnapshot, query, where } from "firebase/firestore";
+import {
+  collection,
+  onSnapshot,
+  query,
+  where,
+  doc,
+  getDoc,
+  setDoc,
+} from "firebase/firestore";
 
 import EquipmentManager from "./EquipmentManager";
 import ChecklistSection from "./ChecklistSection";
@@ -200,6 +226,106 @@ const buildChecklistsFromTemplates = (siteId, siteTemplateRows, templatesRows) =
     .filter(Boolean);
 };
 
+const SortableDashboardTile = ({ sec, openSection, editMode, enabled, toggleWidget }) => {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: sec.key,
+  });
+
+  const wrapperStyle = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    zIndex: isDragging ? 20 : "auto",
+  };
+
+  return (
+    <div ref={setNodeRef} style={wrapperStyle}>
+      <button
+        className="tile-button"
+        onClick={() => {
+          if (!editMode) openSection(sec);
+        }}
+        style={{
+          position: "relative",
+          width: "100%",
+          background: enabled ? "#fff" : "#f1f5f9",
+          border: enabled ? "1px solid #e5e7eb" : "1px dashed #cbd5e1",
+          borderRadius: 18,
+          padding: "22px 16px",
+          minHeight: 112,
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          cursor: editMode ? "default" : "pointer",
+          transition: "all 0.18s ease",
+          color: enabled ? "#0f172a" : "#94a3b8",
+          boxShadow: isDragging ? "0 12px 28px rgba(15,23,42,0.16)" : "0 2px 8px rgba(15,23,42,0.04)",
+          opacity: enabled ? 1 : 0.55,
+        }}
+      >
+        {editMode && (
+          <>
+            <span
+              {...attributes}
+              {...listeners}
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                position: "absolute",
+                top: 10,
+                left: 10,
+                width: 30,
+                height: 30,
+                borderRadius: 999,
+                background: "#f8fafc",
+                border: "1px solid #e5e7eb",
+                display: "grid",
+                placeItems: "center",
+                cursor: "grab",
+                color: "#64748b",
+              }}
+              title="Drag to reorder"
+            >
+              <FaGripVertical />
+            </span>
+
+            <span
+              onClick={(e) => {
+                e.stopPropagation();
+                toggleWidget(sec.key);
+              }}
+              style={{
+                position: "absolute",
+                top: 10,
+                right: 10,
+                padding: "6px 9px",
+                borderRadius: 999,
+                background: enabled ? "#dcfce7" : "#fee2e2",
+                color: enabled ? "#15803d" : "#dc2626",
+                fontSize: 11,
+                fontWeight: 800,
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 5,
+                cursor: "pointer",
+              }}
+              title={enabled ? "Hide from dashboard" : "Show on dashboard"}
+            >
+              {enabled ? <FaEye /> : <FaEyeSlash />}
+              {enabled ? "ON" : "OFF"}
+            </span>
+          </>
+        )}
+
+        <div style={{ fontSize: 26, color: enabled ? sec.color || "#0f172a" : "#94a3b8", marginBottom: 10 }}>
+          {sec.icon}
+        </div>
+        <div style={{ fontWeight: 800, fontSize: 15, textAlign: "center" }}>{sec.label}</div>
+        {sec.helper && <div style={{ marginTop: 6, fontSize: 12, color: "#64748b", textAlign: "center" }}>{sec.helper}</div>}
+      </button>
+    </div>
+  );
+};
+
 const SitePage = ({ user, onLogout }) => {
   const isManager =
     (user?.role || "").toLowerCase() === "manager" ||
@@ -221,7 +347,16 @@ const SitePage = ({ user, onLogout }) => {
   const [cleaningRecords, setCleaningRecords] = useState([]);
 
   const [overviewMode, setOverviewMode] = useState("ALL");
+  const [editDashboard, setEditDashboard] = useState(false);
+  const [dashboardConfig, setDashboardConfig] = useState(null);
+
   const isMobile = useIsMobile();
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: 8 },
+    })
+  );
 
   const selectedSiteKeys = useMemo(() => siteKeysForSelected(selectedSite), [selectedSite]);
   const selectedSiteLabel = useMemo(() => (selectedSite ? siteLabelForId(selectedSite) : ""), [selectedSite]);
@@ -501,6 +636,8 @@ const SitePage = ({ user, onLogout }) => {
   const resetSite = () => {
     setSelectedSite(null);
     setActiveSection(null);
+    setEditDashboard(false);
+    setDashboardConfig(null);
     setChecklists([]);
     setLegacyChecklists([]);
     setTemplates([]);
@@ -531,11 +668,174 @@ const SitePage = ({ user, onLogout }) => {
     { label: "Add Equipment", key: "equipment", icon: <FaTools size={17} />, color: "#111827" },
   ];
 
-  const dashboardSections = sections.filter((s) => s.key !== "dashboard");
+  const defaultDashboardSections = useMemo(
+    () => [
+      ...sections.filter((s) => s.key !== "dashboard"),
+      {
+        label: "Opening Checklist",
+        key: "shortcutOpeningChecklist",
+        icon: <FaClipboardCheck size={17} />,
+        color: "#16a34a",
+        shortcutTo: "checklists",
+        helper: "Jump straight to checklists",
+      },
+      {
+        label: "Use-by Issues",
+        key: "shortcutUseByIssues",
+        icon: <FaExclamationTriangle size={17} />,
+        color: "#f59e0b",
+        shortcutTo: "stock",
+        helper: `${stockAlerts.length} issue${stockAlerts.length === 1 ? "" : "s"}`,
+      },
+      {
+        label: "Failed Temps",
+        key: "shortcutFailedTemps",
+        icon: <FaThermometerHalf size={17} />,
+        color: "#dc2626",
+        shortcutTo: "temp",
+        helper: `${todayCompliance.t.total - todayCompliance.t.pass} today`,
+      },
+      {
+        label: "Fridge Log Today",
+        key: "shortcutFridgeLogToday",
+        icon: <FaThermometerHalf size={17} />,
+        color: "#0284c7",
+        shortcutTo: "fridgeLog",
+        helper: "Open fridge records",
+      },
+      {
+        label: "Waste Log Today",
+        key: "shortcutWasteToday",
+        icon: <FaTrashAlt size={17} />,
+        color: "#111827",
+        shortcutTo: "wasteLog",
+        helper: "Record or review waste",
+      },
+    ],
+    [sections, stockAlerts.length, todayCompliance.t.total, todayCompliance.t.pass]
+  );
+
+  const dashboardConfigId = selectedSite
+    ? `${selectedSite}_${user?.uid || user?.email || user?.name || "default"}`
+    : null;
+
+  const dashboardConfigRef = dashboardConfigId ? doc(db, "dashboardConfigs", dashboardConfigId) : null;
+
+  const dashboardSections = useMemo(() => {
+    if (!dashboardConfig) return defaultDashboardSections;
+
+    const map = new Map(defaultDashboardSections.map((s) => [s.key, s]));
+
+    const ordered = (dashboardConfig.order || [])
+      .map((key) => map.get(key))
+      .filter(Boolean);
+
+    const missing = defaultDashboardSections.filter(
+      (s) => !(dashboardConfig.order || []).includes(s.key)
+    );
+
+    return [...ordered, ...missing];
+  }, [dashboardConfig, defaultDashboardSections]);
+
+  const enabledDashboardKeys = useMemo(() => {
+    return dashboardConfig?.enabledKeys || defaultDashboardSections.map((s) => s.key);
+  }, [dashboardConfig, defaultDashboardSections]);
+
+  const saveDashboardConfig = async (nextConfig) => {
+    if (!dashboardConfigRef) return;
+
+    setDashboardConfig(nextConfig);
+
+    await setDoc(
+      dashboardConfigRef,
+      {
+        ...nextConfig,
+        site: selectedSite,
+        userId: user?.uid || user?.email || user?.name || "default",
+        updatedAt: new Date().toISOString(),
+      },
+      { merge: true }
+    );
+  };
+
+  const toggleWidget = async (key) => {
+    const currentEnabled = enabledDashboardKeys;
+
+    const nextEnabled = currentEnabled.includes(key)
+      ? currentEnabled.filter((k) => k !== key)
+      : [...currentEnabled, key];
+
+    await saveDashboardConfig({
+      order: dashboardSections.map((s) => s.key),
+      enabledKeys: nextEnabled,
+    });
+  };
+
+  const handleDashboardDragEnd = async (event) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    const oldIndex = dashboardSections.findIndex((s) => s.key === active.id);
+    const newIndex = dashboardSections.findIndex((s) => s.key === over.id);
+
+    if (oldIndex < 0 || newIndex < 0) return;
+
+    const newSections = arrayMove(dashboardSections, oldIndex, newIndex);
+
+    await saveDashboardConfig({
+      order: newSections.map((s) => s.key),
+      enabledKeys: enabledDashboardKeys,
+    });
+  };
+
   const openSection = (sectionKey) => {
     if (sectionKey === "dashboard") return setActiveSection(null);
     setActiveSection(sectionKey);
   };
+
+  const openDashboardWidget = (sec) => {
+    if (sec.shortcutTo) return openSection(sec.shortcutTo);
+    return openSection(sec.key);
+  };
+
+  useEffect(() => {
+    if (!selectedSite || !dashboardConfigRef) return;
+
+    let cancelled = false;
+
+    const loadDashboardConfig = async () => {
+      const snap = await getDoc(dashboardConfigRef);
+
+      if (cancelled) return;
+
+      if (snap.exists()) {
+        setDashboardConfig(snap.data());
+      } else {
+        const initialConfig = {
+          order: defaultDashboardSections.map((s) => s.key),
+          enabledKeys: defaultDashboardSections.map((s) => s.key),
+        };
+
+        setDashboardConfig(initialConfig);
+        await setDoc(
+          dashboardConfigRef,
+          {
+            ...initialConfig,
+            site: selectedSite,
+            userId: user?.uid || user?.email || user?.name || "default",
+            createdAt: new Date().toISOString(),
+          },
+          { merge: true }
+        );
+      }
+    };
+
+    loadDashboardConfig().catch(console.error);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedSite, user?.uid, user?.email, user?.name, defaultDashboardSections]);
 
   if (selectedSite && activeSection === "equipment") {
     return <EquipmentManager goBack={() => setActiveSection(null)} tempChecks={tempChecks} setTempChecks={setTempChecks} site={selectedSite} user={user} />;
@@ -742,27 +1042,19 @@ const SitePage = ({ user, onLogout }) => {
           background: #fff !important;
         }
 
-@media (max-width: 820px) {
+        @media (max-width: 820px) {
+          .safestack-shell {
+            grid-template-columns: 1fr;
+          }
 
-  .safestack-shell {
+          .safestack-sidebar {
+            display: none;
+          }
 
-    grid-template-columns: 1fr;
-
-  }
-
-  .safestack-sidebar {
-
-    display: none;
-
-  }
-
-  .safestack-main {
-
-    padding: 16px;
-
-  }
-
-}
+          .safestack-main {
+            padding: 16px;
+          }
+        }
       `}</style>
 
       <div className="safestack-shell">
@@ -861,7 +1153,22 @@ const SitePage = ({ user, onLogout }) => {
               <div style={{ marginTop: 5, color: "#334155", fontSize: 15 }}>{selectedSiteLabel}</div>
             </div>
 
-            <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+              <button
+                onClick={() => setEditDashboard((prev) => !prev)}
+                style={{
+                  border: "1px solid #e5e7eb",
+                  background: editDashboard ? "#15803d" : "#fff",
+                  color: editDashboard ? "#fff" : "#0f172a",
+                  borderRadius: 999,
+                  padding: "9px 14px",
+                  fontWeight: 800,
+                  cursor: "pointer",
+                }}
+              >
+                {editDashboard ? "Done editing" : "Edit dashboard"}
+              </button>
+
               <FaBell color="#0f172a" />
               <div style={{ display: "flex", alignItems: "center", gap: 10, background: "#fff", border: "1px solid #e5e7eb", borderRadius: 999, padding: "8px 12px" }}>
                 <div style={{ width: 34, height: 34, borderRadius: "50%", background: "#15803d", color: "#fff", display: "grid", placeItems: "center", fontWeight: 800 }}>
@@ -975,33 +1282,40 @@ const SitePage = ({ user, onLogout }) => {
             </div>
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 16 }}>
-            {dashboardSections.map((sec) => (
-              <button
-                key={sec.key}
-                className="tile-button"
-                onClick={() => openSection(sec.key)}
-                style={{
-                  background: "#fff",
-                  border: "1px solid #e5e7eb",
-                  borderRadius: 18,
-                  padding: "22px 16px",
-                  minHeight: 112,
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  cursor: "pointer",
-                  transition: "all 0.18s ease",
-                  color: "#0f172a",
-                  boxShadow: "0 2px 8px rgba(15,23,42,0.04)",
-                }}
-              >
-                <div style={{ fontSize: 26, color: sec.color || "#0f172a", marginBottom: 10 }}>{sec.icon}</div>
-                <div style={{ fontWeight: 800, fontSize: 15, textAlign: "center" }}>{sec.label}</div>
-              </button>
-            ))}
-          </div>
+          {editDashboard && (
+            <div
+              className="safestack-card"
+              style={{
+                padding: 16,
+                marginBottom: 16,
+                background: "#fff",
+              }}
+            >
+              <div style={{ fontWeight: 800, color: "#0f172a", marginBottom: 6 }}>Edit dashboard</div>
+              <div style={{ fontSize: 13, color: "#64748b" }}>
+                Drag cards using the grip icon. Use the ON/OFF button to hide or show dashboard widgets.
+              </div>
+            </div>
+          )}
+
+          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDashboardDragEnd}>
+            <SortableContext items={dashboardSections.map((s) => s.key)} strategy={rectSortingStrategy}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 16 }}>
+                {dashboardSections
+                  .filter((sec) => editDashboard || enabledDashboardKeys.includes(sec.key))
+                  .map((sec) => (
+                    <SortableDashboardTile
+                      key={sec.key}
+                      sec={sec}
+                      openSection={openDashboardWidget}
+                      editMode={editDashboard}
+                      enabled={enabledDashboardKeys.includes(sec.key)}
+                      toggleWidget={toggleWidget}
+                    />
+                  ))}
+              </div>
+            </SortableContext>
+          </DndContext>
 
           <div style={{ display: "flex", justifyContent: "center", marginTop: 24 }}>
             <button
