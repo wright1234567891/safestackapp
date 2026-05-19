@@ -360,6 +360,19 @@ const StockSection = ({ site, goBack, user }) => {
     });
   };
 
+  const updateBatchUseByDate = async (batchId, useByDate) => {
+    try {
+      await updateDoc(doc(db, "stockBatches", batchId), {
+        useByDate: useByDate || null,
+        needsUseByReview: !useByDate,
+        updatedAt: serverTimestamp(),
+      });
+    } catch (error) {
+      console.error("Error updating batch use-by date:", error);
+      alert("Failed to update batch use-by date.");
+    }
+  };
+
   const reduceBatchesOldestFirst = async (item, qty) => {
     const quantityToReduce = Number(qty);
     if (!item || quantityToReduce <= 0) return;
@@ -435,7 +448,7 @@ const StockSection = ({ site, goBack, user }) => {
       site,
       createdAt: serverTimestamp(),
       createdBy: user?.name || user?.displayName || user?.email || "Unknown",
-createdByUid: user?.uid || user?.id || null,
+      createdByUid: user?.uid || user?.id || null,
     });
   };
 
@@ -1446,7 +1459,9 @@ createdByUid: user?.uid || user?.id || null,
                     {activeBatches.length === 1 ? "" : "es"}
                   </button>
 
-                  {oldestUseBy ? (
+                  {activeBatches.length === 0 ? (
+                    <span style={chip("#f3f4f6", "#374151")}>No active batches</span>
+                  ) : oldestUseBy ? (
                     <span style={chip("#ecfeff", "#075985")}>
                       Oldest use-by: {oldestUseBy}
                     </span>
@@ -1513,7 +1528,7 @@ createdByUid: user?.uid || user?.id || null,
                   </button>
                 </div>
 
-                {isExpanded && (
+                {isExpanded && activeBatches.length > 0 && (
                   <div
                     style={{
                       width: "100%",
@@ -1528,66 +1543,78 @@ createdByUid: user?.uid || user?.id || null,
                       Batches for {item.name}
                     </div>
 
-                    {activeBatches.length === 0 ? (
-                      <div style={subtle}>No active batches found.</div>
-                    ) : (
-                      activeBatches.map((batch) => (
-                        <div
-                          key={batch.id}
-                          style={{
-                            display: "grid",
-                            gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))",
-                            gap: 8,
-                            padding: "10px 0",
-                            borderBottom: "1px solid #e5e7eb",
-                            fontSize: 13,
-                          }}
-                        >
-                          <div>
-                            <strong>Remaining</strong>
-                            <br />
-                            {batch.quantityRemaining} {batch.measurement}
-                          </div>
-
-                          <div>
-                            <strong>Received</strong>
-                            <br />
-                            {batch.dateReceived || "—"}
-                          </div>
-
-                          <div>
-                            <strong>Use-by</strong>
-                            <br />
-                            {batch.useByDate || "Review needed"}
-                          </div>
-
-                          <div>
-                            <strong>Supplier</strong>
-                            <br />
-                            {batch.supplier || "—"}
-                          </div>
-
-                          <div>
-                            <strong>Location</strong>
-                            <br />
-                            {batch.location || "—"}
-                          </div>
-
-                          <div>
-                            <strong>Source</strong>
-                            <br />
-                            {batch.source || "—"}
-                          </div>
-
-                          {batch.price !== null && batch.price !== undefined && (
-                            <div>
-                              <strong>Price</strong>
-                              <br />£{Number(batch.price).toFixed(2)}
-                            </div>
-                          )}
+                    {activeBatches.map((batch, index) => (
+                      <div
+                        key={batch.id}
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))",
+                          gap: 8,
+                          padding: "10px 0",
+                          borderBottom:
+                            index === activeBatches.length - 1
+                              ? "none"
+                              : "1px solid #e5e7eb",
+                          fontSize: 13,
+                        }}
+                      >
+                        <div>
+                          <strong>Remaining</strong>
+                          <br />
+                          {batch.quantityRemaining} {batch.measurement}
                         </div>
-                      ))
-                    )}
+
+                        <div>
+                          <strong>Received</strong>
+                          <br />
+                          {batch.dateReceived || "—"}
+                        </div>
+
+                        <div>
+                          <strong>Use-by</strong>
+                          <br />
+                          <input
+                            type="date"
+                            value={batch.useByDate || ""}
+                            onChange={(e) =>
+                              updateBatchUseByDate(batch.id, e.target.value)
+                            }
+                            style={{
+                              ...smallInput,
+                              minWidth: 130,
+                              marginTop: 4,
+                              borderColor: batch.useByDate ? "#e5e7eb" : "#f59e0b",
+                              background: batch.useByDate ? "#fff" : "#fffbeb",
+                            }}
+                          />
+                        </div>
+
+                        <div>
+                          <strong>Supplier</strong>
+                          <br />
+                          {batch.supplier || "—"}
+                        </div>
+
+                        <div>
+                          <strong>Location</strong>
+                          <br />
+                          {batch.location || "—"}
+                        </div>
+
+                        <div>
+                          <strong>Source</strong>
+                          <br />
+                          {batch.source || "—"}
+                        </div>
+
+                        {batch.price !== null && batch.price !== undefined && (
+                          <div>
+                            <strong>Price</strong>
+                            <br />£{Number(batch.price).toFixed(2)}
+                          </div>
+                        )}
+                      </div>
+                    ))}
                   </div>
                 )}
               </li>
