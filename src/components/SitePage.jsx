@@ -660,6 +660,32 @@ const SitePage = ({ user, onLogout }) => {
 
 }, [equipment]);
 
+const updateStockBatchUseBy = async (batchId, useByDate) => {
+  if (!useByDate) {
+    alert("Please choose a use-by date first.");
+    return;
+  }
+
+  try {
+    await updateDoc(doc(db, "stockBatches", batchId), {
+      useByDate,
+      useBy: useByDate,
+      expiryDate: useByDate,
+      needsUseByReview: false,
+      updatedAt: serverTimestamp(),
+    });
+
+    setStockUseByDrafts((prev) => {
+      const next = { ...prev };
+      delete next[batchId];
+      return next;
+    });
+  } catch (error) {
+    console.error("Error updating stock batch use-by date:", error);
+    alert("Failed to update use-by date.");
+  }
+};
+
   const { buckets, totalDue, totalDone, percent, label } = overview;
 
   const actionWidgets = useMemo(() => {
