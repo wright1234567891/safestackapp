@@ -1246,36 +1246,176 @@ const SitePage = ({ user, onLogout }) => {
 
               <div className="safestack-card" style={{ padding: 22 }}>
                 <div style={{ fontSize: 18, fontWeight: 800, color: "#0f172a", marginBottom: 14 }}>Alerts</div>
-                {actionWidgets.filter((w) => w.value > 0).length === 0 ? (
+
+                {failedTempAlerts.length === 0 && stockAlerts.length === 0 && buckets.daily.total - buckets.daily.done <= 0 && todayCompliance.c.total - todayCompliance.c.pass <= 0 ? (
                   <div style={{ color: "#64748b", fontSize: 14 }}>No active alerts.</div>
                 ) : (
-                  <div style={{ display: "grid", gap: 10 }}>
-                    {actionWidgets.filter((w) => w.value > 0).map((w) => (
-                      <button
-                        key={w.label}
-                        onClick={w.onClick}
+                  <div style={{ display: "grid", gap: 12 }}>
+                    {failedTempAlerts.slice(0, 3).map((alert) => (
+                      <div
+                        key={alert.id}
                         style={{
-                          border: "none",
+                          border: "1px solid #fee2e2",
+                          background: "#fff7f7",
+                          borderRadius: 14,
+                          padding: 12,
+                        }}
+                      >
+                        <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+                          <FaExclamationTriangle color="#dc2626" style={{ marginTop: 2 }} />
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontWeight: 900, color: "#0f172a" }}>{alert.equipmentName}</div>
+                            <div style={{ fontSize: 13, color: "#dc2626", marginTop: 2 }}>
+                              {alert.equipmentType} recorded at {alert.temp}°C
+                            </div>
+                            <div style={{ fontSize: 12, color: "#64748b", marginTop: 5 }}>
+                              {alert.corrective}
+                            </div>
+                          </div>
+                        </div>
+
+                        <button
+                          onClick={() => setActiveSection("temp")}
+                          style={{
+                            marginTop: 10,
+                            width: "100%",
+                            border: "none",
+                            borderRadius: 10,
+                            padding: "9px 10px",
+                            background: "#dc2626",
+                            color: "#fff",
+                            fontWeight: 800,
+                            cursor: "pointer",
+                          }}
+                        >
+                          Open temp checks
+                        </button>
+                      </div>
+                    ))}
+
+                    {stockAlerts.slice(0, 4).map((batch) => {
+                      const draftDate = stockUseByDrafts[batch.id] || batch.useByDate || "";
+
+                      return (
+                        <div
+                          key={batch.id}
+                          style={{
+                            border: "1px solid #fde68a",
+                            background: "#fffbeb",
+                            borderRadius: 14,
+                            padding: 12,
+                          }}
+                        >
+                          <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+                            <FaExclamationTriangle color="#f59e0b" style={{ marginTop: 2 }} />
+                            <div style={{ flex: 1 }}>
+                              <div style={{ fontWeight: 900, color: "#0f172a" }}>
+                                {batch.stockItemName || batch.itemName || batch.name || "Stock item"}
+                              </div>
+                              <div style={{ fontSize: 13, color: "#92400e", marginTop: 2 }}>
+                                Missing use-by date
+                              </div>
+                              <div style={{ fontSize: 12, color: "#64748b", marginTop: 5 }}>
+                                Remaining: {batch.quantityRemaining ?? batch.quantity ?? "—"} {batch.measurement || ""} · Received: {batch.dateReceived || "—"}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr auto", gap: 8, marginTop: 10 }}>
+                            <input
+                              type="date"
+                              value={draftDate}
+                              onChange={(e) =>
+                                setStockUseByDrafts((prev) => ({
+                                  ...prev,
+                                  [batch.id]: e.target.value,
+                                }))
+                              }
+                              style={{
+                                border: "1px solid #f59e0b",
+                                borderRadius: 10,
+                                padding: "9px 10px",
+                                fontSize: 14,
+                                background: "#fff",
+                              }}
+                            />
+
+                            <button
+                              onClick={() => updateStockBatchUseBy(batch.id, draftDate)}
+                              style={{
+                                border: "none",
+                                borderRadius: 10,
+                                padding: "9px 12px",
+                                background: "#f59e0b",
+                                color: "#fff",
+                                fontWeight: 800,
+                                cursor: "pointer",
+                              }}
+                            >
+                              Save
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+
+                    {buckets.daily.total - buckets.daily.done > 0 && (
+                      <button
+                        onClick={() => setActiveSection("checklists")}
+                        style={{
+                          border: "1px solid #e5e7eb",
                           background: "#fff",
+                          borderRadius: 14,
+                          padding: 12,
                           display: "flex",
-                          alignItems: "center",
                           justifyContent: "space-between",
-                          gap: 12,
+                          alignItems: "center",
                           cursor: "pointer",
-                          padding: 0,
                           textAlign: "left",
                         }}
                       >
                         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                          <FaExclamationTriangle color={w.tone === "bad" ? "#dc2626" : "#f59e0b"} />
+                          <FaClipboardCheck color="#15985f" />
                           <div>
-                            <div style={{ fontWeight: 800, color: "#0f172a" }}>{w.label}</div>
-                            <div style={{ fontSize: 12, color: "#dc2626" }}>{w.value} needs attention</div>
+                            <div style={{ fontWeight: 900, color: "#0f172a" }}>Overdue daily checks</div>
+                            <div style={{ fontSize: 12, color: "#dc2626" }}>{buckets.daily.total - buckets.daily.done} needs attention</div>
                           </div>
                         </div>
                         <FaChevronRight color="#94a3b8" />
                       </button>
-                    ))}
+                    )}
+
+                    {todayCompliance.c.total - todayCompliance.c.pass > 0 && (
+                      <button
+                        onClick={() => setActiveSection("cleaning")}
+                        style={{
+                          border: "1px solid #e5e7eb",
+                          background: "#fff",
+                          borderRadius: 14,
+                          padding: 12,
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          cursor: "pointer",
+                          textAlign: "left",
+                        }}
+                      >
+                        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                          <FaBroom color="#f59e0b" />
+                          <div>
+                            <div style={{ fontWeight: 900, color: "#0f172a" }}>Cleaning incomplete</div>
+                            <div style={{ fontSize: 12, color: "#dc2626" }}>{todayCompliance.c.total - todayCompliance.c.pass} needs attention</div>
+                          </div>
+                        </div>
+                        <FaChevronRight color="#94a3b8" />
+                      </button>
+                    )}
+
+                    {(failedTempAlerts.length > 3 || stockAlerts.length > 4) && (
+                      <div style={{ fontSize: 12, color: "#64748b", textAlign: "center" }}>
+                        Showing the first urgent items. Open the full section to review everything.
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
