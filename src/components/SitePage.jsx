@@ -361,6 +361,7 @@ const SitePage = ({ user, onLogout }) => {
   const [overviewMode, setOverviewMode] = useState("ALL");
   const [editDashboard, setEditDashboard] = useState(false);
   const [dashboardConfig, setDashboardConfig] = useState(null);
+  const [stockUseByDrafts, setStockUseByDrafts] = useState({});
 
   const isMobile = useIsMobile();
 
