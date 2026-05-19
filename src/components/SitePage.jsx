@@ -42,13 +42,25 @@ import { CSS } from "@dnd-kit/utilities";
 
 import { db } from "../firebase";
 import {
+
   collection,
+
   onSnapshot,
+
   query,
+
   where,
+
   doc,
+
   getDoc,
+
   setDoc,
+
+  updateDoc,
+
+  serverTimestamp,
+
 } from "firebase/firestore";
 
 import EquipmentManager from "./EquipmentManager";
