@@ -926,83 +926,6 @@ const updateStockBatchUseBy = async (batchId, useByDate) => {
     };
   }, [selectedSite, user?.uid, user?.email, user?.name, defaultDashboardSections]);
 
-  if (selectedSite && activeSection === "equipment") {
-    return <EquipmentManager goBack={() => setActiveSection(null)} tempChecks={tempChecks} setTempChecks={setTempChecks} site={selectedSite} user={user} />;
-  }
-
-  if (selectedSite && activeSection === "checklists") {
-    return <ChecklistSection goBack={() => setActiveSection(null)} site={selectedSite} user={user} />;
-  }
-
-  if (selectedSite && activeSection === "temp") {
-    const siteTempChecks = tempChecks.filter(
-      (e) => selectedSiteKeys.includes(e.site) && (e.type === "Fridge" || e.type === "Freezer")
-    );
-
-    return <TempSection goBack={() => setActiveSection(null)} tempChecks={siteTempChecks} setTempChecks={setTempChecks} site={selectedSite} user={user} />;
-  }
-
-  if (selectedSite && activeSection === "fridgeLog") {
-    return <FridgeLogSection goBack={() => setActiveSection(null)} site={selectedSite} user={user} equipment={equipment} />;
-  }
-
-  if (selectedSite && activeSection === "wasteLog") {
-    return <WasteLogSection goBack={() => setActiveSection(null)} site={selectedSite} user={user} />;
-  }
-
-  if (selectedSite && activeSection === "howto") {
-    return <HowToSection site={selectedSite} user={user} goBack={() => setActiveSection(null)} />;
-  }
-
-  if (selectedSite && activeSection === "cleaning") {
-    return (
-      <CleaningSection
-        goBack={() => setActiveSection(null)}
-        site={selectedSite}
-        user={user}
-        cleaningRecords={cleaningRecords}
-        setCleaningRecords={setCleaningRecords}
-      />
-    );
-  }
-
-  if (selectedSite && activeSection === "cooking") {
-    const cookingEquipment = tempChecks.filter((e) => selectedSiteKeys.includes(e.site) && e.type === "Cooking");
-    return <CookingSection goBack={() => setActiveSection(null)} cookingEquipment={cookingEquipment} setTempChecks={setTempChecks} site={selectedSite} user={user} />;
-  }
-
-  if (selectedSite && activeSection === "stock") {
-    return <StockSection goBack={() => setActiveSection(null)} site={selectedSite} user={user} />;
-  }
-
-  if (selectedSite && activeSection === "reports") {
-    return <Reports goBack={() => setActiveSection(null)} site={selectedSite} user={user} />;
-  }
-
-  if (selectedSite && activeSection === "ccp") {
-    return <CCPSection goBack={() => setActiveSection(null)} site={selectedSite} user={user} />;
-  }
-
-  if (selectedSite && activeSection === "haccpDashboard") {
-    return <HaccpDashboard goBack={() => setActiveSection(null)} site={selectedSite} />;
-  }
-
-  if (selectedSite && activeSection === "dishes") {
-    return <DishesSection goBack={() => setActiveSection(null)} site={selectedSite} user={user} />;
-  }
-
-  if (selectedSite && activeSection === "training") {
-    return <StaffTrainingSection goBack={() => setActiveSection(null)} site={selectedSite} user={user} />;
-  }
-
-  if (selectedSite && activeSection === "myRota") {
-    return <MyRota goBack={() => setActiveSection(null)} user={user} />;
-  }
-
-  if (selectedSite && activeSection === "staff") {
-    return <StaffManager goBack={() => setActiveSection(null)} user={user} />;
-  }
-
   if (!selectedSite) {
     return (
       <div style={{ minHeight: "100vh", background: "linear-gradient(135deg, #073b3a 0%, #0b4d4b 45%, #0f5c59 100%)", padding: 24, fontFamily: "'Inter', sans-serif" }}>
@@ -1234,6 +1157,40 @@ const updateStockBatchUseBy = async (batchId, useByDate) => {
         </aside>
 
         <main className="safestack-main">
+          {activeSection === "checklists" ? (
+  <ChecklistSection goBack={() => setActiveSection(null)} site={selectedSite} user={user} />
+) : activeSection === "equipment" ? (
+  <EquipmentManager goBack={() => setActiveSection(null)} tempChecks={tempChecks} setTempChecks={setTempChecks} site={selectedSite} user={user} />
+) : activeSection === "temp" ? (
+  <TempSection goBack={() => setActiveSection(null)} tempChecks={tempChecks.filter((e) => selectedSiteKeys.includes(e.site) && (e.type === "Fridge" || e.type === "Freezer"))} setTempChecks={setTempChecks} site={selectedSite} user={user} />
+) : activeSection === "fridgeLog" ? (
+  <FridgeLogSection goBack={() => setActiveSection(null)} site={selectedSite} user={user} equipment={equipment} />
+) : activeSection === "wasteLog" ? (
+  <WasteLogSection goBack={() => setActiveSection(null)} site={selectedSite} user={user} />
+) : activeSection === "howto" ? (
+  <HowToSection site={selectedSite} user={user} goBack={() => setActiveSection(null)} />
+) : activeSection === "cleaning" ? (
+  <CleaningSection goBack={() => setActiveSection(null)} site={selectedSite} user={user} cleaningRecords={cleaningRecords} setCleaningRecords={setCleaningRecords} />
+) : activeSection === "cooking" ? (
+  <CookingSection goBack={() => setActiveSection(null)} cookingEquipment={tempChecks.filter((e) => selectedSiteKeys.includes(e.site) && e.type === "Cooking")} setTempChecks={setTempChecks} site={selectedSite} user={user} />
+) : activeSection === "stock" ? (
+  <StockSection goBack={() => setActiveSection(null)} site={selectedSite} user={user} />
+) : activeSection === "reports" ? (
+  <Reports goBack={() => setActiveSection(null)} site={selectedSite} user={user} />
+) : activeSection === "ccp" ? (
+  <CCPSection goBack={() => setActiveSection(null)} site={selectedSite} user={user} />
+) : activeSection === "haccpDashboard" ? (
+  <HaccpDashboard goBack={() => setActiveSection(null)} site={selectedSite} />
+) : activeSection === "dishes" ? (
+  <DishesSection goBack={() => setActiveSection(null)} site={selectedSite} user={user} />
+) : activeSection === "training" ? (
+  <StaffTrainingSection goBack={() => setActiveSection(null)} site={selectedSite} user={user} />
+) : activeSection === "myRota" ? (
+  <MyRota goBack={() => setActiveSection(null)} user={user} />
+) : activeSection === "staff" ? (
+  <StaffManager goBack={() => setActiveSection(null)} user={user} />
+) : (
+  <>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, flexWrap: "wrap", marginBottom: 22 }}>
             <div>
               <h1 style={{ margin: 0, fontSize: isMobile ? 30 : 34, color: "#0f172a", fontWeight: 800, letterSpacing: -0.7 }}>
@@ -1561,11 +1518,20 @@ const updateStockBatchUseBy = async (batchId, useByDate) => {
             >
               Back
             </button>
-          </div>
+           </div>
+
+          </>
+
+        )}
+
         </main>
+
       </div>
+
     </div>
+
   );
+
 };
 
 export default SitePage;
