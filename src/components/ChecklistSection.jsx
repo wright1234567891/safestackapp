@@ -25,17 +25,6 @@ const formatTimestamp = (ts) => {
   return d ? d.toLocaleString() : "";
 };
 
-// Subtle shadow + elevation helpers
-const elevate = (el) => {
-  el.style.transform = "translateY(-2px)";
-  el.style.boxShadow = "0 6px 12px rgba(0,0,0,0.12)";
-  el.style.backgroundColor = "#f9fafb";
-};
-const normalize = (el) => {
-  el.style.transform = "translateY(0)";
-  el.style.boxShadow = "0 2px 6px rgba(0,0,0,0.08)";
-  el.style.backgroundColor = "#fff";
-};
 const makeId = () => {
   try {
     return crypto.randomUUID();
@@ -61,13 +50,15 @@ const getStableId = (q) => {
 
 const freqChip = (f) => {
   const base = {
-    display: "inline-block",
+    display: "inline-flex",
+    alignItems: "center",
     padding: "4px 10px",
     borderRadius: "999px",
     fontSize: 12,
-    fontWeight: 700,
+    fontWeight: 800,
     marginLeft: 8,
   };
+
   switch ((f || "Ad hoc").toLowerCase()) {
     case "daily":
       return { ...base, background: "#ecfeff", color: "#075985" };
@@ -76,7 +67,7 @@ const freqChip = (f) => {
     case "monthly":
       return { ...base, background: "#fef3c7", color: "#92400e" };
     default:
-      return { ...base, background: "#e5e7eb", color: "#111827" };
+      return { ...base, background: "#f1f5f9", color: "#334155" };
   }
 };
 
@@ -89,15 +80,32 @@ const tinyDraftChip = {
   background: "#fff7ed",
   color: "#9a3412",
   border: "1px solid #fed7aa",
-  display: "inline-block",
+  display: "inline-flex",
+  alignItems: "center",
+};
+
+const inputStyle = {
+  padding: "12px 14px",
+  fontSize: 15,
+  borderRadius: 12,
+  border: "1px solid #e5e7eb",
+  outline: "none",
+  background: "#fff",
+  color: "#0f172a",
+  boxSizing: "border-box",
+};
+
+const mutedText = {
+  color: "#64748b",
+  fontSize: 13,
 };
 
 // NEW: Utilities for new schema with sensible defaults (backward-compatible)
 const withQuestionDefaults = (q) => {
   return {
-id: getStableId(q),
+    id: getStableId(q),
     text: q?.text ?? "",
-    enabled: q?.enabled ?? true,     // ✅ FUTURE SITE OVERRIDES
+    enabled: q?.enabled ?? true,
     answer: q?.answer ?? null,
     corrective: q?.corrective ?? "",
     correctiveOn: q?.correctiveOn ?? "no",
@@ -136,42 +144,39 @@ const needsCorrective = (rule, ans) => {
     case "both":
       return ans === "Yes" || ans === "No";
     default:
-      return false; // "none"
+      return false;
   }
 };
 
 // ---------- Component ----------
 const ChecklistSection = ({ goBack, site, user }) => {
   const [checklists, setChecklists] = useState([]);
-  const [templates, setTemplates] = useState([]);        //
-  const [siteTemplates, setSiteTemplates] = useState([]); // links for this site
-const [viewingTemplates, setViewingTemplates] = useState(false); // 
+  const [templates, setTemplates] = useState([]);
+  const [siteTemplates, setSiteTemplates] = useState([]);
+  const [viewingTemplates, setViewingTemplates] = useState(false);
   const [completed, setCompleted] = useState([]);
 
   // DRAFTS
-  const [drafts, setDrafts] = useState([]); // list of draft docs
-  const [draftMap, setDraftMap] = useState({}); // checklistId -> draft
+  const [drafts, setDrafts] = useState([]);
+  const [draftMap, setDraftMap] = useState({});
 
   // Authoring state (Create)
   const [adding, setAdding] = useState(false);
-  const [createTarget, setCreateTarget] = useState("checklists"); // "checklists" | "templates"
+  const [createTarget, setCreateTarget] = useState("checklists");
   const [titleSet, setTitleSet] = useState(false);
   const [checklistTitle, setChecklistTitle] = useState("");
   const [newFrequency, setNewFrequency] = useState("Daily");
-  // Authoring (Create)
-const [authorQuestions, setAuthorQuestions] = useState([]);
+  const [authorQuestions, setAuthorQuestions] = useState([]);
 
-// Running (Complete)
-const [runQuestions, setRunQuestions] = useState([]);
-
-// Viewing completed
-const [viewQuestions, setViewQuestions] = useState([]);
+  // Running / Viewing
+  const [runQuestions, setRunQuestions] = useState([]);
+  const [viewQuestions, setViewQuestions] = useState([]);
   const [newItem, setNewItem] = useState("");
 
-  // Editing state (Edit existing)
+  // Editing state
   const [editingId, setEditingId] = useState(null);
-  const [editingSiteTemplate, setEditingSiteTemplate] = useState(null); // siteTemplates doc
-  const [editingSource, setEditingSource] = useState("checklists"); // "checklists" | "templates"
+  const [editingSiteTemplate, setEditingSiteTemplate] = useState(null);
+  const [editingSource, setEditingSource] = useState("checklists");
   const [editTitle, setEditTitle] = useState("");
   const [editFrequency, setEditFrequency] = useState("Ad hoc");
   const [editItems, setEditItems] = useState([]);
@@ -180,105 +185,96 @@ const [viewQuestions, setViewQuestions] = useState([]);
   const newItemRef = useRef(null);
   const editNewItemRef = useRef(null);
 
-  // Working state (Run / View)
   const [selectedChecklist, setSelectedChecklist] = useState(null);
   const [viewingCompleted, setViewingCompleted] = useState(null);
-
-  // Track a draft id while running a checklist
   const [draftId, setDraftId] = useState(null);
 
-// Adjust to your auth model if user is an object
+  const uid = user?.uid || null;
 
-const uid = user?.uid || null;
+  const personName =
+    typeof user === "string"
+      ? user
+      : user?.displayName || user?.name || user?.email || "Unknown";
 
-const personName =
-  typeof user === "string"
-    ? user
-    : user?.displayName || user?.email || "Unknown";
+  const [role, setRole] = useState(() =>
+    (user?.role || "staff").toString().toLowerCase()
+  );
 
-// normalise role from props first (new login model), then fallback to Firestore
-const [role, setRole] = useState(() =>
-  (user?.role || "staff").toString().toLowerCase()
-);
+  const isManager =
+    role === "manager" ||
+    role === "admin" ||
+    ["chris", "chloe"].includes((user?.displayName || user?.name || "").toLowerCase()) ||
+    ["christopher.wright@oaknsmkbbq.com"].includes((user?.email || "").toLowerCase());
 
-const isManager =
-  role === "manager" ||
-  role === "admin" ||
-  ["chris", "chloe"].includes((user?.displayName || "").toLowerCase()) ||
-  ["christopher.wright@oaknsmkbbq.com"].includes((user?.email || "").toLowerCase());
+  useEffect(() => {
+    let ignore = false;
 
-useEffect(() => {
-  let ignore = false;
+    async function loadRole() {
+      if (user?.role) return;
 
-  async function loadRole() {
-    // if role already provided on user object, don't override it
-    if (user?.role) return;
+      if (!uid) {
+        if (!ignore) setRole("staff");
+        return;
+      }
 
-    if (!uid) {
-      if (!ignore) setRole("staff");
-      return;
+      try {
+        const snap = await getDoc(doc(db, "users", uid));
+        const data = snap.exists() ? snap.data() : null;
+        const r = (data?.role || "staff").toString().toLowerCase();
+        if (!ignore) setRole(r);
+      } catch {
+        if (!ignore) setRole("staff");
+      }
     }
 
-    try {
-      const snap = await getDoc(doc(db, "users", uid));
-      const data = snap.exists() ? snap.data() : null;
-      const r = (data?.role || "staff").toString().toLowerCase();
-      if (!ignore) setRole(r);
-    } catch {
-      if (!ignore) setRole("staff");
-    }
-  }
-
-  loadRole();
-  return () => {
-    ignore = true;
-  };
-}, [uid, user?.role]);
+    loadRole();
+    return () => {
+      ignore = true;
+    };
+  }, [uid, user?.role]);
 
   // Firestore refs
-const checklistCollectionRef = collection(db, "checklists"); //
-const templatesCollectionRef = collection(db, "templates"); // 
-const siteTemplatesCollectionRef = collection(db, "siteTemplates"); // 
+  const checklistCollectionRef = collection(db, "checklists");
+  const templatesCollectionRef = collection(db, "templates");
+  const siteTemplatesCollectionRef = collection(db, "siteTemplates");
+  const completedCollectionRef = collection(db, "completed");
+  const draftsCollectionRef = collection(db, "checklistDrafts");
 
-const completedCollectionRef = collection(db, "completed");
-const draftsCollectionRef = collection(db, "checklistDrafts");
+  // ---------- Build effective checklists from templates ----------
+  const buildChecklistsFromTemplates = (siteTemplateRows, templatesRows) => {
+    const tplMap = new Map(templatesRows.map((t) => [t.id, t]));
+    const enabledLinks = siteTemplateRows.filter((st) => st.enabled !== false);
 
-// ---------- Build effective checklists from templates ----------
-const buildChecklistsFromTemplates = (siteTemplateRows, templatesRows) => {
-  const tplMap = new Map(templatesRows.map((t) => [t.id, t]));
-  const enabledLinks = siteTemplateRows.filter((st) => st.enabled !== false);
+    return enabledLinks
+      .map((st) => {
+        const tpl = tplMap.get(st.templateId);
+        if (!tpl) return null;
 
-  return enabledLinks
-    .map((st) => {
-      const tpl = tplMap.get(st.templateId);
-      if (!tpl) return null;
+        const overrideTitle = st.overrides?.title;
+        const qOverrides = st.overrides?.questions || {};
 
-      const overrideTitle = st.overrides?.title;
-      const qOverrides = st.overrides?.questions || {};
+        const questions = (tpl.questions || []).map((q) => {
+          const base = withQuestionDefaults(q);
+          const o = qOverrides[base.id];
+          return {
+            ...base,
+            enabled: o?.enabled ?? base.enabled ?? true,
+          };
+        });
 
-      const questions = (tpl.questions || []).map((q) => {
-        const base = withQuestionDefaults(q);
-        const o = qOverrides[base.id];
         return {
-          ...base,
-          enabled: o?.enabled ?? base.enabled ?? true,
+          id: tpl.id,
+          site,
+          title: overrideTitle || tpl.title,
+          frequency: tpl.frequency || "Ad hoc",
+          questions,
+          _source: "template",
+          _templateId: tpl.id,
         };
-      });
+      })
+      .filter(Boolean);
+  };
 
-      return {
-        id: tpl.id,               // checklistId === templateId
-        site,                     // ✅ now in scope
-        title: overrideTitle || tpl.title,
-        frequency: tpl.frequency || "Ad hoc",
-        questions,
-        _source: "template",
-        _templateId: tpl.id,
-      };
-    })
-    .filter(Boolean);
-};
-
-  // ---------- shared draft refresher ----------
   const refreshDrafts = async () => {
     try {
       const qDrafts = query(
@@ -306,60 +302,53 @@ const buildChecklistsFromTemplates = (siteTemplateRows, templatesRows) => {
     }
   };
 
-  // ---------- Fetch (site-scoped + reacts to site change) ----------
+  // ---------- Fetch ----------
   useEffect(() => {
     if (!site) return;
 
     const fetchData = async () => {
-// Checklists (NEW path first: templates + siteTemplates; fallback to legacy checklists)
-try {
-  // 1) See if this site has siteTemplates configured
-  const qSiteTemplates = query(
-    siteTemplatesCollectionRef,
-    where("site", "==", site)
-  );
-  const stSnap = await getDocs(qSiteTemplates);
-  const siteTemplateRows = stSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
-setSiteTemplates(siteTemplateRows);
+      try {
+        const qSiteTemplates = query(
+          siteTemplatesCollectionRef,
+          where("site", "==", site)
+        );
+        const stSnap = await getDocs(qSiteTemplates);
+        const siteTemplateRows = stSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        setSiteTemplates(siteTemplateRows);
 
-  if (siteTemplateRows.length > 0) {
-    // 2) Fetch templates (simple approach: pull all, then filter)
-    // (Later we can optimize with "in" queries or a cache)
-    const tplSnap = await getDocs(templatesCollectionRef);
-    const templatesRows = tplSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        if (siteTemplateRows.length > 0) {
+          const tplSnap = await getDocs(templatesCollectionRef);
+          const templatesRows = tplSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+          const effective = buildChecklistsFromTemplates(siteTemplateRows, templatesRows);
+          setChecklists(effective);
+        } else {
+          const qChecklist = query(
+            checklistCollectionRef,
+            where("site", "==", site),
+            orderBy("createdAt", "desc")
+          );
+          const checklistSnapshot = await getDocs(qChecklist);
+          setChecklists(
+            checklistSnapshot.docs.map((d) => ({ id: d.id, ...d.data() }))
+          );
+        }
+      } catch (err) {
+        console.error("Error fetching checklists/templates:", err);
 
-    const effective = buildChecklistsFromTemplates(siteTemplateRows, templatesRows);
-    setChecklists(effective);
-  } else {
-    // 3) Fallback to legacy per-site checklists (your current system)
-    const qChecklist = query(
-      checklistCollectionRef,
-      where("site", "==", site),
-      orderBy("createdAt", "desc")
-    );
-    const checklistSnapshot = await getDocs(qChecklist);
-    setChecklists(
-      checklistSnapshot.docs.map((d) => ({ id: d.id, ...d.data() }))
-    );
-  }
-} catch (err) {
-  console.error("Error fetching checklists/templates:", err);
+        try {
+          const qChecklistFallback = query(
+            checklistCollectionRef,
+            where("site", "==", site)
+          );
+          const snap = await getDocs(qChecklistFallback);
+          const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+          setChecklists(rows);
+        } catch (err2) {
+          console.error("Error fetching checklists fallback:", err2);
+          setChecklists([]);
+        }
+      }
 
-  // Ultimate fallback: try legacy checklists without orderBy (index-safe)
-  try {
-    const qChecklistFallback = query(
-      checklistCollectionRef,
-      where("site", "==", site)
-    );
-    const snap = await getDocs(qChecklistFallback);
-    const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-    setChecklists(rows);
-  } catch (err2) {
-    console.error("Error fetching checklists fallback:", err2);
-    setChecklists([]);
-  }
-}
-      // Completed
       try {
         const qCompleted = query(
           completedCollectionRef,
@@ -390,14 +379,14 @@ setSiteTemplates(siteTemplateRows);
         }
       }
 
-      // Templates (global)
-try {
-  const tplSnap = await getDocs(templatesCollectionRef);
-  setTemplates(tplSnap.docs.map((d) => ({ id: d.id, ...d.data() })));
-} catch (err) {
-  console.error("Error fetching templates:", err);
-  setTemplates([]);
-}
+      try {
+        const tplSnap = await getDocs(templatesCollectionRef);
+        setTemplates(tplSnap.docs.map((d) => ({ id: d.id, ...d.data() })));
+      } catch (err) {
+        console.error("Error fetching templates:", err);
+        setTemplates([]);
+      }
+
       await refreshDrafts();
     };
 
@@ -415,30 +404,31 @@ try {
       requestAnimationFrame(() => newItemRef.current?.focus());
     }
   }, [adding, titleSet]);
+
   useEffect(() => {
     if (editingId) {
       requestAnimationFrame(() => editNewItemRef.current?.focus());
     }
   }, [editingId]);
 
-  // ---------- Authoring (Create) ----------
-const newQuestion = (text = "") =>
-  withQuestionDefaults({
-    id: makeId(),           // ✅ CREATE ID ONCE
-    text,
-    enabled: true,
-    answer: null,
-    corrective: "",
-    correctiveOn: "no",
-    followUps: {
-      yes: { enabled: false, text: "", correctiveOn: "no" },
-      no: { enabled: false, text: "", correctiveOn: "no" },
-    },
-    followUpAnswers: {
-      yes: { answer: null, corrective: "" },
-      no: { answer: null, corrective: "" },
-    },
-  });
+  // ---------- Authoring ----------
+  const newQuestion = (text = "") =>
+    withQuestionDefaults({
+      id: makeId(),
+      text,
+      enabled: true,
+      answer: null,
+      corrective: "",
+      correctiveOn: "no",
+      followUps: {
+        yes: { enabled: false, text: "", correctiveOn: "no" },
+        no: { enabled: false, text: "", correctiveOn: "no" },
+      },
+      followUpAnswers: {
+        yes: { answer: null, corrective: "" },
+        no: { answer: null, corrective: "" },
+      },
+    });
 
   const addItemAuthor = () => {
     if (!newItem.trim()) return;
@@ -448,17 +438,17 @@ const newQuestion = (text = "") =>
   };
 
   const updateItemAuthor = (index, updater) => {
-  const updated = [...authorQuestions];
-  const current = withQuestionDefaults(updated[index]);
-  updated[index] = typeof updater === "function" ? updater(current) : updater;
-  setAuthorQuestions(updated);
-};
+    const updated = [...authorQuestions];
+    const current = withQuestionDefaults(updated[index]);
+    updated[index] = typeof updater === "function" ? updater(current) : updater;
+    setAuthorQuestions(updated);
+  };
 
   const removeItemAuthor = (index) => {
-  const updated = [...authorQuestions];
-  updated.splice(index, 1);
-  setAuthorQuestions(updated);
-};
+    const updated = [...authorQuestions];
+    updated.splice(index, 1);
+    setAuthorQuestions(updated);
+  };
 
   const saveChecklist = async () => {
     if (!checklistTitle.trim() || authorQuestions.length === 0) {
@@ -476,16 +466,17 @@ const newQuestion = (text = "") =>
     };
 
     try {
-const docRef = await addDoc(
-  createTarget === "templates" ? templatesCollectionRef : checklistCollectionRef,
-  record
-);
-if (createTarget === "templates") {
-  setTemplates((prev) => [{ id: docRef.id, ...record }, ...prev]);
-} else {
-  setChecklists((prev) => [{ id: docRef.id, ...record }, ...prev]);
-}
-      // Reset create state
+      const docRef = await addDoc(
+        createTarget === "templates" ? templatesCollectionRef : checklistCollectionRef,
+        record
+      );
+
+      if (createTarget === "templates") {
+        setTemplates((prev) => [{ id: docRef.id, ...record }, ...prev]);
+      } else {
+        setChecklists((prev) => [{ id: docRef.id, ...record }, ...prev]);
+      }
+
       setChecklistTitle("");
       setNewFrequency("Daily");
       setAuthorQuestions([]);
@@ -496,7 +487,7 @@ if (createTarget === "templates") {
     }
   };
 
-  // ---------- Editing (Edit existing) ----------
+  // ---------- Editing ----------
   const startEditChecklist = (cl) => {
     setEditingId(cl.id);
     setEditingSource(cl._source === "template" ? "templates" : "checklists");
@@ -532,77 +523,74 @@ if (createTarget === "templates") {
     setEditItems(updated);
   };
 
-const saveEditChecklist = async () => {
-  if (!editingId && !editingSiteTemplate) return;
+  const saveEditChecklist = async () => {
+    if (!editingId && !editingSiteTemplate) return;
 
-  // ✅ Site override mode: save overrides to siteTemplates doc
-  if (editingSiteTemplate) {
-    try {
-      const overrides = { questions: {} };
+    if (editingSiteTemplate) {
+      try {
+        const overrides = { questions: {} };
 
-      editItems.forEach((q) => {
-        if (q.enabled === false) {
-          overrides.questions[q.id] = { enabled: false };
-        }
-      });
+        editItems.forEach((q) => {
+          if (q.enabled === false) {
+            overrides.questions[q.id] = { enabled: false };
+          }
+        });
 
-      await updateDoc(
-        doc(db, "siteTemplates", editingSiteTemplate._siteTemplate.id),
-        { overrides }
-      );
+        await updateDoc(
+          doc(db, "siteTemplates", editingSiteTemplate._siteTemplate.id),
+          { overrides }
+        );
 
-      setEditingSiteTemplate(null);
-      setEditingId(null);
-      return;
-    } catch (err) {
-      console.error("Error saving site overrides:", err);
-      alert("Could not save site overrides.");
+        setEditingSiteTemplate(null);
+        setEditingId(null);
+        return;
+      } catch (err) {
+        console.error("Error saving site overrides:", err);
+        alert("Could not save site overrides.");
+        return;
+      }
+    }
+
+    if (!editTitle.trim() || editItems.length === 0) {
+      alert("Checklist must have a title and at least one question");
       return;
     }
-  }
 
-  // ✅ Normal edit mode: update template or legacy checklist
-  if (!editTitle.trim() || editItems.length === 0) {
-    alert("Checklist must have a title and at least one question");
-    return;
-  }
+    try {
+      await updateDoc(
+        doc(db, editingSource === "templates" ? "templates" : "checklists", editingId),
+        {
+          title: editTitle.trim(),
+          frequency: editFrequency || "Ad hoc",
+          questions: editItems.map(withQuestionDefaults),
+          updatedAt: Timestamp.now(),
+          updatedBy: personName,
+        }
+      );
 
-  try {
-    await updateDoc(
-      doc(db, editingSource === "templates" ? "templates" : "checklists", editingId),
-      {
-        title: editTitle.trim(),
-        frequency: editFrequency || "Ad hoc",
-        questions: editItems.map(withQuestionDefaults),
-        updatedAt: Timestamp.now(),
-        updatedBy: personName,
-      }
-    );
+      setChecklists((prev) =>
+        prev.map((c) =>
+          c.id === editingId
+            ? {
+                ...c,
+                title: editTitle.trim(),
+                frequency: editFrequency || "Ad hoc",
+                questions: editItems.map(withQuestionDefaults),
+              }
+            : c
+        )
+      );
 
-    // keep local list in sync for legacy checklists view
-    setChecklists((prev) =>
-      prev.map((c) =>
-        c.id === editingId
-          ? {
-              ...c,
-              title: editTitle.trim(),
-              frequency: editFrequency || "Ad hoc",
-              questions: editItems.map(withQuestionDefaults),
-            }
-          : c
-      )
-    );
-
-    setEditingId(null);
-    setEditTitle("");
-    setEditFrequency("Ad hoc");
-    setEditItems([]);
-    setEditNewItem("");
-  } catch (err) {
-    console.error("Error saving checklist/template edits:", err);
-    alert("Could not save changes.");
-  }
-};
+      setEditingId(null);
+      setEditTitle("");
+      setEditFrequency("Ad hoc");
+      setEditItems([]);
+      setEditNewItem("");
+    } catch (err) {
+      console.error("Error saving checklist/template edits:", err);
+      alert("Could not save changes.");
+    }
+  };
 
   const cancelEdit = () => {
     setEditingSiteTemplate(null);
@@ -613,51 +601,50 @@ const saveEditChecklist = async () => {
     setEditNewItem("");
   };
 
-  // ---------- Draft helpers ----------
   // ---------- Site template helpers ----------
-const isTemplateEnabledForSite = (templateId) =>
-  siteTemplates.some(
-    (st) => st.templateId === templateId && st.enabled !== false
-  );
-
-const addTemplateToSite = async (templateId) => {
-  try {
-    await addDoc(siteTemplatesCollectionRef, {
-      site,
-      templateId,
-      enabled: true,
-      createdAt: Timestamp.now(),
-      createdBy: personName,
-    });
-    // refresh
-    const snap = await getDocs(
-      query(siteTemplatesCollectionRef, where("site", "==", site))
+  const isTemplateEnabledForSite = (templateId) =>
+    siteTemplates.some(
+      (st) => st.templateId === templateId && st.enabled !== false
     );
-    setSiteTemplates(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
-  } catch (e) {
-    console.error("Error adding template to site:", e);
-  }
-};
 
-const removeTemplateFromSite = async (templateId) => {
-  try {
-    const match = siteTemplates.find((st) => st.templateId === templateId);
-    if (!match) return;
+  const addTemplateToSite = async (templateId) => {
+    try {
+      await addDoc(siteTemplatesCollectionRef, {
+        site,
+        templateId,
+        enabled: true,
+        createdAt: Timestamp.now(),
+        createdBy: personName,
+      });
 
-    await deleteDoc(doc(db, "siteTemplates", match.id));
+      const snap = await getDocs(
+        query(siteTemplatesCollectionRef, where("site", "==", site))
+      );
+      setSiteTemplates(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+    } catch (e) {
+      console.error("Error adding template to site:", e);
+    }
+  };
 
-    setSiteTemplates((prev) =>
-      prev.filter((st) => st.templateId !== templateId)
-    );
-  } catch (e) {
-    console.error("Error removing template from site:", e);
-  }
-};
+  const removeTemplateFromSite = async (templateId) => {
+    try {
+      const match = siteTemplates.find((st) => st.templateId === templateId);
+      if (!match) return;
 
-// ---------- Draft helpers ----------
-const refreshDraftsForPerson = async () => {
-  await refreshDrafts();
-};
+      await deleteDoc(doc(db, "siteTemplates", match.id));
+
+      setSiteTemplates((prev) =>
+        prev.filter((st) => st.templateId !== templateId)
+      );
+    } catch (e) {
+      console.error("Error removing template from site:", e);
+    }
+  };
+
+  // ---------- Draft helpers ----------
+  const refreshDraftsForPerson = async () => {
+    await refreshDrafts();
+  };
 
   const loadLatestDraft = async (cl) => {
     try {
@@ -703,13 +690,11 @@ const refreshDraftsForPerson = async () => {
 
     try {
       if (draftId) {
-        // UPDATE
         await updateDoc(doc(db, "checklistDrafts", draftId), {
           ...base,
           updatedAt: Timestamp.now(),
         });
       } else {
-        // CREATE
         const ref = await addDoc(draftsCollectionRef, {
           ...base,
           createdAt: Timestamp.now(),
@@ -737,20 +722,22 @@ const refreshDraftsForPerson = async () => {
     }
   };
 
-  // ---------- Running (complete answers) ----------
+  // ---------- Running ----------
   const openChecklist = async (cl) => {
-    // Ensure defaults for runtime
-    const freshQuestions = (cl.questions || []).map((q) =>
-      withQuestionDefaults({
-        ...q,
-        answer: null,
-        corrective: "",
-        followUpAnswers: {
-          yes: { answer: null, corrective: "" },
-          no: { answer: null, corrective: "" },
-        },
-      })
-    );
+    const freshQuestions = (cl.questions || [])
+      .filter((q) => q.enabled !== false)
+      .map((q) =>
+        withQuestionDefaults({
+          ...q,
+          answer: null,
+          corrective: "",
+          followUpAnswers: {
+            yes: { answer: null, corrective: "" },
+            no: { answer: null, corrective: "" },
+          },
+        })
+      );
+
     setSelectedChecklist(cl);
     setRunQuestions(freshQuestions);
     setAdding(false);
@@ -786,7 +773,6 @@ const refreshDraftsForPerson = async () => {
     const item = withQuestionDefaults(updated[index]);
     item.answer = value;
 
-    // If switching answer, clear follow-up answers for the other branch (to avoid stale data)
     if (value === "Yes") {
       item.followUpAnswers.no = { answer: null, corrective: "" };
     } else if (value === "No") {
@@ -796,7 +782,6 @@ const refreshDraftsForPerson = async () => {
       item.followUpAnswers.no = { answer: null, corrective: "" };
     }
 
-    // Optional: auto-clear main corrective if not required
     if (!needsCorrective(item.correctiveOn, value)) {
       item.corrective = "";
     }
@@ -805,98 +790,88 @@ const refreshDraftsForPerson = async () => {
   };
 
   const handleCorrectiveChange = (index, value) => {
-  const updated = [...runQuestions];
-  const item = withQuestionDefaults(updated[index]);
-  item.corrective = value;
-  updated[index] = item;
-  setRunQuestions(updated);
-};
-  // Follow-up handlers
-  const handleFollowUpAnswer = (index, branch /* "yes"|"no" */, value) => {
-  const updated = [...runQuestions];
-  const item = withQuestionDefaults(updated[index]);
-  const fa = { ...(item.followUpAnswers?.[branch] ?? { answer: null, corrective: "" }) };
-  fa.answer = value;
-  if (!needsCorrective(item.followUps[branch].correctiveOn, value)) {
-    fa.corrective = "";
-  }
-  item.followUpAnswers = { ...item.followUpAnswers, [branch]: fa };
-  updated[index] = item;
-  setRunQuestions(updated);
-};
+    const updated = [...runQuestions];
+    const item = withQuestionDefaults(updated[index]);
+    item.corrective = value;
+    updated[index] = item;
+    setRunQuestions(updated);
+  };
+
+  const handleFollowUpAnswer = (index, branch, value) => {
+    const updated = [...runQuestions];
+    const item = withQuestionDefaults(updated[index]);
+    const fa = { ...(item.followUpAnswers?.[branch] ?? { answer: null, corrective: "" }) };
+    fa.answer = value;
+    if (!needsCorrective(item.followUps[branch].correctiveOn, value)) {
+      fa.corrective = "";
+    }
+    item.followUpAnswers = { ...item.followUpAnswers, [branch]: fa };
+    updated[index] = item;
+    setRunQuestions(updated);
+  };
 
   const handleFollowUpCorrective = (index, branch, value) => {
-  const updated = [...runQuestions];
-  const item = withQuestionDefaults(updated[index]);
-  const fa = { ...(item.followUpAnswers?.[branch] ?? { answer: null, corrective: "" }) };
-  fa.corrective = value;
-  item.followUpAnswers = { ...item.followUpAnswers, [branch]: fa };
-  updated[index] = item;
-  setRunQuestions(updated);
-};
+    const updated = [...runQuestions];
+    const item = withQuestionDefaults(updated[index]);
+    const fa = { ...(item.followUpAnswers?.[branch] ?? { answer: null, corrective: "" }) };
+    fa.corrective = value;
+    item.followUpAnswers = { ...item.followUpAnswers, [branch]: fa };
+    updated[index] = item;
+    setRunQuestions(updated);
+  };
 
-const saveAnswers = async () => {
-  if (!selectedChecklist) return;
+  const saveAnswers = async () => {
+    if (!selectedChecklist) return;
 
-  try {
-    const now = Timestamp.now();
+    try {
+      const now = Timestamp.now();
 
-    // ✅ Only stamp metadata on legacy checklists (real docs in "checklists")
-    // Template-sourced checklists are not in "checklists", so this would fail.
-    if (!selectedChecklist._source || selectedChecklist._source !== "template") {
-      try {
-        await updateDoc(doc(db, "checklists", selectedChecklist.id), {
-          lastCompletedAt: now,
-          lastCompletedBy: personName,
-        });
-      } catch (e) {
-        console.warn("Skipping lastCompleted stamp (checklists doc missing?):", e?.message);
+      if (!selectedChecklist._source || selectedChecklist._source !== "template") {
+        try {
+          await updateDoc(doc(db, "checklists", selectedChecklist.id), {
+            lastCompletedAt: now,
+            lastCompletedBy: personName,
+          });
+        } catch (e) {
+          console.warn("Skipping lastCompleted stamp (checklists doc missing?):", e?.message);
+        }
       }
+
+      const completedEntry = {
+        site,
+        createdAt: now,
+        person: personName,
+        title: selectedChecklist.title,
+        frequency: selectedChecklist.frequency || "Ad hoc",
+        questions: runQuestions.map(withQuestionDefaults),
+        source: selectedChecklist._source === "template" ? "template" : "checklist",
+        templateId: selectedChecklist._source === "template" ? selectedChecklist.id : null,
+        checklistId: selectedChecklist._source === "template" ? null : selectedChecklist.id,
+      };
+
+      const docRef = await addDoc(completedCollectionRef, completedEntry);
+      setCompleted((prev) => [{ id: docRef.id, ...completedEntry }, ...prev]);
+
+      if (draftId) {
+        await deleteDoc(doc(db, "checklistDrafts", draftId));
+        setDraftId(null);
+      }
+      await refreshDraftsForPerson();
+
+      setSelectedChecklist(null);
+      setRunQuestions([]);
+    } catch (error) {
+      console.error("Error saving answers:", error);
+      alert("Could not submit answers. Please try again.");
     }
-
-    // ✅ Always save a completed record
-    const completedEntry = {
-      site,
-      createdAt: now,
-      person: personName,
-
-      // keep your existing shape
-      title: selectedChecklist.title,
-      frequency: selectedChecklist.frequency || "Ad hoc",
-      questions: runQuestions.map(withQuestionDefaults),
-
-      // ✅ IMPORTANT: track what this completion was based on
-      source: selectedChecklist._source === "template" ? "template" : "checklist",
-      templateId: selectedChecklist._source === "template" ? selectedChecklist.id : null,
-      checklistId: selectedChecklist._source === "template" ? null : selectedChecklist.id,
-    };
-
-    const docRef = await addDoc(completedCollectionRef, completedEntry);
-    setCompleted((prev) => [{ id: docRef.id, ...completedEntry }, ...prev]);
-
-    // clean up draft for this run
-    if (draftId) {
-      await deleteDoc(doc(db, "checklistDrafts", draftId));
-      setDraftId(null);
-    }
-    await refreshDraftsForPerson();
-
-    setSelectedChecklist(null);
-    setRunQuestions([]);
-  } catch (error) {
-    console.error("Error saving answers:", error);
-    alert("Could not submit answers. Please try again.");
-  }
-};
+  };
 
   const deleteChecklist = async (cl) => {
-    if (!window.confirm(`Delete checklist "${cl.title}"? This cannot be undone.`))
-      return;
+    if (!window.confirm(`Delete checklist "${cl.title}"? This cannot be undone.`)) return;
     try {
       await deleteDoc(doc(db, "checklists", cl.id));
       setChecklists((prev) => prev.filter((c) => c.id !== cl.id));
 
-      // If there was a draft for this checklist, also remove it locally
       if (draftMap[cl.id]) {
         try {
           await deleteDoc(doc(db, "checklistDrafts", draftMap[cl.id].id));
@@ -913,12 +888,7 @@ const saveAnswers = async () => {
   };
 
   const deleteCompleted = async (entry) => {
-    if (
-      !window.confirm(
-        `Delete completed checklist "${entry.title}"? This cannot be undone.`
-      )
-    )
-      return;
+    if (!window.confirm(`Delete completed checklist "${entry.title}"? This cannot be undone.`)) return;
     try {
       await deleteDoc(doc(db, "completed", entry.id));
       setCompleted((prev) => prev.filter((c) => c.id !== entry.id));
@@ -935,7 +905,6 @@ const saveAnswers = async () => {
   };
 
   const resetView = () => {
-    // Create
     setAdding(false);
     setTitleSet(false);
     setChecklistTitle("");
@@ -944,11 +913,9 @@ const saveAnswers = async () => {
     setRunQuestions([]);
     setViewQuestions([]);
     setNewItem("");
-    // Run/View
     setSelectedChecklist(null);
     setViewingCompleted(null);
     setDraftId(null);
-    // Edit
     setEditingId(null);
     setEditTitle("");
     setEditFrequency("Ad hoc");
@@ -957,7 +924,6 @@ const saveAnswers = async () => {
   };
 
   // ---------- Export ----------
-  // Recursively write a question and (if present) its relevant follow-up
   const writeQuestionBlock = (container, q, idx) => {
     const qEl = document.createElement("p");
     qEl.style.margin = "0 0 8px 0";
@@ -1013,9 +979,7 @@ const saveAnswers = async () => {
     element.appendChild(titleEl);
 
     const subTitleEl = document.createElement("p");
-    subTitleEl.innerText = `Completed by: ${completedBy} — ${formatTimestamp(
-      ts
-    )}`;
+    subTitleEl.innerText = `Completed by: ${completedBy} — ${formatTimestamp(ts)}`;
     subTitleEl.style.margin = "0 0 16px 0";
     element.appendChild(subTitleEl);
 
@@ -1057,9 +1021,7 @@ const saveAnswers = async () => {
 
     siteCompleted.forEach((c, cIdx) => {
       const subTitle = document.createElement("h3");
-      subTitle.innerText = `${cIdx + 1}. ${c.title} (Completed by ${
-        c.person
-      } at ${formatTimestamp(c.createdAt)})`;
+      subTitle.innerText = `${cIdx + 1}. ${c.title} (Completed by ${c.person} at ${formatTimestamp(c.createdAt)})`;
       subTitle.style.margin = "16px 0 8px 0";
       element.appendChild(subTitle);
 
@@ -1094,36 +1056,35 @@ const saveAnswers = async () => {
     type = "button",
   }) => {
     const palette = {
-      neutral: { bg: "#f3f4f6", hover: "#e5e7eb", color: "#111" },
-      primary: { bg: "#2563eb", hover: "#1d4ed8", color: "#fff" },
-      success: { bg: "#059669", hover: "#047857", color: "#fff" },
-      warn: { bg: "#f59e0b", hover: "#d97706", color: "#111" },
-      danger: { bg: "#ef4444", hover: "#dc2626", color: "#fff" },
-      subtle: { bg: "#fff", hover: "#f9fafb", color: "#111" },
+      neutral: { bg: "#fff", hover: "#f8fafc", color: "#0f172a", border: "#e5e7eb" },
+      primary: { bg: "#15803d", hover: "#166534", color: "#fff", border: "#15803d" },
+      success: { bg: "#15803d", hover: "#166534", color: "#fff", border: "#15803d" },
+      warn: { bg: "#f59e0b", hover: "#d97706", color: "#fff", border: "#f59e0b" },
+      danger: { bg: "#dc2626", hover: "#b91c1c", color: "#fff", border: "#dc2626" },
+      subtle: { bg: "#f8fafc", hover: "#f1f5f9", color: "#0f172a", border: "#e5e7eb" },
     };
 
     const p = palette[kind] || palette.neutral;
-    const base = {
-      padding: "10px 16px",
-      borderRadius: "10px",
-      cursor: "pointer",
-      backgroundColor: p.bg,
-      color: p.color,
-      fontSize: "14px",
-      fontWeight: 600,
-      border: "none",
-      boxShadow: "0 1px 3px rgba(0,0,0,0.08)",
-      transition: "all 0.2s ease",
-      ...style,
-    };
 
     return (
       <button
         type={type}
         onClick={onClick}
-        style={base}
-        onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = p.hover)}
-        onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = p.bg)}
+        style={{
+          border: `1px solid ${p.border}`,
+          background: p.bg,
+          color: p.color,
+          borderRadius: 999,
+          padding: "9px 14px",
+          fontWeight: 800,
+          fontSize: 13,
+          cursor: "pointer",
+          transition: "all 0.18s ease",
+          boxShadow: "0 1px 3px rgba(15,23,42,0.06)",
+          ...style,
+        }}
+        onMouseEnter={(e) => (e.currentTarget.style.background = p.hover)}
+        onMouseLeave={(e) => (e.currentTarget.style.background = p.bg)}
         tabIndex={tabIndex}
       >
         {children}
@@ -1134,18 +1095,8 @@ const saveAnswers = async () => {
   const Card = ({ children, onClick, hoverable = true, style = {} }) => (
     <div
       onClick={onClick}
-      style={{
-        background: "#fff",
-        borderRadius: "14px",
-        padding: "16px",
-        boxShadow: "0 2px 6px rgba(0,0,0,0.08)",
-        transition: "all 0.2s ease",
-        textAlign: "left",
-        position: "relative",
-        ...style,
-      }}
-      onMouseEnter={(e) => hoverable && elevate(e.currentTarget)}
-      onMouseLeave={(e) => hoverable && normalize(e.currentTarget)}
+      className={hoverable ? "checklist-card hoverable" : "checklist-card"}
+      style={style}
     >
       {children}
     </div>
@@ -1154,11 +1105,11 @@ const saveAnswers = async () => {
   const SectionTitle = ({ children, style = {} }) => (
     <h2
       style={{
-        fontSize: "18px",
-        color: "#111",
-        fontWeight: 700,
-        margin: "16px 0 10px",
-        textAlign: "left",
+        fontSize: 18,
+        color: "#0f172a",
+        fontWeight: 800,
+        margin: "18px 0 12px",
+        letterSpacing: -0.2,
         ...style,
       }}
     >
@@ -1172,11 +1123,10 @@ const saveAnswers = async () => {
       value={value}
       onChange={(e) => onChange(e.target.value)}
       style={{
-        padding: "8px 10px",
-        fontSize: "13px",
-        borderRadius: "8px",
-        border: "1px solid #e5e7eb",
-        background: "#fff",
+        ...inputStyle,
+        padding: "9px 12px",
+        fontSize: 13,
+        minWidth: 170,
       }}
     >
       <option value="none">Corrective: None</option>
@@ -1187,31 +1137,33 @@ const saveAnswers = async () => {
   );
 
   const AnswerButtons = ({ active, onPick }) => (
-    <div style={{ display: "flex", gap: 8 }}>
+    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
       <Button
         kind={active === "Yes" ? "success" : "subtle"}
         onClick={() => onPick("Yes")}
-        style={{ border: active === "Yes" ? "1px solid #059669" : "1px solid #e5e7eb" }}
+        style={{ border: active === "Yes" ? "1px solid #15803d" : "1px solid #e5e7eb" }}
       >
         Yes
       </Button>
       <Button
         kind={active === "No" ? "danger" : "subtle"}
         onClick={() => onPick("No")}
-        style={{ border: active === "No" ? "1px solid #ef4444" : "1px solid #e5e7eb" }}
+        style={{ border: active === "No" ? "1px solid #dc2626" : "1px solid #e5e7eb" }}
       >
         No
       </Button>
       <Button
         kind={active === "N/A" ? "neutral" : "subtle"}
         onClick={() => onPick("N/A")}
-        style={{ border: active === "N/A" ? "1px solid #9ca3af" : "1px solid #e5e7eb" }}
+        style={{ border: active === "N/A" ? "1px solid #94a3b8" : "1px solid #e5e7eb" }}
       >
         N/A
       </Button>
     </div>
   );
-const isSiteOverrideMode = !!editingSiteTemplate;
+
+  const isSiteOverrideMode = !!editingSiteTemplate;
+
   // ---------- Render helpers ----------
   const renderFollowUpRun = (item, index, branch, editable) => {
     const cfg = item.followUps?.[branch];
@@ -1221,9 +1173,9 @@ const isSiteOverrideMode = !!editingSiteTemplate;
     const correctiveVal = item.followUpAnswers?.[branch]?.corrective ?? "";
 
     return (
-      <div style={{ marginTop: 10, paddingLeft: 14, borderLeft: "3px solid #e5e7eb" }}>
-        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-          <div style={{ flex: 1, color: "#111" }}>↳ {cfg.text}</div>
+      <div style={{ marginTop: 12, paddingLeft: 14, borderLeft: "3px solid #e5e7eb" }}>
+        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          <div style={{ flex: 1, color: "#0f172a", minWidth: 240 }}>↳ {cfg.text}</div>
           <AnswerButtons
             active={ans}
             onPick={editable ? (value) => handleFollowUpAnswer(index, branch, value) : () => {}}
@@ -1239,13 +1191,9 @@ const isSiteOverrideMode = !!editingSiteTemplate;
             }
             readOnly={!editable}
             style={{
-              marginTop: "10px",
-              padding: "10px 12px",
-              borderRadius: "10px",
+              ...inputStyle,
+              marginTop: 10,
               width: "100%",
-              border: "1px solid #e5e7eb",
-              outline: "none",
-              fontSize: "14px",
             }}
           />
         )}
@@ -1254,12 +1202,12 @@ const isSiteOverrideMode = !!editingSiteTemplate;
   };
 
   const renderChecklistItemsRun = (editable = true) =>
-  runQuestions.map((item, index) => {
+    runQuestions.map((item, index) => {
       const ans = item.answer;
       return (
-        <Card key={item.id || index} hoverable={false} style={{ margin: "10px 0" }}>
-          <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-            <div style={{ flex: 1, color: "#111" }}>{item.text}</div>
+        <Card key={item.id || index} hoverable={false} style={{ margin: "12px 0" }}>
+          <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+            <div style={{ flex: 1, color: "#0f172a", fontWeight: 700, minWidth: 240 }}>{item.text}</div>
             <AnswerButtons active={ans} onPick={editable ? (v) => handleAnswerChange(index, v) : () => {}} />
           </div>
 
@@ -1271,18 +1219,13 @@ const isSiteOverrideMode = !!editingSiteTemplate;
               onChange={editable ? (e) => handleCorrectiveChange(index, e.target.value) : undefined}
               readOnly={!editable}
               style={{
-                marginTop: "12px",
-                padding: "10px 12px",
-                borderRadius: "10px",
+                ...inputStyle,
+                marginTop: 12,
                 width: "100%",
-                border: "1px solid #e5e7eb",
-                outline: "none",
-                fontSize: "14px",
               }}
             />
           )}
 
-          {/* Follow-up branching */}
           {ans === "Yes" && renderFollowUpRun(item, index, "yes", editable)}
           {ans === "No" && renderFollowUpRun(item, index, "no", editable)}
         </Card>
@@ -1290,68 +1233,63 @@ const isSiteOverrideMode = !!editingSiteTemplate;
     });
 
   const renderAuthoringItems = (list, onUpdate, onRemove) =>
-  list.map((item, index) => {
-    return (
-        <Card key={item.id || index} hoverable={false} style={{ margin: "10px 0" }}>
+    list.map((item, index) => {
+      return (
+        <Card key={item.id || index} hoverable={false} style={{ margin: "12px 0" }}>
           <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
             <input
-  type="text"
-  value={item.text}
-  disabled={isSiteOverrideMode}
-  onChange={(e) => onUpdate(index, { ...item, text: e.target.value })}
+              type="text"
+              value={item.text}
+              disabled={isSiteOverrideMode}
+              onChange={(e) => onUpdate(index, { ...item, text: e.target.value })}
               placeholder={`Question ${index + 1}`}
               style={{
-                padding: "12px 14px",
-                fontSize: "15px",
-                borderRadius: "10px",
-                border: "1px solid #e5e7eb",
-                outline: "none",
+                ...inputStyle,
                 flex: 1,
                 minWidth: 240,
+                background: isSiteOverrideMode ? "#f8fafc" : "#fff",
               }}
             />
             <CorrectiveRuleSelect
               value={item.correctiveOn}
               onChange={(val) => onUpdate(index, { ...item, correctiveOn: val })}
             />
-            <Button kind="danger" onClick={() => onRemove(index)} style={{ padding: "10px 12px" }}>
-  Remove
-</Button>
+            <Button kind="danger" onClick={() => onRemove(index)} style={{ padding: "9px 12px" }}>
+              Remove
+            </Button>
 
-{isSiteOverrideMode && (
-  <label style={{ fontSize: 13 }}>
-    <input
-      type="checkbox"
-      checked={item.enabled !== false}
-      onChange={(e) =>
-        onUpdate(index, {
-          ...item,
-          enabled: e.target.checked,
-        })
-      }
-    />{" "}
-    Enabled for this site
-  </label>
-)}
+            {isSiteOverrideMode && (
+              <label style={{ fontSize: 13, color: "#334155", fontWeight: 700 }}>
+                <input
+                  type="checkbox"
+                  checked={item.enabled !== false}
+                  onChange={(e) =>
+                    onUpdate(index, {
+                      ...item,
+                      enabled: e.target.checked,
+                    })
+                  }
+                />{" "}
+                Enabled for this site
+              </label>
+            )}
           </div>
 
-          {/* Follow-up config */}
           <div
             style={{
-              marginTop: 10,
-              padding: "10px",
-              background: "#f9fafb",
+              marginTop: 12,
+              padding: 12,
+              background: "#f8fafc",
               border: "1px solid #e5e7eb",
-              borderRadius: 10,
+              borderRadius: 14,
             }}
           >
-            <div style={{ fontSize: 13, color: "#374151", fontWeight: 700, marginBottom: 8 }}>
-              Follow-up (optional)
+            <div style={{ fontSize: 13, color: "#334155", fontWeight: 800, marginBottom: 10 }}>
+              Follow-up optional
             </div>
 
-            {/* On YES */}
-            <div style={{ display: "grid", gridTemplateColumns: "auto 1fr auto", gap: 8, alignItems: "center", marginBottom: 8 }}>
-              <label style={{ fontSize: 13, color: "#111", minWidth: 80 }}>On Yes:</label>
+            <div className="followup-grid" style={{ display: "grid", gridTemplateColumns: "auto 1fr auto", gap: 8, alignItems: "center", marginBottom: 10 }}>
+              <label style={{ fontSize: 13, color: "#0f172a", minWidth: 80, fontWeight: 700 }}>On Yes:</label>
               <input
                 type="text"
                 value={item.followUps.yes.text}
@@ -1365,14 +1303,9 @@ const isSiteOverrideMode = !!editingSiteTemplate;
                   })
                 }
                 placeholder="Follow-up question to ask when answer is Yes"
-                style={{
-                  padding: "10px 12px",
-                  borderRadius: 10,
-                  border: "1px solid #e5e7eb",
-                  outline: "none",
-                }}
+                style={inputStyle}
               />
-              <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+              <label style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 12, color: "#334155", fontWeight: 700 }}>
                 <input
                   id={`yes-enabled-${index}`}
                   type="checkbox"
@@ -1387,10 +1320,8 @@ const isSiteOverrideMode = !!editingSiteTemplate;
                     })
                   }
                 />
-                <label htmlFor={`yes-enabled-${index}`} style={{ fontSize: 12 }}>
-                  Enable
-                </label>
-              </div>
+                Enable
+              </label>
               <div />
               <div style={{ gridColumn: "2 / span 2" }}>
                 <CorrectiveRuleSelect
@@ -1408,9 +1339,8 @@ const isSiteOverrideMode = !!editingSiteTemplate;
               </div>
             </div>
 
-            {/* On NO */}
-            <div style={{ display: "grid", gridTemplateColumns: "auto 1fr auto", gap: 8, alignItems: "center" }}>
-              <label style={{ fontSize: 13, color: "#111", minWidth: 80 }}>On No:</label>
+            <div className="followup-grid" style={{ display: "grid", gridTemplateColumns: "auto 1fr auto", gap: 8, alignItems: "center" }}>
+              <label style={{ fontSize: 13, color: "#0f172a", minWidth: 80, fontWeight: 700 }}>On No:</label>
               <input
                 type="text"
                 value={item.followUps.no.text}
@@ -1424,14 +1354,9 @@ const isSiteOverrideMode = !!editingSiteTemplate;
                   })
                 }
                 placeholder="Follow-up question to ask when answer is No"
-                style={{
-                  padding: "10px 12px",
-                  borderRadius: 10,
-                  border: "1px solid #e5e7eb",
-                  outline: "none",
-                }}
+                style={inputStyle}
               />
-              <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+              <label style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 12, color: "#334155", fontWeight: 700 }}>
                 <input
                   id={`no-enabled-${index}`}
                   type="checkbox"
@@ -1446,10 +1371,8 @@ const isSiteOverrideMode = !!editingSiteTemplate;
                     })
                   }
                 />
-                <label htmlFor={`no-enabled-${index}`} style={{ fontSize: 12 }}>
-                  Enable
-                </label>
-              </div>
+                Enable
+              </label>
               <div />
               <div style={{ gridColumn: "2 / span 2" }}>
                 <CorrectiveRuleSelect
@@ -1473,659 +1396,618 @@ const isSiteOverrideMode = !!editingSiteTemplate;
 
   // ---------- Main Render ----------
   return (
-    <div
-      style={{
-        maxWidth: "900px",
-        margin: "0 auto",
-        padding: "32px 20px 44px",
-        fontFamily: "'Inter', system-ui, -apple-system, Arial",
-      }}
-    >
-      {/* Header / Toolbar */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 12,
-          justifyContent: "space-between",
-          marginBottom: 18,
-        }}
-      >
-        <div style={{ textAlign: "left" }}>
-          <h1
-            style={{ fontSize: "28px", color: "#111", fontWeight: 700, margin: 0 }}
-          >
-            {site} — Checklists
-          </h1>
-          <div style={{ fontSize: 13, color: "#6b7280", marginTop: 4 }}>
-            Create, edit, complete, and export your venue checklists
-          </div>
-        </div>
+    <div style={{ minHeight: "100vh", background: "#f8fafc", fontFamily: "'Inter', system-ui, -apple-system, Arial" }}>
+      <style>{`
+        .checklist-shell {
+          max-width: 1120px;
+          margin: 0 auto;
+          padding: 28px;
+        }
 
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-          <Button onClick={goBack}>Back</Button>
-          {isManager && (
-  <Button
-    kind={viewingTemplates ? "neutral" : "subtle"}
-    onClick={() => {
-      resetView();
-      setViewingTemplates((v) => !v);
-    }}
-  >
-    Templates
-  </Button>
-)}
-          {isManager && !editingId && (
-            <Button
-              kind="primary"
-onClick={() => {
-  setCreateTarget(viewingTemplates ? "templates" : "checklists"); // ✅ lock in target at click time
-  setAdding(true);
-  setSelectedChecklist(null);
-  setViewingCompleted(null);
-  setEditingId(null);
-  setDraftId(null);
-}}
+        .checklist-card {
+          background: rgba(255,255,255,0.97);
+          border: 1px solid #e5e7eb;
+          border-radius: 18px;
+          padding: 18px;
+          box-shadow: 0 4px 14px rgba(15,23,42,0.06);
+          transition: all 0.18s ease;
+          text-align: left;
+          position: relative;
+        }
+
+        .checklist-card.hoverable:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 8px 20px rgba(15,23,42,0.08);
+          background: #fff;
+        }
+
+        .checklist-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+          gap: 16px;
+        }
+
+        .toolbar-wrap {
+          display: flex;
+          gap: 10px;
+          flex-wrap: wrap;
+          align-items: center;
+          justify-content: flex-end;
+        }
+
+        @media (max-width: 820px) {
+          .checklist-shell {
+            padding: 16px;
+          }
+
+          .checklist-header {
+            align-items: flex-start !important;
+          }
+
+          .toolbar-wrap {
+            justify-content: flex-start;
+            width: 100%;
+          }
+
+          .followup-grid {
+            grid-template-columns: 1fr !important;
+          }
+
+          .followup-grid > div,
+          .followup-grid > label,
+          .followup-grid input {
+            grid-column: auto !important;
+          }
+        }
+      `}</style>
+
+      <div className="checklist-shell">
+        {/* Header / Toolbar */}
+        <div
+          className="checklist-header"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 16,
+            justifyContent: "space-between",
+            marginBottom: 22,
+            flexWrap: "wrap",
+          }}
+        >
+          <div style={{ textAlign: "left" }}>
+            <h1
+              style={{
+                fontSize: 34,
+                color: "#0f172a",
+                fontWeight: 800,
+                margin: 0,
+                letterSpacing: -0.7,
+              }}
             >
-              {viewingTemplates ? "+ Add Template" : "+ Add Checklist"}
-            </Button>
-          )}
-          {siteCompleted.length > 0 && (
-            <Button kind="warn" onClick={exportAllCompletedToPDF}>
-              Export All Completed
-            </Button>
-          )}
-        </div>
-      </div>
-
-      {/* MAIN VIEW */}
-
-      {/* TEMPLATES VIEW (Managers) */}
-{viewingTemplates && !adding && !editingId && !selectedChecklist && !viewingCompleted && (
-  <>
-    <SectionTitle>Templates</SectionTitle>
-
-    {templates.length === 0 && (
-      <Card hoverable={false}>
-        <div style={{ color: "#6b7280" }}>No templates yet.</div>
-      </Card>
-    )}
-
-    <div
-      style={{
-        display: "grid",
-        gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
-        gap: 14,
-      }}
-    >
-      {templates.map((tpl) => (
-        <Card key={tpl.id}>
-          <div style={{ fontWeight: 700, color: "#111", marginBottom: 6 }}>
-            {tpl.title}
-            <span style={freqChip(tpl.frequency)}>{tpl.frequency || "Ad hoc"}</span>
+              Checklists
+            </h1>
+            <div style={{ ...mutedText, marginTop: 5 }}>
+              {site} · Create, complete, edit and export venue checklists
+            </div>
           </div>
 
-          <div style={{ fontSize: 13, color: "#6b7280" }}>
-            {Array.isArray(tpl.questions) ? tpl.questions.length : 0} question
-            {Array.isArray(tpl.questions) && tpl.questions.length !== 1 ? "s" : ""}
-          </div>
-
-          <Button
-            kind="subtle"
-            onClick={() => {
-              startEditChecklist({ ...tpl, _source: "template" });
-              setViewingTemplates(false);
-            }}
-            style={{ marginTop: 10 }}
-          >
-            Edit Template
-          </Button>
-          {isTemplateEnabledForSite(tpl.id) && (
-  <Button
-    kind="neutral"
-    onClick={() => {
-      const st = siteTemplates.find((x) => x.templateId === tpl.id);
-      if (!st) return;
-      setEditingSiteTemplate({ ...tpl, _siteTemplate: st });
-      setViewingTemplates(false);
-    }}
-    style={{ marginTop: 8 }}
-  >
-    Configure for site
-  </Button>
-)}
-          {isTemplateEnabledForSite(tpl.id) ? (
-  <Button
-    kind="warn"
-    onClick={() => removeTemplateFromSite(tpl.id)}
-    style={{ marginTop: 8 }}
-  >
-    Remove from site
-  </Button>
-) : (
-  <Button
-    kind="success"
-    onClick={() => addTemplateToSite(tpl.id)}
-    style={{ marginTop: 8 }}
-  >
-    Add to site
-  </Button>
-)}
-        </Card>
-      ))}
-    </div>
-  </>
-)}
-      {!viewingTemplates && !adding && !selectedChecklist && !viewingCompleted && !editingId && (
-        <>
-          {/* Drafts */}
-          {drafts.length > 0 && (
-            <>
-              <SectionTitle>Your Drafts</SectionTitle>
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
-                  gap: 14,
+          <div className="toolbar-wrap">
+            <Button onClick={goBack}>Back</Button>
+            {isManager && (
+              <Button
+                kind={viewingTemplates ? "primary" : "subtle"}
+                onClick={() => {
+                  resetView();
+                  setViewingTemplates((v) => !v);
                 }}
               >
-                {drafts.map((d) => (
-                  <Card key={d.id}>
-                    <div style={{ paddingRight: 104 }}>
-                      <div style={{ fontWeight: 700, color: "#111", marginBottom: 6 }}>
-                        {d.title || "Checklist draft"}
-                        <span style={{ ...tinyDraftChip, marginLeft: 8 }}>Draft</span>
-                      </div>
-                      <div style={{ fontSize: 13, color: "#6b7280" }}>
-                        Updated: {formatTimestamp(d.updatedAt)}
-                      </div>
-                    </div>
-                    <Button
-                      kind="subtle"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        resumeDraft(d);
-                      }}
-                      style={{
-                        position: "absolute",
-                        top: 12,
-                        right: 90,
-                        padding: "6px 10px",
-                        borderRadius: 8,
-                        fontSize: 12,
-                        fontWeight: 700,
-                      }}
-                    >
-                      Resume
-                    </Button>
-                    <Button
-                      kind="danger"
-                      onClick={async (e) => {
-                        e.stopPropagation();
-                        if (!window.confirm("Delete this draft?")) return;
-                        try {
-                          await deleteDoc(doc(db, "checklistDrafts", d.id));
-                          const updated = drafts.filter((x) => x.id !== d.id);
-                          setDrafts(updated);
-                          const m = {};
-                          updated.forEach((x) => (m[x.checklistId] = x));
-                          setDraftMap(m);
-                        } catch (err) {
-                          console.error("Error deleting draft:", err);
-                        }
-                      }}
-                      style={{
-                        position: "absolute",
-                        top: 12,
-                        right: 12,
-                        padding: "6px 10px",
-                        borderRadius: 8,
-                        fontSize: 12,
-                        fontWeight: 700,
-                      }}
-                    >
-                      Delete
-                    </Button>
-                  </Card>
-                ))}
-              </div>
-            </>
-          )}
+                Templates
+              </Button>
+            )}
+            {isManager && !editingId && (
+              <Button
+                kind="primary"
+                onClick={() => {
+                  setCreateTarget(viewingTemplates ? "templates" : "checklists");
+                  setAdding(true);
+                  setSelectedChecklist(null);
+                  setViewingCompleted(null);
+                  setEditingId(null);
+                  setDraftId(null);
+                }}
+              >
+                {viewingTemplates ? "+ Add Template" : "+ Add Checklist"}
+              </Button>
+            )}
+            {siteCompleted.length > 0 && (
+              <Button kind="warn" onClick={exportAllCompletedToPDF}>
+                Export All Completed
+              </Button>
+            )}
+          </div>
+        </div>
 
-          <SectionTitle style={{ marginTop: drafts.length ? 24 : 0 }}>
-            Your Checklists
-          </SectionTitle>
+        {/* TEMPLATES VIEW */}
+        {viewingTemplates && !adding && !editingId && !selectedChecklist && !viewingCompleted && (
+          <>
+            <SectionTitle>Templates</SectionTitle>
 
-          {siteChecklists.length === 0 && (
-            <Card hoverable={false} style={{ textAlign: "center" }}>
-              <div style={{ color: "#6b7280" }}>No checklists yet for this site.</div>
-              {isManager && (
-                <Button kind="primary" onClick={() => setAdding(true)} style={{ marginTop: 12 }}>
-                  Create your first checklist
-                </Button>
-              )}
-            </Card>
-          )}
+            {templates.length === 0 && (
+              <Card hoverable={false}>
+                <div style={mutedText}>No templates yet.</div>
+              </Card>
+            )}
 
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
-              gap: 14,
-            }}
-          >
-            {siteChecklists.map((cl) => {
-              const hasDraft = !!draftMap[cl.id];
-              return (
-                <Card key={cl.id} onClick={() => openChecklist(cl)}>
-                  <div style={{ paddingRight: 140 }}>
-                    <div
-                      style={{
-                        fontWeight: 700,
-                        color: "#111",
-                        marginBottom: 6,
-                        display: "flex",
-                        alignItems: "center",
-                        flexWrap: "wrap",
-                        gap: 6,
-                      }}
-                    >
-                      {cl.title}
-                      <span style={freqChip(cl.frequency)}>{cl.frequency || "Ad hoc"}</span>
-                      {hasDraft && <span style={tinyDraftChip}>Draft</span>}
-                    </div>
-                    <div style={{ fontSize: 13, color: "#6b7280" }}>
-                      {Array.isArray(cl.questions) ? cl.questions.length : 0} question
-                      {Array.isArray(cl.questions) && cl.questions.length !== 1 ? "s" : ""}
-                    </div>
-                    {hasDraft && (
-                      <div style={{ fontSize: 12, color: "#9a3412", marginTop: 6 }}>
-                        Last draft update: {formatTimestamp(draftMap[cl.id]?.updatedAt)}
-                      </div>
-                    )}
+            <div className="checklist-grid">
+              {templates.map((tpl) => (
+                <Card key={tpl.id}>
+                  <div style={{ fontWeight: 800, color: "#0f172a", marginBottom: 6 }}>
+                    {tpl.title}
+                    <span style={freqChip(tpl.frequency)}>{tpl.frequency || "Ad hoc"}</span>
                   </div>
 
-                  {isManager && (
-                    <>
+                  <div style={mutedText}>
+                    {Array.isArray(tpl.questions) ? tpl.questions.length : 0} question
+                    {Array.isArray(tpl.questions) && tpl.questions.length !== 1 ? "s" : ""}
+                  </div>
+
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
+                    <Button
+                      kind="subtle"
+                      onClick={() => {
+                        startEditChecklist({ ...tpl, _source: "template" });
+                        setViewingTemplates(false);
+                      }}
+                    >
+                      Edit Template
+                    </Button>
+
+                    {isTemplateEnabledForSite(tpl.id) && (
                       <Button
-                        kind="subtle"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          startEditChecklist(cl);
-                        }}
-                        style={{
-                          position: "absolute",
-                          top: 12,
-                          right: 96,
-                          padding: "6px 10px",
-                          borderRadius: 8,
-                          fontSize: 12,
-                          fontWeight: 700,
+                        kind="neutral"
+                        onClick={() => {
+                          const st = siteTemplates.find((x) => x.templateId === tpl.id);
+                          if (!st) return;
+                          setEditingSiteTemplate({ ...tpl, _siteTemplate: st });
+                          setViewingTemplates(false);
                         }}
                       >
-                        Edit
+                        Configure for site
                       </Button>
-                      <Button
-                        kind="danger"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          deleteChecklist(cl);
-                        }}
+                    )}
+
+                    {isTemplateEnabledForSite(tpl.id) ? (
+                      <Button kind="warn" onClick={() => removeTemplateFromSite(tpl.id)}>
+                        Remove from site
+                      </Button>
+                    ) : (
+                      <Button kind="success" onClick={() => addTemplateToSite(tpl.id)}>
+                        Add to site
+                      </Button>
+                    )}
+                  </div>
+                </Card>
+              ))}
+            </div>
+          </>
+        )}
+
+        {!viewingTemplates && !adding && !selectedChecklist && !viewingCompleted && !editingId && (
+          <>
+            {/* Drafts */}
+            {drafts.length > 0 && (
+              <>
+                <SectionTitle>Your Drafts</SectionTitle>
+                <div className="checklist-grid">
+                  {drafts.map((d) => (
+                    <Card key={d.id}>
+                      <div style={{ paddingRight: 0 }}>
+                        <div style={{ fontWeight: 800, color: "#0f172a", marginBottom: 6 }}>
+                          {d.title || "Checklist draft"}
+                          <span style={{ ...tinyDraftChip, marginLeft: 8 }}>Draft</span>
+                        </div>
+                        <div style={mutedText}>Updated: {formatTimestamp(d.updatedAt)}</div>
+                      </div>
+
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
+                        <Button
+                          kind="subtle"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            resumeDraft(d);
+                          }}
+                        >
+                          Resume
+                        </Button>
+                        <Button
+                          kind="danger"
+                          onClick={async (e) => {
+                            e.stopPropagation();
+                            if (!window.confirm("Delete this draft?")) return;
+                            try {
+                              await deleteDoc(doc(db, "checklistDrafts", d.id));
+                              const updated = drafts.filter((x) => x.id !== d.id);
+                              setDrafts(updated);
+                              const m = {};
+                              updated.forEach((x) => (m[x.checklistId] = x));
+                              setDraftMap(m);
+                            } catch (err) {
+                              console.error("Error deleting draft:", err);
+                            }
+                          }}
+                        >
+                          Delete
+                        </Button>
+                      </div>
+                    </Card>
+                  ))}
+                </div>
+              </>
+            )}
+
+            <SectionTitle style={{ marginTop: drafts.length ? 24 : 0 }}>
+              Your Checklists
+            </SectionTitle>
+
+            {siteChecklists.length === 0 && (
+              <Card hoverable={false} style={{ textAlign: "center" }}>
+                <div style={mutedText}>No checklists yet for this site.</div>
+                {isManager && (
+                  <Button kind="primary" onClick={() => setAdding(true)} style={{ marginTop: 12 }}>
+                    Create your first checklist
+                  </Button>
+                )}
+              </Card>
+            )}
+
+            <div className="checklist-grid">
+              {siteChecklists.map((cl) => {
+                const hasDraft = !!draftMap[cl.id];
+                return (
+                  <Card key={cl.id} onClick={() => openChecklist(cl)}>
+                    <div>
+                      <div
                         style={{
-                          position: "absolute",
-                          top: 12,
-                          right: 12,
-                          padding: "6px 10px",
-                          borderRadius: 8,
-                          fontSize: 12,
-                          fontWeight: 700,
+                          fontWeight: 800,
+                          color: "#0f172a",
+                          marginBottom: 6,
+                          display: "flex",
+                          alignItems: "center",
+                          flexWrap: "wrap",
+                          gap: 6,
                         }}
                       >
-                        Delete
-                      </Button>
-                    </>
+                        {cl.title}
+                        <span style={freqChip(cl.frequency)}>{cl.frequency || "Ad hoc"}</span>
+                        {hasDraft && <span style={tinyDraftChip}>Draft</span>}
+                      </div>
+                      <div style={mutedText}>
+                        {Array.isArray(cl.questions) ? cl.questions.filter((q) => q.enabled !== false).length : 0} question
+                        {Array.isArray(cl.questions) && cl.questions.filter((q) => q.enabled !== false).length !== 1 ? "s" : ""}
+                      </div>
+                      {hasDraft && (
+                        <div style={{ fontSize: 12, color: "#9a3412", marginTop: 6 }}>
+                          Last draft update: {formatTimestamp(draftMap[cl.id]?.updatedAt)}
+                        </div>
+                      )}
+                    </div>
+
+                    {isManager && (
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
+                        <Button
+                          kind="subtle"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            startEditChecklist(cl);
+                          }}
+                        >
+                          Edit
+                        </Button>
+                        <Button
+                          kind="danger"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            deleteChecklist(cl);
+                          }}
+                        >
+                          Delete
+                        </Button>
+                      </div>
+                    )}
+                  </Card>
+                );
+              })}
+            </div>
+
+            {siteCompleted.length > 0 && (
+              <>
+                <SectionTitle style={{ marginTop: 24 }}>Completed Checklists</SectionTitle>
+                <div className="checklist-grid">
+                  {siteCompleted.map((c) => (
+                    <Card key={c.id} onClick={() => viewCompleted(c)}>
+                      <div>
+                        <div
+                          style={{
+                            fontWeight: 800,
+                            color: "#0f172a",
+                            marginBottom: 4,
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 6,
+                            flexWrap: "wrap",
+                          }}
+                        >
+                          {c.title}
+                          {c.frequency && <span style={freqChip(c.frequency)}>{c.frequency}</span>}
+                        </div>
+                        <div style={mutedText}>
+                          By {c.person} · {formatTimestamp(c.createdAt)}
+                        </div>
+                      </div>
+
+                      {isManager && (
+                        <div style={{ marginTop: 12 }}>
+                          <Button
+                            kind="danger"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              deleteCompleted(c);
+                            }}
+                          >
+                            Delete
+                          </Button>
+                        </div>
+                      )}
+                    </Card>
+                  ))}
+                </div>
+              </>
+            )}
+          </>
+        )}
+
+        {/* ADD CHECKLIST — TITLE STEP */}
+        {adding && !titleSet && !editingId && (
+          <Card hoverable={false}>
+            <SectionTitle>{createTarget === "templates" ? "New Template" : "New Checklist"}</SectionTitle>
+            <div style={{ ...mutedText, marginBottom: 12 }}>
+              Give it a clear, descriptive title and frequency.
+            </div>
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              <input
+                type="text"
+                value={checklistTitle}
+                onChange={(e) => setChecklistTitle(e.target.value)}
+                placeholder="e.g. Opening Checks"
+                style={{ ...inputStyle, flex: 2, minWidth: 260 }}
+              />
+              <select
+                value={newFrequency}
+                onChange={(e) => setNewFrequency(e.target.value)}
+                style={{ ...inputStyle, flex: 1, minWidth: 180 }}
+              >
+                <option>Daily</option>
+                <option>Weekly</option>
+                <option>Monthly</option>
+                <option>Ad hoc</option>
+              </select>
+            </div>
+            <div style={{ display: "flex", gap: 10, marginTop: 14, flexWrap: "wrap" }}>
+              <Button kind="primary" onClick={() => checklistTitle.trim() !== "" && setTitleSet(true)}>
+                Start Adding Questions
+              </Button>
+              <Button onClick={resetView}>Cancel</Button>
+            </div>
+          </Card>
+        )}
+
+        {/* ADD CHECKLIST — QUESTIONS STEP */}
+        {adding && titleSet && !editingId && (
+          <Card hoverable={false}>
+            <SectionTitle>
+              {checklistTitle}
+              <span style={freqChip(newFrequency)}>{newFrequency}</span>
+            </SectionTitle>
+            <div style={{ ...mutedText, marginBottom: 12 }}>
+              Add your questions, set corrective rules and optional follow-ups.
+            </div>
+
+            {renderAuthoringItems(authorQuestions, updateItemAuthor, removeItemAuthor)}
+
+            <div style={{ display: "flex", gap: 10, marginTop: 10, alignItems: "center", flexWrap: "wrap" }}>
+              <input
+                ref={newItemRef}
+                type="text"
+                autoFocus={adding && titleSet}
+                value={newItem}
+                onChange={(e) => setNewItem(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    addItemAuthor();
+                  }
+                }}
+                placeholder="New question"
+                style={{ ...inputStyle, flex: 1, minWidth: 240 }}
+              />
+              <Button kind="subtle" onClick={addItemAuthor}>
+                + Add Question
+              </Button>
+            </div>
+
+            <div style={{ display: "flex", gap: 10, marginTop: 16, flexWrap: "wrap" }}>
+              <Button kind="success" onClick={saveChecklist}>
+                Save {createTarget === "templates" ? "Template" : "Checklist"}
+              </Button>
+              <Button onClick={resetView}>Cancel</Button>
+            </div>
+          </Card>
+        )}
+
+        {/* EDIT CHECKLIST / SITE OVERRIDES */}
+        {(editingId || editingSiteTemplate) && !adding && !selectedChecklist && !viewingCompleted && (
+          <Card hoverable={false}>
+            <SectionTitle>{isSiteOverrideMode ? "Configure Checklist for Site" : "Edit Checklist"}</SectionTitle>
+            <div style={{ ...mutedText, marginBottom: 12 }}>
+              {isSiteOverrideMode
+                ? "Choose which template questions are enabled for this site."
+                : "Update the title, frequency, questions, corrective rules and follow-ups."}
+            </div>
+
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
+              <input
+                type="text"
+                value={editTitle}
+                disabled={isSiteOverrideMode}
+                onChange={(e) => setEditTitle(e.target.value)}
+                placeholder="Checklist title"
+                style={{
+                  ...inputStyle,
+                  flex: 2,
+                  minWidth: 260,
+                  background: isSiteOverrideMode ? "#f8fafc" : "#fff",
+                }}
+              />
+              <select
+                value={editFrequency}
+                disabled={isSiteOverrideMode}
+                onChange={(e) => setEditFrequency(e.target.value)}
+                style={{
+                  ...inputStyle,
+                  flex: 1,
+                  minWidth: 180,
+                  background: isSiteOverrideMode ? "#f8fafc" : "#fff",
+                }}
+              >
+                <option>Daily</option>
+                <option>Weekly</option>
+                <option>Monthly</option>
+                <option>Ad hoc</option>
+              </select>
+            </div>
+
+            {renderAuthoringItems(editItems, updateEditItem, removeEditItem)}
+
+            {!isSiteOverrideMode && (
+              <div style={{ display: "flex", gap: 10, marginTop: 10, alignItems: "center", flexWrap: "wrap" }}>
+                <input
+                  ref={editNewItemRef}
+                  type="text"
+                  value={editNewItem}
+                  onChange={(e) => setEditNewItem(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      addEditItem();
+                    }
+                  }}
+                  placeholder="New question"
+                  style={{ ...inputStyle, flex: 1, minWidth: 240 }}
+                />
+                <Button kind="subtle" onClick={addEditItem}>
+                  + Add Question
+                </Button>
+              </div>
+            )}
+
+            <div style={{ display: "flex", gap: 10, marginTop: 16, flexWrap: "wrap" }}>
+              <Button kind="success" onClick={saveEditChecklist}>
+                Save Changes
+              </Button>
+              <Button onClick={cancelEdit}>Cancel</Button>
+            </div>
+          </Card>
+        )}
+
+        {/* RUN CHECKLIST */}
+        {selectedChecklist && !adding && !editingId && (
+          <Card hoverable={false}>
+            <SectionTitle>
+              {selectedChecklist.title}
+              <span style={freqChip(selectedChecklist.frequency)}>
+                {selectedChecklist.frequency || "Ad hoc"}
+              </span>
+            </SectionTitle>
+            {renderChecklistItemsRun(true)}
+            <div style={{ display: "flex", gap: 10, marginTop: 16, flexWrap: "wrap" }}>
+              <Button kind="success" onClick={saveAnswers}>
+                Submit Answers
+              </Button>
+              <Button kind="warn" onClick={saveDraft}>
+                Save Draft
+              </Button>
+              {draftId && (
+                <Button kind="danger" onClick={discardDraft}>
+                  Discard Draft
+                </Button>
+              )}
+              <Button onClick={resetView}>Back</Button>
+            </div>
+          </Card>
+        )}
+
+        {/* VIEW COMPLETED */}
+        {viewingCompleted && !adding && !editingId && (
+          <Card hoverable={false}>
+            <SectionTitle>
+              {viewingCompleted.title}{" "}
+              {viewingCompleted.frequency && (
+                <span style={freqChip(viewingCompleted.frequency)}>{viewingCompleted.frequency}</span>
+              )}
+              <span style={{ color: "#64748b", fontWeight: 600, marginLeft: 8 }}>
+                Completed by {viewingCompleted.person}
+              </span>
+            </SectionTitle>
+
+            {viewQuestions.map((itemRaw, index) => {
+              const item = withQuestionDefaults(itemRaw);
+              const ans = item.answer;
+              return (
+                <Card key={item.id || index} hoverable={false} style={{ margin: "12px 0" }}>
+                  <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+                    <div style={{ flex: 1, color: "#0f172a", fontWeight: 700, minWidth: 240 }}>{item.text}</div>
+                    <AnswerButtons active={ans} onPick={() => {}} />
+                  </div>
+
+                  {needsCorrective(item.correctiveOn, ans) && (
+                    <input
+                      type="text"
+                      value={item.corrective}
+                      readOnly
+                      style={{
+                        ...inputStyle,
+                        marginTop: 12,
+                        width: "100%",
+                        background: "#f8fafc",
+                      }}
+                    />
                   )}
+
+                  {ans === "Yes" && renderFollowUpRun(item, index, "yes", false)}
+                  {ans === "No" && renderFollowUpRun(item, index, "no", false)}
                 </Card>
               );
             })}
-          </div>
 
-          {siteCompleted.length > 0 && (
-            <>
-              <SectionTitle style={{ marginTop: 24 }}>Completed Checklists</SectionTitle>
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
-                  gap: 14,
-                }}
+            <div style={{ display: "flex", gap: 10, marginTop: 16, flexWrap: "wrap" }}>
+              <Button onClick={resetView}>Back</Button>
+              <Button
+                kind="warn"
+                onClick={() =>
+                  exportChecklistToPDF(
+                    viewingCompleted.title,
+                    viewingCompleted.questions,
+                    viewingCompleted.person,
+                    viewingCompleted.createdAt
+                  )
+                }
               >
-                {siteCompleted.map((c) => (
-                  <Card key={c.id} onClick={() => viewCompleted(c)}>
-                    <div style={{ paddingRight: 64 }}>
-                      <div
-                        style={{
-                          fontWeight: 700,
-                          color: "#111",
-                          marginBottom: 4,
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 6,
-                          flexWrap: "wrap",
-                        }}
-                      >
-                        {c.title}
-                        {c.frequency && <span style={freqChip(c.frequency)}>{c.frequency}</span>}
-                      </div>
-                      <div style={{ fontSize: 13, color: "#6b7280" }}>
-                        By {c.person} • {formatTimestamp(c.createdAt)}
-                      </div>
-                    </div>
-                    {isManager && (
-                      <Button
-                        kind="danger"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          deleteCompleted(c);
-                        }}
-                        style={{
-                          position: "absolute",
-                          top: 12,
-                          right: 12,
-                          padding: "6px 10px",
-                          borderRadius: 8,
-                          fontSize: 12,
-                          fontWeight: 700,
-                        }}
-                      >
-                        Delete
-                      </Button>
-                    )}
-                  </Card>
-                ))}
-              </div>
-            </>
-          )}
-        </>
-      )}
-
-      {/* ADD CHECKLIST — TITLE STEP */}
-      {adding && !titleSet && !editingId && (
-        <Card hoverable={false}>
-          <SectionTitle>New Checklist</SectionTitle>
-          <div style={{ color: "#6b7280", marginBottom: 10 }}>
-            Give your checklist a clear, descriptive title and frequency.
-          </div>
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <input
-              type="text"
-              value={checklistTitle}
-              onChange={(e) => setChecklistTitle(e.target.value)}
-              placeholder="e.g. Opening Checks"
-              style={{
-                padding: "12px 14px",
-                fontSize: "15px",
-                flex: 2,
-                minWidth: 260,
-                borderRadius: "10px",
-                border: "1px solid #e5e7eb",
-                outline: "none",
-              }}
-            />
-            <select
-              value={newFrequency}
-              onChange={(e) => setNewFrequency(e.target.value)}
-              style={{
-                padding: "12px 14px",
-                fontSize: "15px",
-                flex: 1,
-                minWidth: 180,
-                borderRadius: "10px",
-                border: "1px solid #e5e7eb",
-                outline: "none",
-                background: "#fff",
-              }}
-            >
-              <option>Daily</option>
-              <option>Weekly</option>
-              <option>Monthly</option>
-              <option>Ad hoc</option>
-            </select>
-          </div>
-          <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
-            <Button kind="primary" onClick={() => checklistTitle.trim() !== "" && setTitleSet(true)}>
-              Start Adding Questions
-            </Button>
-            <Button onClick={resetView}>Cancel</Button>
-          </div>
-        </Card>
-      )}
-
-      {/* ADD CHECKLIST — QUESTIONS STEP */}
-      {adding && titleSet && !editingId && (
-        <Card hoverable={false}>
-          <SectionTitle>
-            {checklistTitle}
-            <span style={freqChip(newFrequency)}>{newFrequency}</span>
-          </SectionTitle>
-          <div style={{ color: "#6b7280", marginBottom: 10 }}>
-            Add your questions, set corrective rules, and optional follow-ups.
-          </div>
-
-          {renderAuthoringItems(authorQuestions, updateItemAuthor, removeItemAuthor)}
-
-          <div style={{ display: "flex", gap: 10, marginTop: 10, alignItems: "center" }}>
-            <input
-              ref={newItemRef}
-              type="text"
-              autoFocus={adding && titleSet}
-              value={newItem}
-              onChange={(e) => setNewItem(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  addItemAuthor();
-                }
-              }}
-              placeholder="New question"
-              style={{
-                padding: "12px 14px",
-                fontSize: "15px",
-                borderRadius: "10px",
-                border: "1px solid #e5e7eb",
-                outline: "none",
-                flex: 1,
-              }}
-            />
-            <Button kind="subtle" onClick={addItemAuthor}>
-              + Add Question
-            </Button>
-          </div>
-
-          <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
-            <Button kind="success" onClick={saveChecklist}>
-              Save Checklist
-            </Button>
-            <Button onClick={resetView}>Cancel</Button>
-          </div>
-        </Card>
-      )}
-
-      {/* EDIT CHECKLIST / SITE OVERRIDES */}
-{(editingId || editingSiteTemplate) &&
-  !adding &&
-  !selectedChecklist &&
-  !viewingCompleted && (
-        <Card hoverable={false}>
-          <SectionTitle>Edit Checklist</SectionTitle>
-          <div style={{ color: "#6b7280", marginBottom: 10 }}>
-            Update the title, frequency, questions, corrective rules, and follow-ups.
-          </div>
-
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
-            <input
-              type="text"
-              value={editTitle}
-              onChange={(e) => setEditTitle(e.target.value)}
-              placeholder="Checklist title"
-              style={{
-                padding: "12px 14px",
-                fontSize: "15px",
-                flex: 2,
-                minWidth: 260,
-                borderRadius: "10px",
-                border: "1px solid #e5e7eb",
-                outline: "none",
-              }}
-            />
-            <select
-              value={editFrequency}
-              onChange={(e) => setEditFrequency(e.target.value)}
-              style={{
-                padding: "12px 14px",
-                fontSize: "15px",
-                flex: 1,
-                minWidth: 180,
-                borderRadius: "10px",
-                border: "1px solid #e5e7eb",
-                outline: "none",
-                background: "#fff",
-              }}
-            >
-              <option>Daily</option>
-              <option>Weekly</option>
-              <option>Monthly</option>
-              <option>Ad hoc</option>
-            </select>
-          </div>
-
-          {renderAuthoringItems(editItems, updateEditItem, removeEditItem)}
-
-          <div style={{ display: "flex", gap: 10, marginTop: 10, alignItems: "center" }}>
-            <input
-              ref={editNewItemRef}
-              type="text"
-              value={editNewItem}
-              onChange={(e) => setEditNewItem(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  addEditItem();
-                }
-              }}
-              placeholder="New question"
-              style={{
-                padding: "12px 14px",
-                fontSize: "15px",
-                borderRadius: "10px",
-                border: "1px solid #e5e7eb",
-                outline: "none",
-                flex: 1,
-              }}
-            />
-            <Button kind="subtle" onClick={addEditItem}>
-              + Add Question
-            </Button>
-          </div>
-
-          <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
-            <Button kind="success" onClick={saveEditChecklist}>
-              Save Changes
-            </Button>
-            <Button onClick={cancelEdit}>Cancel</Button>
-          </div>
-        </Card>
-      )}
-
-      {/* RUN CHECKLIST */}
-      {selectedChecklist && !adding && !editingId && (
-        <Card hoverable={false}>
-          <SectionTitle>
-            {selectedChecklist.title}
-            <span style={freqChip(selectedChecklist.frequency)}>
-              {selectedChecklist.frequency || "Ad hoc"}
-            </span>
-          </SectionTitle>
-          {renderChecklistItemsRun(true)}
-          <div style={{ display: "flex", gap: 10, marginTop: 16, flexWrap: "wrap" }}>
-            <Button kind="success" onClick={saveAnswers}>
-              Submit Answers
-            </Button>
-            <Button kind="warn" onClick={saveDraft}>
-              Save Draft
-            </Button>
-            {draftId && (
-              <Button kind="danger" onClick={discardDraft}>
-                Discard Draft
+                Export PDF
               </Button>
-            )}
-            <Button onClick={resetView}>Back</Button>
-          </div>
-        </Card>
-      )}
-
-      {/* VIEW COMPLETED */}
-      {viewingCompleted && !adding && !editingId && (
-        <Card hoverable={false}>
-          <SectionTitle>
-            {viewingCompleted.title}{" "}
-            {viewingCompleted.frequency && (
-              <span style={freqChip(viewingCompleted.frequency)}>{viewingCompleted.frequency}</span>
-            )}
-            <span style={{ color: "#6b7280", fontWeight: 500, marginLeft: 8 }}>
-              (Completed by {viewingCompleted.person})
-            </span>
-          </SectionTitle>
-          {viewQuestions.map((itemRaw, index) => {
-  const item = withQuestionDefaults(itemRaw);
-  const ans = item.answer;
-  return (
-    <Card key={item.id || index} hoverable={false} style={{ margin: "10px 0" }}>
-      <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-        <div style={{ flex: 1, color: "#111" }}>{item.text}</div>
-        <AnswerButtons active={ans} onPick={() => {}} />
+            </div>
+          </Card>
+        )}
       </div>
-
-      {needsCorrective(item.correctiveOn, ans) && (
-        <input
-          type="text"
-          value={item.corrective}
-          readOnly
-          style={{
-            marginTop: "12px",
-            padding: "10px 12px",
-            borderRadius: "10px",
-            width: "100%",
-            border: "1px solid #e5e7eb",
-            outline: "none",
-            fontSize: "14px",
-          }}
-        />
-      )}
-
-      {ans === "Yes" && renderFollowUpRun(item, index, "yes", false)}
-      {ans === "No" && renderFollowUpRun(item, index, "no", false)}
-    </Card>
-  );
-})}
-          <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
-            <Button onClick={resetView}>Back</Button>
-            <Button
-              kind="warn"
-              onClick={() =>
-                exportChecklistToPDF(
-                  viewingCompleted.title,
-                  viewingCompleted.questions,
-                  viewingCompleted.person,
-                  viewingCompleted.createdAt
-                )
-              }
-            >
-              Export PDF
-            </Button>
-          </div>
-        </Card>
-      )}
     </div>
   );
 };
