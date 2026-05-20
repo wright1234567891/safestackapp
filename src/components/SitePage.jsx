@@ -1229,14 +1229,31 @@ const updateStockBatchUseBy = async (batchId, useByDate) => {
             <div className="safestack-card" style={{ padding: 24 }}>
               <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "170px 1fr", gap: 20, alignItems: "center" }}>
                 <div style={{ display: "flex", justifyContent: "center" }}>
-                  <Donut percent={todayCompliance.pct} label={`Overall today (${todayCompliance.totalPass}/${todayCompliance.total || 0})`} size={136} stroke={12} />
+      <Donut
+
+  percent={percent}
+
+  label={`${label}`}
+
+  size={136}
+
+  stroke={12}
+
+/>
                 </div>
 
                 <div>
-                  <div style={{ fontSize: 20, fontWeight: 800, color: "#0f172a", marginBottom: 14 }}>Audit Ready</div>
-                  <div style={{ fontSize: 13, color: "#475569", marginBottom: 14 }}>
-                    {todayCompliance.totalPass}/{todayCompliance.total || 0} pass · Every cleaning record counts as completed
-                  </div>
+<div style={{ fontSize: 20, fontWeight: 800, color: "#0f172a", marginBottom: 14 }}>
+
+  Checklist Progress
+
+</div>
+
+<div style={{ fontSize: 13, color: "#475569", marginBottom: 14 }}>
+
+  {overviewMode === "ALL" ? "All scheduled checks" : `${overviewMode.charAt(0)}${overviewMode.slice(1).toLowerCase()} checks`} · {totalDone}/{totalDue || 0} completed
+
+</div>
 
                   <div style={{ height: 1, background: "#e5e7eb", margin: "12px 0 16px" }} />
 
