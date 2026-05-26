@@ -1,12 +1,8 @@
 import React, { useEffect, useMemo, useState } from "react";
-import {
-  collection,
-  onSnapshot,
-  query,
-  orderBy,
-} from "firebase/firestore";
+import { collection, onSnapshot, query, where } from "firebase/firestore";
 import { db } from "../firebase";
 import {
+  FaArrowLeft,
   FaClipboardCheck,
   FaSnowflake,
   FaUsers,
@@ -14,231 +10,245 @@ import {
   FaThermometerHalf,
 } from "react-icons/fa";
 
-const Reports = ({ site }) => {
-  const [equipmentRecords, setEquipmentRecords] = useState([]);
+const Reports = ({ site, goBack }) => {
+  const [equipment, setEquipment] = useState([]);
   const [staff, setStaff] = useState([]);
   const [trainingRecords, setTrainingRecords] = useState([]);
   const [fridgeBatches, setFridgeBatches] = useState([]);
   const [stockBatches, setStockBatches] = useState([]);
   const [loading, setLoading] = useState(true);
 
+  const card = {
+    background: "#fff",
+    borderRadius: 14,
+    padding: 18,
+    boxShadow: "0 2px 6px rgba(0,0,0,0.08)",
+    border: "1px solid #e5e7eb",
+  };
+
+  const btn = {
+    padding: "10px 14px",
+    borderRadius: 10,
+    border: "1px solid #e5e7eb",
+    background: "#fff",
+    cursor: "pointer",
+    fontWeight: 700,
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 8,
+  };
+
   useEffect(() => {
-    const unsubscribers = [];
+    if (!site) return;
 
-    try {
-      const equipmentQuery = query(
-        collection(db, "equipment.records"),
-        orderBy("createdAt", "desc")
+    setLoading(true);
+    const unsubs = [];
+
+    const listenSite = (collectionName, setter) => {
+      const qRef = query(collection(db, collectionName), where("site", "==", site));
+      const unsub = onSnapshot(
+        qRef,
+        (snap) => setter(snap.docs.map((d) => ({ id: d.id, ...d.data() }))),
+        (err) => {
+          console.error(`${collectionName} listener error:`, err);
+          setter([]);
+        }
       );
-
-      unsubscribers.push(
-        onSnapshot(equipmentQuery, (snapshot) => {
-          const data = snapshot.docs.map((doc) => ({
-            id: doc.id,
-            ...doc.data(),
-          }));
-
-          setEquipmentRecords(data);
-        })
-      );
-    } catch (err) {
-      console.error("Equipment records error:", err);
-    }
-
-    try {
-      unsubscribers.push(
-        onSnapshot(collection(db, "stafflogin"), (snapshot) => {
-          const data = snapshot.docs.map((doc) => ({
-            id: doc.id,
-            ...doc.data(),
-          }));
-
-          setStaff(data);
-        })
-      );
-    } catch (err) {
-      console.error("Staff error:", err);
-    }
-
-    try {
-      unsubscribers.push(
-        onSnapshot(collection(db, "trainingRecords"), (snapshot) => {
-          const data = snapshot.docs.map((doc) => ({
-            id: doc.id,
-            ...doc.data(),
-          }));
-
-          setTrainingRecords(data);
-        })
-      );
-    } catch (err) {
-      console.error("Training records error:", err);
-    }
-
-    try {
-      unsubscribers.push(
-        onSnapshot(collection(db, "fridgeBatches"), (snapshot) => {
-          const data = snapshot.docs.map((doc) => ({
-            id: doc.id,
-            ...doc.data(),
-          }));
-
-          setFridgeBatches(data);
-        })
-      );
-    } catch (err) {
-      console.error("Fridge batches error:", err);
-    }
-
-    try {
-      unsubscribers.push(
-        onSnapshot(collection(db, "stockBatches"), (snapshot) => {
-          const data = snapshot.docs.map((doc) => ({
-            id: doc.id,
-            ...doc.data(),
-          }));
-
-          setStockBatches(data);
-          setLoading(false);
-        })
-      );
-    } catch (err) {
-      console.error("Stock batches error:", err);
-      setLoading(false);
-    }
-
-    return () => {
-      unsubscribers.forEach((unsubscribe) => {
-        if (unsubscribe) unsubscribe();
-      });
+      unsubs.push(unsub);
     };
+
+    const listenAll = (collectionName, setter) => {
+      const unsub = onSnapshot(
+        collection(db, collectionName),
+        (snap) => setter(snap.docs.map((d) => ({ id: d.id, ...d.data() }))),
+        (err) => {
+          console.error(`${collectionName} listener error:`, err);
+          setter([]);
+        }
+      );
+      unsubs.push(unsub);
+    };
+
+    listenSite("equipment", setEquipment);
+    listenSite("trainingRecords", setTrainingRecords);
+    listenSite("fridgeBatches", setFridgeBatches);
+    listenSite("stockBatches", setStockBatches);
+    listenAll("stafflogin", setStaff);
+
+    setLoading(false);
+
+    return () => unsubs.forEach((u) => u && u());
   }, [site]);
 
-  const todaysTemps = useMemo(() => {
-    const today = new Date().toISOString().split("T")[0];
+  const tempRecords = useMemo(() => {
+    const rows = [];
 
-    return equipmentRecords.filter((record) => {
-      if (!record.createdAt) return false;
+    equipment.forEach((eq) => {
+      const records = Array.isArray(eq.records) ? eq.records : [];
 
-      const date = record.createdAt?.seconds
-        ? new Date(record.createdAt.seconds * 1000)
-            .toISOString()
-            .split("T")[0]
-        : null;
-
-      return date === today;
+      records.forEach((record, index) => {
+        rows.push({
+          id: `${eq.id}-${index}`,
+          equipmentName: eq.name || eq.type || "Equipment",
+          equipmentType: eq.type || "",
+          temp: record.temp ?? record.temperature ?? "",
+          date: record.date || "",
+          time: record.time || "",
+          person: record.person || record.staffName || "",
+        });
+      });
     });
-  }, [equipmentRecords]);
+
+    return rows.reverse();
+  }, [equipment]);
 
   if (loading) {
     return (
-      <div className="p-4 text-center">
+      <div style={{ padding: 30, textAlign: "center" }}>
         Loading reports...
       </div>
     );
   }
 
   return (
-    <div className="p-4 space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold mb-1">
-          Reports Dashboard
-        </h1>
-        <p className="text-gray-600 text-sm">
-          Site: {site || "All Sites"}
-        </p>
+    <div
+      style={{
+        maxWidth: 1100,
+        margin: "0 auto",
+        padding: "40px 20px",
+        fontFamily: "'Inter', sans-serif",
+        color: "#111827",
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          gap: 12,
+          flexWrap: "wrap",
+          marginBottom: 22,
+        }}
+      >
+        <div>
+          <h1 style={{ fontSize: 30, fontWeight: 900, margin: 0 }}>
+            Reports Dashboard
+          </h1>
+          <div style={{ fontSize: 13, color: "#6b7280", marginTop: 4 }}>
+            Site: {site || "All Sites"}
+          </div>
+        </div>
+
+        {goBack && (
+          <button onClick={goBack} style={btn}>
+            <FaArrowLeft />
+            Back
+          </button>
+        )}
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white rounded-xl shadow p-4 border">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-500">
-                Temperature Records
-              </p>
-              <h2 className="text-2xl font-bold">
-                {todaysTemps.length}
-              </h2>
-            </div>
-            <FaThermometerHalf className="text-2xl text-blue-500" />
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+          gap: 14,
+          marginBottom: 18,
+        }}
+      >
+        <div style={card}>
+          <FaThermometerHalf color="#2563eb" size={24} />
+          <div style={{ fontSize: 13, color: "#6b7280", marginTop: 10 }}>
+            Temperature Records
+          </div>
+          <div style={{ fontSize: 30, fontWeight: 900 }}>
+            {tempRecords.length}
           </div>
         </div>
 
-        <div className="bg-white rounded-xl shadow p-4 border">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-500">
-                Staff Members
-              </p>
-              <h2 className="text-2xl font-bold">
-                {staff.length}
-              </h2>
-            </div>
-            <FaUsers className="text-2xl text-green-500" />
+        <div style={card}>
+          <FaUsers color="#16a34a" size={24} />
+          <div style={{ fontSize: 13, color: "#6b7280", marginTop: 10 }}>
+            Staff Members
+          </div>
+          <div style={{ fontSize: 30, fontWeight: 900 }}>
+            {staff.filter((s) => s.active !== false).length}
           </div>
         </div>
 
-        <div className="bg-white rounded-xl shadow p-4 border">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-500">
-                Training Records
-              </p>
-              <h2 className="text-2xl font-bold">
-                {trainingRecords.length}
-              </h2>
-            </div>
-            <FaUserGraduate className="text-2xl text-orange-500" />
+        <div style={card}>
+          <FaUserGraduate color="#f97316" size={24} />
+          <div style={{ fontSize: 13, color: "#6b7280", marginTop: 10 }}>
+            Training Records
+          </div>
+          <div style={{ fontSize: 30, fontWeight: 900 }}>
+            {trainingRecords.filter((r) => r.deleted !== true).length}
           </div>
         </div>
 
-        <div className="bg-white rounded-xl shadow p-4 border">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-500">
-                Fridge / Batch Logs
-              </p>
-              <h2 className="text-2xl font-bold">
-                {fridgeBatches.length + stockBatches.length}
-              </h2>
-            </div>
-            <FaSnowflake className="text-2xl text-cyan-500" />
+        <div style={card}>
+          <FaSnowflake color="#0891b2" size={24} />
+          <div style={{ fontSize: 13, color: "#6b7280", marginTop: 10 }}>
+            Fridge / Batch Logs
+          </div>
+          <div style={{ fontSize: 30, fontWeight: 900 }}>
+            {fridgeBatches.length + stockBatches.length}
           </div>
         </div>
       </div>
 
-      <div className="bg-white rounded-xl shadow border p-4">
-        <div className="flex items-center gap-2 mb-4">
+      <div style={card}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            fontWeight: 800,
+            fontSize: 18,
+            marginBottom: 14,
+          }}
+        >
           <FaClipboardCheck />
-          <h2 className="text-xl font-semibold">
-            Latest Temperature Records
-          </h2>
+          Latest Temperature Records
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+        <div style={{ overflowX: "auto" }}>
+          <table
+            style={{
+              width: "100%",
+              borderCollapse: "collapse",
+              fontSize: 14,
+            }}
+          >
             <thead>
-              <tr className="border-b text-left">
-                <th className="py-2">Equipment</th>
-                <th className="py-2">Temperature</th>
-                <th className="py-2">Staff</th>
+              <tr style={{ background: "#f9fafb" }}>
+                <th style={{ textAlign: "left", padding: 10 }}>Equipment</th>
+                <th style={{ textAlign: "left", padding: 10 }}>Temperature</th>
+                <th style={{ textAlign: "left", padding: 10 }}>Date</th>
+                <th style={{ textAlign: "left", padding: 10 }}>Time</th>
+                <th style={{ textAlign: "left", padding: 10 }}>Staff</th>
               </tr>
             </thead>
 
             <tbody>
-              {todaysTemps.slice(0, 10).map((record) => (
-                <tr key={record.id} className="border-b">
-                  <td className="py-2">
-                    {record.equipmentName || "N/A"}
+              {tempRecords.slice(0, 20).map((record) => (
+                <tr key={record.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
+                  <td style={{ padding: 10 }}>{record.equipmentName}</td>
+                  <td style={{ padding: 10 }}>
+                    {record.temp !== "" ? `${record.temp}°C` : "—"}
                   </td>
-                  <td className="py-2">
-                    {record.temperature || "N/A"}°C
-                  </td>
-                  <td className="py-2">
-                    {record.staffName || "N/A"}
-                  </td>
+                  <td style={{ padding: 10 }}>{record.date || "—"}</td>
+                  <td style={{ padding: 10 }}>{record.time || "—"}</td>
+                  <td style={{ padding: 10 }}>{record.person || "—"}</td>
                 </tr>
               ))}
+
+              {tempRecords.length === 0 && (
+                <tr>
+                  <td colSpan="5" style={{ padding: 14, color: "#6b7280" }}>
+                    No temperature records found yet.
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
