@@ -244,7 +244,7 @@ const MiniCustomReportChart = ({ report }) => {
         {report?.period || "week"} · {metrics.length} metric(s)
       </div>
 
-<svg viewBox="0 0 420 220" style={{ width: "100%", height: 240, marginTop: 12 }}>
+<svg viewBox="0 0 420 220" style={{ width: "100%", height: 340, marginTop: 12 }}>
         <line x1="20" y1="100" x2="200" y2="100" stroke="#e5e7eb" />
         <line x1="20" y1="20" x2="20" y2="100" stroke="#e5e7eb" />
 
@@ -296,9 +296,7 @@ const SortableDashboardTile = ({ sec, openSection, editMode, enabled, toggleWidg
           border: enabled ? "1px solid #e5e7eb" : "1px dashed #cbd5e1",
           borderRadius: 18,
           padding: isGraph ? 18 : "22px 16px",
-minHeight: isGraph ? 320 : 112,
-
-gridColumn: isGraph ? "1 / -1" : "auto",
+minHeight: 112,
           display: "flex",
           flexDirection: "column",
           alignItems: isGraph ? "stretch" : "center",
@@ -1694,7 +1692,7 @@ helper: `${report.period || "Custom"} · ${(report.metrics || []).length} metric
 
   .map((sec) => (
 
-    <div key={sec.key} className="safestack-card" style={{ padding: 22, marginTop: 18 }}>
+<div key={sec.key} className="safestack-card" style={{ padding: 26, marginTop: 18, minHeight: 430 }}>
 
       <MiniCustomReportChart report={sec.report} />
 
