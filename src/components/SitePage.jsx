@@ -296,9 +296,9 @@ const SortableDashboardTile = ({ sec, openSection, editMode, enabled, toggleWidg
           border: enabled ? "1px solid #e5e7eb" : "1px dashed #cbd5e1",
           borderRadius: 18,
           padding: isGraph ? 18 : "22px 16px",
-          minHeight: isGraph ? 360 : 112,
+minHeight: isGraph ? 320 : 112,
 
-gridColumn: isGraph ? "span 2" : "auto",
+gridColumn: isGraph ? "1 / -1" : "auto",
           display: "flex",
           flexDirection: "column",
           alignItems: isGraph ? "stretch" : "center",
