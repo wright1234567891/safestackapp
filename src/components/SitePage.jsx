@@ -1225,6 +1225,22 @@ helper: `${report.period || "Custom"} · ${(report.metrics || []).length} metric
     );
   }
 
+  console.log("Opening workflow check:", {
+
+  selectedSite,
+
+  openingComplete,
+
+  openingBypassed,
+
+  activeSection,
+
+  isManager,
+
+  user,
+
+});
+
   if (
   selectedSite &&
   !openingComplete &&
