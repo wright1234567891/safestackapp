@@ -608,94 +608,93 @@ const activeStockBatches = useMemo(() => {
     );
   };
 
-  const BarChart = ({ title, data, valueLabel = "count", onClick }) => {
-    const max = Math.max(...data.map((d) => Number(d.value || d.total || 0)), 1);
+const TrendChart = ({ title, data }) => {
+  const width = 640;
+  const height = 260;
+  const pad = 34;
 
-    return (
-      <div style={{ ...card, minHeight: 300 }}>
-        <div
-          style={{
-            fontSize: 16,
-            fontWeight: 950,
-            marginBottom: 14,
-            color: "#111827",
-          }}
-        >
-          {title}
-        </div>
+  const max = Math.max(
+    1,
+    ...data.flatMap((d) => [d.tempExceptions, d.stockRisks, d.checklistIssues, d.wasteEntries])
+  );
 
-        {data.length === 0 ? (
-          <div style={{ color: "#6b7280", fontSize: 13 }}>
-            No data in this period.
-          </div>
-        ) : (
-          <div style={{ display: "grid", gap: 12 }}>
-            {data.map((item) => {
-              const value = Number(item.value || item.total || 0);
-              const width = `${Math.max((value / max) * 100, 6)}%`;
+  const x = (i) => pad + (i * (width - pad * 2)) / Math.max(data.length - 1, 1);
+  const y = (v) => height - pad - (v / max) * (height - pad * 2);
 
+  const line = (key) =>
+    data.map((d, i) => `${x(i)},${y(d[key])}`).join(" ");
+
+  const series = [
+    ["tempExceptions", "Temp exceptions"],
+    ["stockRisks", "Stock risks"],
+    ["checklistIssues", "Checklist issues"],
+    ["wasteEntries", "Waste entries"],
+  ];
+
+  return (
+    <div style={{ ...card, minHeight: 340 }}>
+      <div style={{ fontSize: 16, fontWeight: 950, marginBottom: 10 }}>
+        {title}
+      </div>
+
+      {data.length === 0 ? (
+        <div style={{ color: "#6b7280", fontSize: 13 }}>No trend data yet.</div>
+      ) : (
+        <>
+          <svg viewBox={`0 0 ${width} ${height}`} style={{ width: "100%", height: 260 }}>
+            {[0, 0.25, 0.5, 0.75, 1].map((p) => {
+              const gy = pad + p * (height - pad * 2);
               return (
-                <button
-                  key={item.label}
-                  onClick={onClick}
-                  style={{
-                    border: "none",
-                    background: "transparent",
-                    padding: 0,
-                    textAlign: "left",
-                    cursor: onClick ? "pointer" : "default",
-                  }}
-                >
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      gap: 10,
-                      fontSize: 13,
-                      fontWeight: 800,
-                      marginBottom: 4,
-                      color: "#111827",
-                    }}
-                  >
-                    <span>{item.label}</span>
-                    <span>
-                      {value} {valueLabel}
-                    </span>
-                  </div>
-
-                  <div
-                    style={{
-                      width: "100%",
-                      height: 12,
-                      background: "#f3f4f6",
-                      borderRadius: 999,
-                      overflow: "hidden",
-                    }}
-                  >
-                    <div
-                      style={{
-                        width,
-                        height: "100%",
-                        background:
-                          item.exceptions > 0 ? "#dc2626" : "#2563eb",
-                        borderRadius: 999,
-                      }}
-                    />
-                  </div>
-
-                  {item.exceptions > 0 && (
-                    <div style={{ marginTop: 4 }}>
-                      {pill(`${item.exceptions} exception(s)`, "bad")}
-                    </div>
-                  )}
-                </button>
+                <line
+                  key={p}
+                  x1={pad}
+                  x2={width - pad}
+                  y1={gy}
+                  y2={gy}
+                  stroke="#e5e7eb"
+                  strokeWidth="1"
+                />
               );
             })}
+
+            {series.map(([key, label], idx) => (
+              <polyline
+                key={key}
+                points={line(key)}
+                fill="none"
+                stroke={["#dc2626", "#f97316", "#2563eb", "#7c3aed"][idx]}
+                strokeWidth="3"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            ))}
+
+            {data.map((d, i) => (
+              <text
+                key={d.label}
+                x={x(i)}
+                y={height - 8}
+                textAnchor="middle"
+                fontSize="11"
+                fill="#64748b"
+              >
+                {d.label}
+              </text>
+            ))}
+          </svg>
+
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 8 }}>
+            {series.map(([key, label], idx) => (
+              <span key={key} style={{ fontSize: 12, fontWeight: 900, color: ["#dc2626", "#f97316", "#2563eb", "#7c3aed"][idx] }}>
+                ● {label}
+              </span>
+            ))}
           </div>
-        )}
-      </div>
-    );
-  };
+        </>
+      )}
+    </div>
+  );
+};
 
   const DonutCard = ({ title, value, subtitle, tone = "info", onClick }) => {
     const colours = {
@@ -905,6 +904,52 @@ const closeBatchReview = () => {
   setReviewUseByDate("");
   setReviewStatus("active");
 };
+
+const trendData = useMemo(() => {
+  const days = dateRange === "7" ? 7 : dateRange === "90" ? 12 : 6;
+  const mode = dateRange === "90" ? "week" : "day";
+
+  const buckets = [];
+
+  for (let i = days - 1; i >= 0; i--) {
+    const start = new Date();
+
+    if (mode === "week") {
+      start.setDate(start.getDate() - i * 7);
+    } else {
+      start.setDate(start.getDate() - i);
+    }
+
+    start.setHours(0, 0, 0, 0);
+
+    const end = new Date(start);
+    if (mode === "week") end.setDate(end.getDate() + 6);
+    end.setHours(23, 59, 59, 999);
+
+    const inBucket = (value) => {
+      const d = toDate(value);
+      return d && d >= start && d <= end;
+    };
+
+    const tempInBucket = tempRecords.filter((r) => {
+      const d = dateFromRecordParts(r.date, r.time);
+      return d && d >= start && d <= end;
+    });
+
+    buckets.push({
+      label: mode === "week"
+        ? start.toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit" })
+        : start.toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit" }),
+      tempExceptions: tempInBucket.filter(isTempException).length,
+      stockRisks: stockRisks.filter((s) => inBucket(s.createdAt) || inBucket(s.updatedAt)).length,
+      checklistIssues: checklistIssues.filter((c) => inBucket(c.createdAt)).length,
+      wasteEntries: wasteLogs.filter((w) => inBucket(w.createdAt)).length,
+    });
+  }
+
+  return buckets;
+}, [dateRange, tempRecords, stockRisks, checklistIssues, wasteLogs]);
+
     const DetailPanel = () => {
     if (activeView === "temps") {
       return (
@@ -1157,14 +1202,31 @@ const closeBatchReview = () => {
         <DonutCard title="Active Staff" value={activeStaff.length} subtitle="current active staff" tone="cold" onClick={() => setActiveView("training")} />
       </div>
 
-      {activeView === "dashboard" && (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 16 }}>
-          <BarChart title="Temperature Checks by Equipment" data={tempByEquipment.map((x) => ({ label: x.label, value: x.total, exceptions: x.exceptions }))} valueLabel="checks" onClick={() => setActiveView("temps")} />
-          <BarChart title="Checklist Completion" data={checklistCompletionByTitle} valueLabel="completed" onClick={() => setActiveView("checklists")} />
-          <BarChart title="Cleaning by Task" data={cleaningByTask} valueLabel="records" onClick={() => setActiveView("cleaning")} />
-          <BarChart title="Waste by Reason" data={wasteByReason} valueLabel="qty" onClick={() => setActiveView("waste")} />
-        </div>
-      )}
+{activeView === "dashboard" && (
+
+  <>
+
+    <div style={{ marginBottom: 16 }}>
+
+      <TrendChart title="Food Safety Trends" data={trendData} />
+
+    </div>
+
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 16 }}>
+
+      <BarChart title="Temperature Checks by Equipment" data={tempByEquipment.map((x) => ({ label: x.label, value: x.total, exceptions: x.exceptions }))} valueLabel="checks" onClick={() => setActiveView("temps")} />
+
+      <BarChart title="Checklist Completion" data={checklistCompletionByTitle} valueLabel="completed" onClick={() => setActiveView("checklists")} />
+
+      <BarChart title="Cleaning by Task" data={cleaningByTask} valueLabel="records" onClick={() => setActiveView("cleaning")} />
+
+      <BarChart title="Waste by Reason" data={wasteByReason} valueLabel="qty" onClick={() => setActiveView("waste")} />
+
+    </div>
+
+  </>
+
+)}
 
       {activeView !== "dashboard" && (
         <div style={{ marginBottom: 18, display: "flex", gap: 10, flexWrap: "wrap" }}>
