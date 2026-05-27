@@ -602,6 +602,28 @@ const SitePage = ({ user, onLogout }) => {
     };
   }, [completed, equipment, cleanLogs]);
 
+  const daysUntil = (value) => {
+  if (!value) return null;
+
+  let d;
+
+  if (value?.toDate) {
+    d = value.toDate();
+  } else if (value instanceof Date) {
+    d = value;
+  } else {
+    d = new Date(value);
+  }
+
+  if (Number.isNaN(d.getTime())) return null;
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  d.setHours(0, 0, 0, 0);
+
+  return Math.ceil((d - today) / (1000 * 60 * 60 * 24));
+};
+
 const stockAlerts = useMemo(() => {
 
   return stockBatches.filter((batch) => {
