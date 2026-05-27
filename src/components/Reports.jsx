@@ -614,6 +614,7 @@ const activeStockBatches = useMemo(() => {
   const BarChart = ({ title, data, valueLabel = "count", onClick }) => {
   const max = Math.max(...data.map((d) => Number(d.value || d.total || 0)), 1);
 
+
   return (
     <div style={{ ...card, minHeight: 300 }}>
       <div style={{ fontSize: 16, fontWeight: 950, marginBottom: 14, color: "#111827" }}>
@@ -1083,10 +1084,13 @@ const trendData = useMemo(() => {
       return d && d >= start && d <= end;
     };
 
-    const tempInBucket = tempRecords.filter((r) => {
-      const d = dateFromRecordParts(r.date, r.time);
-      return d && d >= start && d <= end;
-    });
+const tempInBucket = tempRecords.filter((r) => {
+
+  const d = dateFromRecordParts(r.date, r.time);
+
+  return d && d >= start && d <= end;
+
+});
 
     buckets.push({
       label: mode === "week"
