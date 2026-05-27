@@ -1,11 +1,13 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
   collection,
+  addDoc,
   onSnapshot,
   query,
   where,
   doc,
   updateDoc,
+  increment,
   serverTimestamp,
 } from "firebase/firestore";
 import { db } from "../firebase";
@@ -844,9 +846,58 @@ const saveBatchReview = async () => {
     updatedAt: serverTimestamp(),
   });
 
-  setReviewBatch(null);
-  setReviewUseByDate("");
-  setReviewStatus("active");
+  closeBatchReview();
+};
+
+const actionReviewedBatch = async (type) => {
+  if (!reviewBatch?.id) return;
+
+  const qty = Number(reviewBatch.quantityRemaining || 0);
+  if (qty <= 0) return;
+
+  const parentItem = stockItems.find((item) => item.id === reviewBatch.stockItemId);
+
+  await updateDoc(doc(db, "stockBatches", reviewBatch.id), {
+    quantityRemaining: 0,
+    status: "closed",
+    updatedAt: serverTimestamp(),
+  });
+
+  if (parentItem?.id) {
+    await updateDoc(doc(db, "stockItems", parentItem.id), {
+      quantity: increment(-qty),
+      updatedAt: serverTimestamp(),
+    });
+  }
+
+  await addDoc(collection(db, "stockMovements"), {
+    stockItemId: reviewBatch.stockItemId || null,
+    stockItemName: reviewBatch.stockItemName || reviewBatch.itemName || "",
+    type,
+    quantity: qty,
+    measurement: reviewBatch.measurement || "unit",
+    supplier: reviewBatch.supplier || null,
+    location: reviewBatch.location || null,
+    source: "reports-review",
+    site,
+    createdAt: serverTimestamp(),
+  });
+
+  if (type === "waste") {
+    await addDoc(collection(db, "wasteLogs"), {
+      site,
+      item: reviewBatch.stockItemName || reviewBatch.itemName || "",
+      qty,
+      unit: reviewBatch.measurement || "unit",
+      reason: "Stock risk review",
+      notes: "Created from Reports review",
+      stockItemId: reviewBatch.stockItemId || null,
+      source: "reports-review",
+      createdAt: serverTimestamp(),
+    });
+  }
+
+  closeBatchReview();
 };
 
 const closeBatchReview = () => {
@@ -1200,36 +1251,66 @@ const closeBatchReview = () => {
         <option value="closed">Closed</option>
       </select>
 
-      <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
-        <button
-          onClick={closeBatchReview}
-          style={{
-            padding: "10px 14px",
-            borderRadius: 12,
-            border: "1px solid #e5e7eb",
-            background: "#fff",
-            fontWeight: 900,
-            cursor: "pointer",
-          }}
-        >
-          Cancel
-        </button>
+<div style={{ display: "flex", gap: 10, justifyContent: "flex-end", flexWrap: "wrap" }}>
+  <button
+    onClick={closeBatchReview}
+    style={{
+      padding: "10px 14px",
+      borderRadius: 12,
+      border: "1px solid #e5e7eb",
+      background: "#fff",
+      fontWeight: 900,
+      cursor: "pointer",
+    }}
+  >
+    Cancel
+  </button>
 
-        <button
-          onClick={saveBatchReview}
-          style={{
-            padding: "10px 14px",
-            borderRadius: 12,
-            border: "none",
-            background: "#16a34a",
-            color: "#fff",
-            fontWeight: 900,
-            cursor: "pointer",
-          }}
-        >
-          Save Review
-        </button>
-      </div>
+  <button
+    onClick={() => actionReviewedBatch("usage")}
+    style={{
+      padding: "10px 14px",
+      borderRadius: 12,
+      border: "none",
+      background: "#f97316",
+      color: "#fff",
+      fontWeight: 900,
+      cursor: "pointer",
+    }}
+  >
+    Use Remaining
+  </button>
+
+  <button
+    onClick={() => actionReviewedBatch("waste")}
+    style={{
+      padding: "10px 14px",
+      borderRadius: 12,
+      border: "none",
+      background: "#ef4444",
+      color: "#fff",
+      fontWeight: 900,
+      cursor: "pointer",
+    }}
+  >
+    Waste Remaining
+  </button>
+
+  <button
+    onClick={saveBatchReview}
+    style={{
+      padding: "10px 14px",
+      borderRadius: 12,
+      border: "none",
+      background: "#16a34a",
+      color: "#fff",
+      fontWeight: 900,
+      cursor: "pointer",
+    }}
+  >
+    Save Review
+  </button>
+</div>
     </div>
   </div>
 )}
