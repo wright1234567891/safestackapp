@@ -602,13 +602,44 @@ const SitePage = ({ user, onLogout }) => {
     };
   }, [completed, equipment, cleanLogs]);
 
-  const stockAlerts = useMemo(() => {
-    return stockBatches.filter((batch) => {
-      const status = (batch.status || "active").toString().toLowerCase();
-      const remaining = Number(batch.quantityRemaining ?? batch.quantity ?? 0);
-      return status === "active" && remaining > 0 && (!batch.useByDate || batch.needsUseByReview === true);
-    });
-  }, [stockBatches]);
+const stockAlerts = useMemo(() => {
+
+  return stockBatches.filter((batch) => {
+
+    const status = (batch.status || "active").toString().toLowerCase();
+
+    const remaining = Number(batch.quantityRemaining ?? batch.quantity ?? 0);
+
+    if (status === "closed" || remaining <= 0) return false;
+
+    if (!batch.useByDate || batch.needsUseByReview === true) return true;
+
+    const days = daysUntil(batch.useByDate);
+
+    return days !== null && days <= 3;
+
+  });
+
+}, [stockBatches]);
+const stockAlertLabel = (batch) => {
+
+  if (!batch.useByDate || batch.needsUseByReview === true) {
+
+    return "Missing use-by date";
+
+  }
+
+  const days = daysUntil(batch.useByDate);
+
+  if (days < 0) return "Use-by date passed";
+
+  if (days === 0) return "Use-by today";
+
+  if (days === 1) return "Use-by tomorrow";
+
+  return `Use-by in ${days} days`;
+
+};
 
   const failedTempAlerts = useMemo(() => {
 
@@ -1376,7 +1407,7 @@ const updateStockBatchUseBy = async (batchId, useByDate) => {
                                 {batch.stockItemName || batch.itemName || batch.name || "Stock item"}
                               </div>
                               <div style={{ fontSize: 13, color: "#92400e", marginTop: 2 }}>
-                                Missing use-by date
+{stockAlertLabel(batch)}
                               </div>
                               <div style={{ fontSize: 12, color: "#64748b", marginTop: 5 }}>
                                 Remaining: {batch.quantityRemaining ?? batch.quantity ?? "—"} {batch.measurement || ""} · Received: {batch.dateReceived || "—"}
