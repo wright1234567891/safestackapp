@@ -385,7 +385,7 @@ const SortableDashboardTile = ({ sec, openSection, editMode, enabled, toggleWidg
           background: enabled ? "#fff" : "#f1f5f9",
           border: enabled ? "1px solid #e5e7eb" : "1px dashed #cbd5e1",
           borderRadius: 18,
-adding: isGraph ? 18 : "14px 12px",
+padding: isGraph ? 18 : "14px 12px",
 
 height: isGraph ? "auto" : 105,
 
@@ -470,6 +470,9 @@ const SitePage = ({ user, onLogout }) => {
   const [dashboardConfig, setDashboardConfig] = useState(null);
   const [stockUseByDrafts, setStockUseByDrafts] = useState({});
   const [stockActionDrafts, setStockActionDrafts] = useState({});
+  const [openingComplete, setOpeningComplete] = useState(false);
+
+const [openingBypassed, setOpeningBypassed] = useState(false);
 
   const isMobile = useIsMobile();
 
@@ -1075,6 +1078,27 @@ helper: `${report.period || "Custom"} · ${(report.metrics || []).length} metric
     if (sec.shortcutTo) return openSection(sec.shortcutTo);
     return openSection(sec.key);
   };
+  const bypassOpening = async () => {
+
+  await addDoc(collection(db, "shiftLogs"), {
+
+    site: selectedSite,
+
+    userId: user?.uid || null,
+
+    userName: user?.name || user?.email || "Unknown",
+
+    role: user?.role || "Unknown",
+
+    type: "opening-bypassed",
+
+    createdAt: serverTimestamp(),
+
+  });
+
+  setOpeningBypassed(true);
+
+};
 
   useEffect(() => {
     if (!selectedSite || !dashboardConfigRef) return;
@@ -1201,6 +1225,60 @@ helper: `${report.period || "Custom"} · ${(report.metrics || []).length} metric
     );
   }
 
+  if (
+  selectedSite &&
+  !openingComplete &&
+  !openingBypassed &&
+  activeSection === null
+) {
+  return (
+    <div style={{ minHeight: "100vh", background: "#f8fafc", padding: 24, fontFamily: "'Inter', sans-serif" }}>
+      <div className="safestack-card" style={{ maxWidth: 560, margin: "60px auto", padding: 28 }}>
+        <h1 style={{ marginTop: 0, color: "#0f172a" }}>Before opening</h1>
+
+        <p style={{ color: "#64748b", fontSize: 15 }}>
+          Complete the opening checks before using the dashboard.
+        </p>
+
+        <button
+          onClick={() => setActiveSection("checklists")}
+          style={{
+            width: "100%",
+            marginTop: 18,
+            padding: "14px 16px",
+            borderRadius: 12,
+            border: "none",
+            background: "#15803d",
+            color: "#fff",
+            fontWeight: 900,
+            cursor: "pointer",
+          }}
+        >
+          Start opening checklist
+        </button>
+
+        {isManager && (
+          <button
+            onClick={bypassOpening}
+            style={{
+              width: "100%",
+              marginTop: 10,
+              padding: "12px 16px",
+              borderRadius: 12,
+              border: "1px solid #e5e7eb",
+              background: "#fff",
+              color: "#0f172a",
+              fontWeight: 800,
+              cursor: "pointer",
+            }}
+          >
+            Manager override — go to dashboard
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
   return (
     <div style={{ minHeight: "100vh", background: "#f8fafc", fontFamily: "'Inter', sans-serif" }}>
       <style>{`

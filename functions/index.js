@@ -24,29 +24,21 @@ exports.shopifyOrderWebhook = functions.https.onRequest(async (req, res) => {
         quantity: soldQty,
       });
 
-      const dishSnap = await db
-        .collection("dishes")
-        .where("shopifyProductId", "==", productId)
-        .get();
+const dishSnap = await db
+
+  .collection("dishes")
+
+  .where("shopifyVariantId", "==", variantId)
+
+  .get();
 
       if (dishSnap.empty) {
-        console.log("No dish matched product ID:", productId);
+        console.log("No dish matched variant ID:", variantId);
         continue;
       }
 
       for (const dishDoc of dishSnap.docs) {
         const dish = dishDoc.data();
-
-        if (
-          dish.shopifyVariantId &&
-          String(dish.shopifyVariantId) !== variantId
-        ) {
-          console.log("Variant did not match:", {
-            dishVariant: dish.shopifyVariantId,
-            soldVariant: variantId,
-          });
-          continue;
-        }
 
         console.log("Matched dish:", dish.name);
 
