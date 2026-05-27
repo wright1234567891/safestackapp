@@ -244,7 +244,7 @@ const MiniCustomReportChart = ({ report }) => {
         {report?.period || "week"} · {metrics.length} metric(s)
       </div>
 
-      <svg viewBox="0 0 220 120" style={{ width: "100%", height: 130, marginTop: 12 }}>
+<svg viewBox="0 0 420 220" style={{ width: "100%", height: 240, marginTop: 12 }}>
         <line x1="20" y1="100" x2="200" y2="100" stroke="#e5e7eb" />
         <line x1="20" y1="20" x2="20" y2="100" stroke="#e5e7eb" />
 
@@ -296,7 +296,9 @@ const SortableDashboardTile = ({ sec, openSection, editMode, enabled, toggleWidg
           border: enabled ? "1px solid #e5e7eb" : "1px dashed #cbd5e1",
           borderRadius: 18,
           padding: isGraph ? 18 : "22px 16px",
-          minHeight: isGraph ? 230 : 112,
+          minHeight: isGraph ? 360 : 112,
+
+gridColumn: isGraph ? "span 2" : "auto",
           display: "flex",
           flexDirection: "column",
           alignItems: isGraph ? "stretch" : "center",
@@ -1655,7 +1657,7 @@ helper: `${report.period || "Custom"} · ${(report.metrics || []).length} metric
 
               <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDashboardDragEnd}>
                 <SortableContext items={dashboardSections.map((s) => s.key)} strategy={rectSortingStrategy}>
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 16 }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 16 }}>
                     {dashboardSections
                       .filter((sec) => editDashboard || enabledDashboardKeys.includes(sec.key))
                       .map((sec) => (
