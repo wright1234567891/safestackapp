@@ -238,13 +238,23 @@ const Reports = ({ site, goBack }) => {
       });
   }, [completed, dateRange]);
 
-  const activeStockBatches = useMemo(() => {
-    return stockBatches.filter(
-      (b) =>
-        Number(b.quantityRemaining || 0) > 0 &&
-        String(b.status || "").toLowerCase() !== "closed"
-    );
-  }, [stockBatches]);
+const activeStockBatches = useMemo(() => {
+
+  const validStockItemIds = new Set(stockItems.map((item) => item.id));
+
+  return stockBatches.filter((b) => {
+
+    const remaining = Number(b.quantityRemaining || 0);
+
+    const isOpen = String(b.status || "").toLowerCase() !== "closed";
+
+    const hasParentStockItem = validStockItemIds.has(b.stockItemId);
+
+    return remaining > 0 && isOpen && hasParentStockItem;
+
+  });
+
+}, [stockBatches, stockItems]);
 
   const stockRisks = useMemo(() => {
     return activeStockBatches.filter((b) => {
