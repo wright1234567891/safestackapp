@@ -357,14 +357,23 @@ const SortableDashboardTile = ({ sec, openSection, editMode, enabled, toggleWidg
   const isGraph = sec.type === "customReport";
 
   return (
-    <div
-      ref={setNodeRef}
-      style={{
-        transform: CSS.Transform.toString(transform),
-        transition,
-        zIndex: isDragging ? 20 : "auto",
-      }}
-    >
+<div
+
+  ref={setNodeRef}
+
+  style={{
+
+    transform: CSS.Transform.toString(transform),
+
+    transition,
+
+    zIndex: isDragging ? 20 : "auto",
+
+    gridColumn: isGraph ? "1 / -1" : "auto",
+
+  }}
+
+>
       <div
         className="tile-button"
         onClick={() => {
@@ -377,7 +386,7 @@ const SortableDashboardTile = ({ sec, openSection, editMode, enabled, toggleWidg
           border: enabled ? "1px solid #e5e7eb" : "1px dashed #cbd5e1",
           borderRadius: 18,
           padding: isGraph ? 18 : "22px 16px",
-minHeight: 112,
+minHeight: isGraph ? 460 : 112,
           display: "flex",
           flexDirection: "column",
           alignItems: isGraph ? "stretch" : "center",
@@ -1734,53 +1743,32 @@ helper: `${report.period || "Custom"} · ${(report.metrics || []).length} metric
                 </div>
               )}
 
-              <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDashboardDragEnd}>
-                <SortableContext items={dashboardSections.map((s) => s.key)} strategy={rectSortingStrategy}>
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 16 }}>
-{dashboardSections
+<DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDashboardDragEnd}>
+  <SortableContext items={dashboardSections.map((s) => s.key)} strategy={rectSortingStrategy}>
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 16 }}>
+      {dashboardSections
+        .filter((sec) => {
+          if (sec.type !== "customReport") return editDashboard || enabledDashboardKeys.includes(sec.key);
 
-  .filter((sec) => sec.type !== "customReport")
+          const hasData = Array.isArray(sec.report?.previewData) && sec.report.previewData.length > 0;
 
-  .filter((sec) => editDashboard || enabledDashboardKeys.includes(sec.key))
+          if (editDashboard) return true;
 
-  .map((sec) => (
-
-    <SortableDashboardTile
-
-      key={sec.key}
-
-      sec={sec}
-
-      openSection={openDashboardWidget}
-
-      editMode={editDashboard}
-
-      enabled={enabledDashboardKeys.includes(sec.key)}
-
-      toggleWidget={toggleWidget}
-
-    />
-
-  ))}
-                  </div>
-                </SortableContext>
-              </DndContext>
-              {dashboardSections
-
-  .filter((sec) => sec.type === "customReport")
-
-  .filter((sec) => editDashboard || enabledDashboardKeys.includes(sec.key))
-
-  .map((sec) => (
-
-<div key={sec.key} className="safestack-card" style={{ padding: 26, marginTop: 18, minHeight: 430 }}>
-
-      <MiniCustomReportChart report={sec.report} />
-
+          return enabledDashboardKeys.includes(sec.key) && hasData;
+        })
+        .map((sec) => (
+          <SortableDashboardTile
+            key={sec.key}
+            sec={sec}
+            openSection={openDashboardWidget}
+            editMode={editDashboard}
+            enabled={enabledDashboardKeys.includes(sec.key)}
+            toggleWidget={toggleWidget}
+          />
+        ))}
     </div>
-
-  ))}
-
+  </SortableContext>
+</DndContext>
               <div style={{ display: "flex", justifyContent: "center", marginTop: 24 }}>
                 <button
                   onClick={resetSite}
