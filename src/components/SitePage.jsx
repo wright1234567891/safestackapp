@@ -1272,21 +1272,68 @@ helper: `${report.period || "Custom"} · ${(report.metrics || []).length} metric
           Complete the opening checks before using the dashboard.
         </p>
 
-        <button
+<button
+
           onClick={() => setActiveSection("checklists")}
+
           style={{
+
             width: "100%",
+
             marginTop: 18,
+
             padding: "14px 16px",
+
             borderRadius: 12,
+
             border: "none",
+
             background: "#15803d",
+
             color: "#fff",
+
             fontWeight: 900,
+
             cursor: "pointer",
+
           }}
+
         >
+
           Start opening checklist
+
+        </button>
+
+        <button
+
+          onClick={resetSite}
+
+          style={{
+
+            width: "100%",
+
+            marginTop: 10,
+
+            padding: "12px 16px",
+
+            borderRadius: 12,
+
+            border: "1px solid #e5e7eb",
+
+            background: "#fff",
+
+            color: "#0f172a",
+
+            fontWeight: 800,
+
+            cursor: "pointer",
+
+          }}
+
+        >
+
+          Back to choose venue
+
         </button>
 
         {isManager && (
