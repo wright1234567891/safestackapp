@@ -667,6 +667,22 @@ return () => {
     return { buckets, totalDue, totalDone, percent, label };
   }, [checklists, completed, overviewMode]);
 
+  useEffect(() => {
+  if (!selectedSite) return;
+
+  const openingDoneToday = completed.some((c) => {
+    const title = (c.title || "").toLowerCase();
+    const isOpening = title.includes("opening");
+
+    const d = c.createdAt?.toDate ? c.createdAt.toDate() : null;
+    const doneToday = d ? isSameDay(d, new Date()) : false;
+
+    return isOpening && doneToday;
+  });
+
+  setOpeningComplete(openingDoneToday);
+}, [selectedSite, completed]);
+
   const todayCompliance = useMemo(() => {
     let clPass = 0;
     let clTotal = 0;
@@ -1443,7 +1459,23 @@ helper: `${report.period || "Custom"} · ${(report.metrics || []).length} metric
 
         <main className="safestack-main">
           {activeSection === "checklists" ? (
-            <ChecklistSection goBack={() => setActiveSection(null)} site={selectedSite} user={user} />
+<ChecklistSection
+
+  goBack={() => setActiveSection(null)}
+
+  site={selectedSite}
+
+  user={user}
+
+  onOpeningComplete={() => {
+
+    setOpeningComplete(true);
+
+    setActiveSection(null);
+
+  }}
+
+/>
           ) : activeSection === "equipment" ? (
             <EquipmentManager goBack={() => setActiveSection(null)} tempChecks={tempChecks} setTempChecks={setTempChecks} site={selectedSite} user={user} />
           ) : activeSection === "temp" ? (

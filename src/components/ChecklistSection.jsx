@@ -149,7 +149,7 @@ const needsCorrective = (rule, ans) => {
 };
 
 // ---------- Component ----------
-const ChecklistSection = ({ goBack, site, user }) => {
+const ChecklistSection = ({ goBack, site, user, onOpeningComplete }) => {
   const [checklists, setChecklists] = useState([]);
   const [templates, setTemplates] = useState([]);
   const [siteTemplates, setSiteTemplates] = useState([]);
@@ -851,6 +851,13 @@ const ChecklistSection = ({ goBack, site, user }) => {
 
       const docRef = await addDoc(completedCollectionRef, completedEntry);
       setCompleted((prev) => [{ id: docRef.id, ...completedEntry }, ...prev]);
+      const titleLower = (selectedChecklist.title || "").toLowerCase();
+
+if (titleLower.includes("opening")) {
+
+  onOpeningComplete?.();
+
+}
 
       if (draftId) {
         await deleteDoc(doc(db, "checklistDrafts", draftId));
