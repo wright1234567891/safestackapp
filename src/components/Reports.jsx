@@ -1085,11 +1085,11 @@ const trendData = useMemo(() => {
     };
 
 const tempInBucket = tempRecords.filter((r) => {
+  if (!r.date) return false;
 
-  const d = dateFromRecordParts(r.date, r.time);
+  const d = new Date(r.date);
 
-  return d && d >= start && d <= end;
-
+  return !Number.isNaN(d.getTime()) && d >= start && d <= end;
 });
 
     buckets.push({
