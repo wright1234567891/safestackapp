@@ -54,7 +54,12 @@ const [reviewUseByDate, setReviewUseByDate] = useState("");
 const [reviewStatus, setReviewStatus] = useState("active");
 const [customGraphTitle, setCustomGraphTitle] = useState("Custom Report");
 const [customChartType, setCustomChartType] = useState("line");
+
 const [selectedMetrics, setSelectedMetrics] = useState(["tempExceptions"]);
+
+const [graphPeriod, setGraphPeriod] = useState("week");
+
+const [savedGraphs, setSavedGraphs] = useState([]);
 
   const toDate = (value) => {
     if (!value) return null;
@@ -719,14 +724,40 @@ const CustomGraphBuilder = ({ title, data }) => {
           </div>
         </div>
 
-        <select
-          value={customChartType}
-          onChange={(e) => setCustomChartType(e.target.value)}
-          style={button()}
-        >
-          <option value="line">Line chart</option>
-          <option value="bar">Bar chart</option>
-        </select>
+<div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+  <select value={graphPeriod} onChange={(e) => setGraphPeriod(e.target.value)} style={button()}>
+    <option value="day">Per day</option>
+    <option value="week">Per week</option>
+    <option value="month">Per month</option>
+    <option value="quarter">Per quarter</option>
+  </select>
+
+  <select
+    value={customChartType}
+    onChange={(e) => setCustomChartType(e.target.value)}
+    style={button()}
+  >
+    <option value="line">Line chart</option>
+    <option value="bar">Bar chart</option>
+  </select>
+
+  <button
+    style={button()}
+    onClick={() =>
+      setSavedGraphs((prev) => [
+        ...prev,
+        {
+          title: customGraphTitle,
+          chartType: customChartType,
+          period: graphPeriod,
+          metrics: selectedMetrics,
+        },
+      ])
+    }
+  >
+    Save graph
+  </button>
+</div>
       </div>
 
       <input
@@ -1065,24 +1096,47 @@ const closeBatchReview = () => {
 };
 
 const trendData = useMemo(() => {
-  const days = dateRange === "7" ? 7 : dateRange === "90" ? 12 : 6;
-  const mode = dateRange === "90" ? "week" : "day";
+  const getBucketCount = () => {
+    if (graphPeriod === "day") return dateRange === "90" ? 30 : dateRange === "7" ? 7 : 14;
+    if (graphPeriod === "week") return dateRange === "90" ? 12 : 6;
+    if (graphPeriod === "month") return 6;
+    if (graphPeriod === "quarter") return 4;
+    return 6;
+  };
 
   const buckets = [];
+  const count = getBucketCount();
 
-  for (let i = days - 1; i >= 0; i--) {
+  for (let i = count - 1; i >= 0; i--) {
     const start = new Date();
 
-    if (mode === "week") {
-      start.setDate(start.getDate() - i * 7);
-    } else {
-      start.setDate(start.getDate() - i);
+    if (graphPeriod === "day") start.setDate(start.getDate() - i);
+    if (graphPeriod === "week") start.setDate(start.getDate() - i * 7);
+    if (graphPeriod === "month") {
+      start.setMonth(start.getMonth() - i);
+      start.setDate(1);
+    }
+    if (graphPeriod === "quarter") {
+      start.setMonth(start.getMonth() - i * 3);
+      start.setMonth(Math.floor(start.getMonth() / 3) * 3);
+      start.setDate(1);
     }
 
     start.setHours(0, 0, 0, 0);
 
     const end = new Date(start);
-    if (mode === "week") end.setDate(end.getDate() + 6);
+
+    if (graphPeriod === "day") end.setDate(end.getDate());
+    if (graphPeriod === "week") end.setDate(end.getDate() + 6);
+    if (graphPeriod === "month") {
+      end.setMonth(end.getMonth() + 1);
+      end.setDate(0);
+    }
+    if (graphPeriod === "quarter") {
+      end.setMonth(end.getMonth() + 3);
+      end.setDate(0);
+    }
+
     end.setHours(23, 59, 59, 999);
 
     const inBucket = (value) => {
@@ -1090,15 +1144,20 @@ const trendData = useMemo(() => {
       return d && d >= start && d <= end;
     };
 
-const tempInBucket = tempRecords.filter((r) => {
-  const d = dateFromRecordParts(r.date, r.time);
-  return d && d >= start && d <= end;
-});
+    const tempInBucket = tempRecords.filter((r) => {
+      const d = dateFromRecordParts(r.date, r.time);
+      return d && d >= start && d <= end;
+    });
+
+    const label =
+      graphPeriod === "month"
+        ? start.toLocaleDateString("en-GB", { month: "short", year: "2-digit" })
+        : graphPeriod === "quarter"
+        ? `Q${Math.floor(start.getMonth() / 3) + 1} ${String(start.getFullYear()).slice(-2)}`
+        : start.toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit" });
 
     buckets.push({
-      label: mode === "week"
-        ? start.toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit" })
-        : start.toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit" }),
+      label,
       tempExceptions: tempInBucket.filter(isTempException).length,
       stockRisks: stockRisks.filter((s) => inBucket(s.createdAt) || inBucket(s.updatedAt)).length,
       checklistIssues: checklistIssues.filter((c) => inBucket(c.createdAt)).length,
@@ -1107,7 +1166,7 @@ const tempInBucket = tempRecords.filter((r) => {
   }
 
   return buckets;
-}, [dateRange, tempRecords, stockRisks, checklistIssues, wasteLogs]);
+}, [dateRange, graphPeriod, tempRecords, stockRisks, checklistIssues, wasteLogs]);
 
     const DetailPanel = () => {
     if (activeView === "temps") {
@@ -1368,6 +1427,28 @@ const tempInBucket = tempRecords.filter((r) => {
     <div style={{ marginBottom: 16 }}>
 
 <CustomGraphBuilder title={customGraphTitle} data={trendData} />
+{savedGraphs.length > 0 && (
+  <div style={{ ...card, marginTop: 12 }}>
+    <div style={{ fontWeight: 950, marginBottom: 10 }}>Saved Graphs</div>
+
+    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+      {savedGraphs.map((graph, index) => (
+        <button
+          key={`${graph.title}-${index}`}
+          style={button()}
+          onClick={() => {
+            setCustomGraphTitle(graph.title);
+            setCustomChartType(graph.chartType);
+            setGraphPeriod(graph.period);
+            setSelectedMetrics(graph.metrics);
+          }}
+        >
+          {graph.title}
+        </button>
+      ))}
+    </div>
+  </div>
+)}
     </div>
 
     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 16 }}>
