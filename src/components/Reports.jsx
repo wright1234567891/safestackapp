@@ -52,6 +52,9 @@ const Reports = ({ site, goBack }) => {
 const [reviewUseByDate, setReviewUseByDate] = useState("");
 
 const [reviewStatus, setReviewStatus] = useState("active");
+const [customGraphTitle, setCustomGraphTitle] = useState("Custom Report");
+const [customChartType, setCustomChartType] = useState("line");
+const [selectedMetrics, setSelectedMetrics] = useState(["tempExceptions"]);
 
   const toDate = (value) => {
     if (!value) return null;
@@ -669,90 +672,16 @@ const activeStockBatches = useMemo(() => {
   );
 };
 
-const TrendChart = ({ title, data }) => {
-  const width = 640;
-  const height = 260;
-  const pad = 34;
-
-  const max = Math.max(
-    1,
-    ...data.flatMap((d) => [d.tempExceptions, d.stockRisks, d.checklistIssues, d.wasteEntries])
-  );
-
-  const x = (i) => pad + (i * (width - pad * 2)) / Math.max(data.length - 1, 1);
-  const y = (v) => height - pad - (v / max) * (height - pad * 2);
-
-  const line = (key) =>
-    data.map((d, i) => `${x(i)},${y(d[key])}`).join(" ");
-
-  const series = [
-    ["tempExceptions", "Temp exceptions"],
-    ["stockRisks", "Stock risks"],
-    ["checklistIssues", "Checklist issues"],
-    ["wasteEntries", "Waste entries"],
-  ];
-
+const CustomGraphBuilder = ({ title, data }) => {
   return (
-    <div style={{ ...card, minHeight: 340 }}>
+    <div style={{ ...card, minHeight: 260 }}>
       <div style={{ fontSize: 16, fontWeight: 950, marginBottom: 10 }}>
-        {title}
+        Custom Graph Builder
       </div>
 
-      {data.length === 0 ? (
-        <div style={{ color: "#6b7280", fontSize: 13 }}>No trend data yet.</div>
-      ) : (
-        <>
-          <svg viewBox={`0 0 ${width} ${height}`} style={{ width: "100%", height: 260 }}>
-            {[0, 0.25, 0.5, 0.75, 1].map((p) => {
-              const gy = pad + p * (height - pad * 2);
-              return (
-                <line
-                  key={p}
-                  x1={pad}
-                  x2={width - pad}
-                  y1={gy}
-                  y2={gy}
-                  stroke="#e5e7eb"
-                  strokeWidth="1"
-                />
-              );
-            })}
-
-            {series.map(([key, label], idx) => (
-              <polyline
-                key={key}
-                points={line(key)}
-                fill="none"
-                stroke={["#dc2626", "#f97316", "#2563eb", "#7c3aed"][idx]}
-                strokeWidth="3"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            ))}
-
-            {data.map((d, i) => (
-              <text
-                key={d.label}
-                x={x(i)}
-                y={height - 8}
-                textAnchor="middle"
-                fontSize="11"
-                fill="#64748b"
-              >
-                {d.label}
-              </text>
-            ))}
-          </svg>
-
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 8 }}>
-            {series.map(([key, label], idx) => (
-              <span key={key} style={{ fontSize: 12, fontWeight: 900, color: ["#dc2626", "#f97316", "#2563eb", "#7c3aed"][idx] }}>
-                ● {label}
-              </span>
-            ))}
-          </div>
-        </>
-      )}
+      <div style={{ color: "#6b7280", fontSize: 13 }}>
+        This is where your custom graph controls will go.
+      </div>
     </div>
   );
 };
@@ -1269,8 +1198,7 @@ const trendData = useMemo(() => {
 
     <div style={{ marginBottom: 16 }}>
 
-      <TrendChart title="Food Safety Trends" data={trendData} />
-
+<CustomGraphBuilder title={customGraphTitle} data={trendData} />
     </div>
 
     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 16 }}>
