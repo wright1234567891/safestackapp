@@ -42,29 +42,17 @@ import { CSS } from "@dnd-kit/utilities";
 
 import { db } from "../firebase";
 import {
-
   collection,
-
   addDoc,
-
   onSnapshot,
-
   query,
-
   where,
-
   doc,
-
   getDoc,
-
   setDoc,
-
   updateDoc,
-
   increment,
-
   serverTimestamp,
-
 } from "firebase/firestore";
 
 import EquipmentManager from "./EquipmentManager";
@@ -366,6 +354,7 @@ const SitePage = ({ user, onLogout }) => {
   const [editDashboard, setEditDashboard] = useState(false);
   const [dashboardConfig, setDashboardConfig] = useState(null);
   const [stockUseByDrafts, setStockUseByDrafts] = useState({});
+  const [stockActionDrafts, setStockActionDrafts] = useState({});
 
   const isMobile = useIsMobile();
 
@@ -607,258 +596,177 @@ const SitePage = ({ user, onLogout }) => {
   }, [completed, equipment, cleanLogs]);
 
   const daysUntil = (value) => {
-  if (!value) return null;
+    if (!value) return null;
 
-  let d;
+    let d;
 
-  if (value?.toDate) {
-    d = value.toDate();
-  } else if (value instanceof Date) {
-    d = value;
-  } else {
-    d = new Date(value);
-  }
+    if (value?.toDate) {
+      d = value.toDate();
+    } else if (value instanceof Date) {
+      d = value;
+    } else {
+      d = new Date(value);
+    }
 
-  if (Number.isNaN(d.getTime())) return null;
+    if (Number.isNaN(d.getTime())) return null;
 
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  d.setHours(0, 0, 0, 0);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    d.setHours(0, 0, 0, 0);
 
-  return Math.ceil((d - today) / (1000 * 60 * 60 * 24));
-};
+    return Math.ceil((d - today) / (1000 * 60 * 60 * 24));
+  };
 
-const stockAlerts = useMemo(() => {
+  const stockAlerts = useMemo(() => {
+    return stockBatches.filter((batch) => {
+      const status = (batch.status || "active").toString().toLowerCase();
+      const remaining = Number(batch.quantityRemaining ?? batch.quantity ?? 0);
 
-  return stockBatches.filter((batch) => {
+      if (status === "closed" || remaining <= 0) return false;
+      if (!batch.useByDate || batch.needsUseByReview === true) return true;
 
-    const status = (batch.status || "active").toString().toLowerCase();
+      const days = daysUntil(batch.useByDate);
+      return days !== null && days <= 3;
+    });
+  }, [stockBatches]);
 
-    const remaining = Number(batch.quantityRemaining ?? batch.quantity ?? 0);
-
-    if (status === "closed" || remaining <= 0) return false;
-
-    if (!batch.useByDate || batch.needsUseByReview === true) return true;
+  const stockAlertLabel = (batch) => {
+    if (!batch.useByDate || batch.needsUseByReview === true) return "Missing use-by date";
 
     const days = daysUntil(batch.useByDate);
 
-    return days !== null && days <= 3;
-
-  });
-
-}, [stockBatches]);
-const stockAlertLabel = (batch) => {
-
-  if (!batch.useByDate || batch.needsUseByReview === true) {
-
-    return "Missing use-by date";
-
-  }
-
-  const days = daysUntil(batch.useByDate);
-
-  if (days < 0) return "Use-by date passed";
-
-  if (days === 0) return "Use-by today";
-
-  if (days === 1) return "Use-by tomorrow";
-
-  return `Use-by in ${days} days`;
-
-};
+    if (days < 0) return "Use-by date passed";
+    if (days === 0) return "Use-by today";
+    if (days === 1) return "Use-by tomorrow";
+    return `Use-by in ${days} days`;
+  };
 
   const failedTempAlerts = useMemo(() => {
+    const todayStr = new Date().toLocaleDateString();
 
-  const todayStr = new Date().toLocaleDateString();
+    return equipment.flatMap((eq) => {
+      if (eq.type !== "Fridge" && eq.type !== "Freezer") return [];
 
-  return equipment.flatMap((eq) => {
+      const recs = Array.isArray(eq.records) ? eq.records : [];
 
-    if (eq.type !== "Fridge" && eq.type !== "Freezer") return [];
+      return recs
+        .filter((r) => r?.date === todayStr)
+        .map((r, index) => {
+          const temp = Number(r?.temp);
 
-    const recs = Array.isArray(eq.records) ? eq.records : [];
+          const failed =
+            eq.type === "Fridge"
+              ? !Number.isNaN(temp) && (temp < TEMP_LIMITS.Fridge.min || temp > TEMP_LIMITS.Fridge.max)
+              : !Number.isNaN(temp) && temp > TEMP_LIMITS.Freezer.max;
 
-    return recs
+          if (!failed) return null;
 
-      .filter((r) => r?.date === todayStr)
-
-      .map((r, index) => {
-
-        const temp = Number(r?.temp);
-
-        const failed =
-
-          eq.type === "Fridge"
-
-            ? !Number.isNaN(temp) && (temp < TEMP_LIMITS.Fridge.min || temp > TEMP_LIMITS.Fridge.max)
-
-            : !Number.isNaN(temp) && temp > TEMP_LIMITS.Freezer.max;
-
-        if (!failed) return null;
-
-        return {
-
-          id: `${eq.id}-${r.date}-${index}`,
-
-          equipmentName: eq.name || eq.type || "Equipment",
-
-          equipmentType: eq.type,
-
-          temp,
-
-          corrective: r.corrective || r.correctiveAction || "Corrective action needed",
-
-        };
-
-      })
-
-      .filter(Boolean);
-
-  });
-
-}, [equipment]);
-
-const updateStockBatchUseBy = async (batchId, useByDate) => {
-  if (!useByDate) {
-    alert("Please choose a use-by date first.");
-    return;
-  }
-
-  try {
-    await updateDoc(doc(db, "stockBatches", batchId), {
-      useByDate,
-      useBy: useByDate,
-      expiryDate: useByDate,
-      needsUseByReview: false,
-      updatedAt: serverTimestamp(),
+          return {
+            id: `${eq.id}-${r.date}-${index}`,
+            equipmentName: eq.name || eq.type || "Equipment",
+            equipmentType: eq.type,
+            temp,
+            corrective: r.corrective || r.correctiveAction || "Corrective action needed",
+          };
+        })
+        .filter(Boolean);
     });
+  }, [equipment]);
 
-    setStockUseByDrafts((prev) => {
-      const next = { ...prev };
-      delete next[batchId];
-      return next;
-    });
-  } catch (error) {
-    console.error("Error updating stock batch use-by date:", error);
-    alert("Failed to update use-by date.");
-  }
-};
+  const updateStockBatchUseBy = async (batchId, useByDate) => {
+    if (!useByDate) {
+      alert("Please choose a use-by date first.");
+      return;
+    }
 
-const quickUseStockBatch = async (batch) => {
-  const qty = Number(batch.quantityRemaining ?? batch.quantity ?? 0);
-  if (!batch?.id || !batch.stockItemId || qty <= 0) return;
+    try {
+      await updateDoc(doc(db, "stockBatches", batchId), {
+        useByDate,
+        useBy: useByDate,
+        expiryDate: useByDate,
+        needsUseByReview: false,
+        updatedAt: serverTimestamp(),
+      });
 
-  if (!window.confirm(`Mark all remaining ${batch.stockItemName || "stock"} as used?`)) return;
+      setStockUseByDrafts((prev) => {
+        const next = { ...prev };
+        delete next[batchId];
+        return next;
+      });
+    } catch (error) {
+      console.error("Error updating stock batch use-by date:", error);
+      alert("Failed to update use-by date.");
+    }
+  };
 
-  await updateDoc(doc(db, "stockBatches", batch.id), {
-    quantityRemaining: 0,
-    status: "closed",
-    updatedAt: serverTimestamp(),
-  });
+  const quickAdjustStockBatch = async (batch, type, qtyToAdjust) => {
+    const availableQty = Number(batch.quantityRemaining ?? batch.quantity ?? 0);
+    const qty = Number(qtyToAdjust);
 
-  await updateDoc(doc(db, "stockItems", batch.stockItemId), {
-    quantity: increment(-qty),
-    updatedAt: serverTimestamp(),
-  });
+    if (!batch?.id || !batch.stockItemId || qty <= 0) {
+      alert("Enter a valid quantity first.");
+      return;
+    }
 
-  await addDoc(collection(db, "stockMovements"), {
-    stockItemId: batch.stockItemId,
-    stockItemName: batch.stockItemName || batch.itemName || "Stock item",
-    type: "usage",
-    quantity: qty,
-    measurement: batch.measurement || "unit",
-    supplier: batch.supplier || null,
-    location: batch.location || null,
-    source: "dashboard-alert",
-    site: selectedSite,
-    createdAt: serverTimestamp(),
-    createdBy: user?.name || user?.displayName || user?.email || "Unknown",
-    createdByUid: user?.uid || user?.id || null,
-  });
-};
+    if (qty > availableQty) {
+      alert(`Only ${availableQty} ${batch.measurement || "unit"} remaining.`);
+      return;
+    }
 
-const quickWasteStockBatch = async (batch) => {
-  const qty = Number(batch.quantityRemaining ?? batch.quantity ?? 0);
-  if (!batch?.id || !batch.stockItemId || qty <= 0) return;
+    try {
+      const newRemaining = availableQty - qty;
 
-  if (!window.confirm(`Waste all remaining ${batch.stockItemName || "stock"}?`)) return;
+      await updateDoc(doc(db, "stockBatches", batch.id), {
+        quantityRemaining: newRemaining,
+        status: newRemaining <= 0 ? "closed" : "active",
+        updatedAt: serverTimestamp(),
+      });
 
-  await updateDoc(doc(db, "stockBatches", batch.id), {
-    quantityRemaining: 0,
-    status: "closed",
-    updatedAt: serverTimestamp(),
-  });
+      await updateDoc(doc(db, "stockItems", batch.stockItemId), {
+        quantity: increment(-qty),
+        updatedAt: serverTimestamp(),
+      });
 
-  await updateDoc(doc(db, "stockItems", batch.stockItemId), {
-    quantity: increment(-qty),
-    updatedAt: serverTimestamp(),
-  });
+      await addDoc(collection(db, "stockMovements"), {
+        stockItemId: batch.stockItemId,
+        stockItemName: batch.stockItemName || batch.itemName || "Stock item",
+        type,
+        quantity: qty,
+        measurement: batch.measurement || "unit",
+        supplier: batch.supplier || null,
+        location: batch.location || null,
+        wasteReason: type === "waste" ? "Dashboard alert" : null,
+        source: "dashboard-alert",
+        site: selectedSite,
+        createdAt: serverTimestamp(),
+        createdBy: user?.name || user?.displayName || user?.email || "Unknown",
+        createdByUid: user?.uid || user?.id || null,
+      });
 
-  await addDoc(collection(db, "stockMovements"), {
-    stockItemId: batch.stockItemId,
-    stockItemName: batch.stockItemName || batch.itemName || "Stock item",
-    type: "waste",
-    quantity: qty,
-    measurement: batch.measurement || "unit",
-    supplier: batch.supplier || null,
-    location: batch.location || null,
-    wasteReason: "Dashboard alert",
-    source: "dashboard-alert",
-    site: selectedSite,
-    createdAt: serverTimestamp(),
-    createdBy: user?.name || user?.displayName || user?.email || "Unknown",
-    createdByUid: user?.uid || user?.id || null,
-  });
+      if (type === "waste") {
+        await addDoc(collection(db, "wasteLogs"), {
+          site: selectedSite,
+          item: batch.stockItemName || batch.itemName || "Stock item",
+          qty,
+          unit: batch.measurement || "unit",
+          reason: "Dashboard alert",
+          notes: "Auto-created from dashboard alert",
+          stockItemId: batch.stockItemId,
+          source: "dashboard-alert",
+          createdAt: serverTimestamp(),
+          createdBy: user?.name || user?.uid || "Unknown",
+          createdByUid: user?.uid || null,
+        });
+      }
 
-  await addDoc(collection(db, "wasteLogs"), {
-    site: selectedSite,
-    item: batch.stockItemName || batch.itemName || "Stock item",
-    qty,
-    unit: batch.measurement || "unit",
-    reason: "Dashboard alert",
-    notes: "Auto-created from dashboard alert",
-    stockItemId: batch.stockItemId,
-    source: "dashboard-alert",
-    createdAt: serverTimestamp(),
-    createdBy: user?.name || user?.uid || "Unknown",
-    createdByUid: user?.uid || null,
-  });
-};
+      setStockActionDrafts((prev) => ({ ...prev, [batch.id]: "" }));
+    } catch (error) {
+      console.error("Error adjusting stock batch:", error);
+      alert("Failed to update stock batch.");
+    }
+  };
 
   const { buckets, totalDue, totalDone, percent, label } = overview;
-
-  const actionWidgets = useMemo(() => {
-    const failedTempsToday = todayCompliance.t.total - todayCompliance.t.pass;
-    const overdueDailyChecks = buckets.daily.total - buckets.daily.done;
-    const incompleteCleaning = todayCompliance.c.total - todayCompliance.c.pass;
-    const stockUseByAlerts = stockAlerts.length;
-
-    return [
-      {
-        label: "Overdue daily checks",
-        value: overdueDailyChecks,
-        tone: overdueDailyChecks > 0 ? "bad" : "good",
-        onClick: () => setActiveSection("checklists"),
-      },
-      {
-        label: "Failed temps today",
-        value: failedTempsToday,
-        tone: failedTempsToday > 0 ? "bad" : "good",
-        onClick: () => setActiveSection("temp"),
-      },
-      {
-        label: "Cleaning incomplete",
-        value: incompleteCleaning,
-        tone: incompleteCleaning > 0 ? "warn" : "good",
-        onClick: () => setActiveSection("cleaning"),
-      },
-      {
-        label: "Stock use-by alerts",
-        value: stockUseByAlerts,
-        tone: stockUseByAlerts > 0 ? "warn" : "good",
-        onClick: () => setActiveSection("stock"),
-      },
-    ];
-  }, [todayCompliance, buckets, stockAlerts]);
 
   const resetSite = () => {
     setSelectedSite(null);
@@ -1296,447 +1204,446 @@ const quickWasteStockBatch = async (batch) => {
 
         <main className="safestack-main">
           {activeSection === "checklists" ? (
-  <ChecklistSection goBack={() => setActiveSection(null)} site={selectedSite} user={user} />
-) : activeSection === "equipment" ? (
-  <EquipmentManager goBack={() => setActiveSection(null)} tempChecks={tempChecks} setTempChecks={setTempChecks} site={selectedSite} user={user} />
-) : activeSection === "temp" ? (
-  <TempSection goBack={() => setActiveSection(null)} tempChecks={tempChecks.filter((e) => selectedSiteKeys.includes(e.site) && (e.type === "Fridge" || e.type === "Freezer"))} setTempChecks={setTempChecks} site={selectedSite} user={user} />
-) : activeSection === "fridgeLog" ? (
-  <FridgeLogSection goBack={() => setActiveSection(null)} site={selectedSite} user={user} equipment={equipment} />
-) : activeSection === "wasteLog" ? (
-  <WasteLogSection goBack={() => setActiveSection(null)} site={selectedSite} user={user} />
-) : activeSection === "howto" ? (
-  <HowToSection site={selectedSite} user={user} goBack={() => setActiveSection(null)} />
-) : activeSection === "cleaning" ? (
-  <CleaningSection goBack={() => setActiveSection(null)} site={selectedSite} user={user} cleaningRecords={cleaningRecords} setCleaningRecords={setCleaningRecords} />
-) : activeSection === "cooking" ? (
-  <CookingSection goBack={() => setActiveSection(null)} cookingEquipment={tempChecks.filter((e) => selectedSiteKeys.includes(e.site) && e.type === "Cooking")} setTempChecks={setTempChecks} site={selectedSite} user={user} />
-) : activeSection === "stock" ? (
-  <StockSection goBack={() => setActiveSection(null)} site={selectedSite} user={user} />
-) : activeSection === "reports" ? (
-  <Reports goBack={() => setActiveSection(null)} site={selectedSite} user={user} />
-) : activeSection === "ccp" ? (
-  <CCPSection goBack={() => setActiveSection(null)} site={selectedSite} user={user} />
-) : activeSection === "haccpDashboard" ? (
-  <HaccpDashboard goBack={() => setActiveSection(null)} site={selectedSite} />
-) : activeSection === "dishes" ? (
-  <DishesSection goBack={() => setActiveSection(null)} site={selectedSite} user={user} />
-) : activeSection === "training" ? (
-  <StaffTrainingSection goBack={() => setActiveSection(null)} site={selectedSite} user={user} />
-) : activeSection === "myRota" ? (
-  <MyRota goBack={() => setActiveSection(null)} user={user} />
-) : activeSection === "staff" ? (
-  <StaffManager goBack={() => setActiveSection(null)} user={user} />
-) : (
-  <>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, flexWrap: "wrap", marginBottom: 22 }}>
-            <div>
-              <h1 style={{ margin: 0, fontSize: isMobile ? 30 : 34, color: "#0f172a", fontWeight: 800, letterSpacing: -0.7 }}>
-                Dashboard
-              </h1>
-              <div style={{ marginTop: 5, color: "#334155", fontSize: 15 }}>{selectedSiteLabel}</div>
-            </div>
-
-            <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-              <button
-                onClick={() => setEditDashboard((prev) => !prev)}
-                style={{
-                  border: "1px solid #e5e7eb",
-                  background: editDashboard ? "#15803d" : "#fff",
-                  color: editDashboard ? "#fff" : "#0f172a",
-                  borderRadius: 999,
-                  padding: "9px 14px",
-                  fontWeight: 800,
-                  cursor: "pointer",
-                }}
-              >
-                {editDashboard ? "Done editing" : "Edit dashboard"}
-              </button>
-
-              <FaBell color="#0f172a" />
-              <div style={{ display: "flex", alignItems: "center", gap: 10, background: "#fff", border: "1px solid #e5e7eb", borderRadius: 999, padding: "8px 12px" }}>
-                <div style={{ width: 34, height: 34, borderRadius: "50%", background: "#15803d", color: "#fff", display: "grid", placeItems: "center", fontWeight: 800 }}>
-                  {(user?.name || "U").slice(0, 1).toUpperCase()}
-                </div>
-                <div style={{ fontSize: 14, fontWeight: 700, color: "#0f172a" }}>{user?.name || "User"}</div>
-              </div>
-            </div>
-          </div>
-
-          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1.2fr 1fr", gap: 18, marginBottom: 18 }}>
-            <div className="safestack-card" style={{ padding: 24 }}>
-              <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "170px 1fr", gap: 20, alignItems: "center" }}>
-                <div style={{ display: "flex", justifyContent: "center" }}>
-      <Donut
-
-  percent={percent}
-
-  label={`${label}`}
-
-  size={136}
-
-  stroke={12}
-
-/>
-                </div>
-
+            <ChecklistSection goBack={() => setActiveSection(null)} site={selectedSite} user={user} />
+          ) : activeSection === "equipment" ? (
+            <EquipmentManager goBack={() => setActiveSection(null)} tempChecks={tempChecks} setTempChecks={setTempChecks} site={selectedSite} user={user} />
+          ) : activeSection === "temp" ? (
+            <TempSection goBack={() => setActiveSection(null)} tempChecks={tempChecks.filter((e) => selectedSiteKeys.includes(e.site) && (e.type === "Fridge" || e.type === "Freezer"))} setTempChecks={setTempChecks} site={selectedSite} user={user} />
+          ) : activeSection === "fridgeLog" ? (
+            <FridgeLogSection goBack={() => setActiveSection(null)} site={selectedSite} user={user} equipment={equipment} />
+          ) : activeSection === "wasteLog" ? (
+            <WasteLogSection goBack={() => setActiveSection(null)} site={selectedSite} user={user} />
+          ) : activeSection === "howto" ? (
+            <HowToSection site={selectedSite} user={user} goBack={() => setActiveSection(null)} />
+          ) : activeSection === "cleaning" ? (
+            <CleaningSection goBack={() => setActiveSection(null)} site={selectedSite} user={user} cleaningRecords={cleaningRecords} setCleaningRecords={setCleaningRecords} />
+          ) : activeSection === "cooking" ? (
+            <CookingSection goBack={() => setActiveSection(null)} cookingEquipment={tempChecks.filter((e) => selectedSiteKeys.includes(e.site) && e.type === "Cooking")} setTempChecks={setTempChecks} site={selectedSite} user={user} />
+          ) : activeSection === "stock" ? (
+            <StockSection goBack={() => setActiveSection(null)} site={selectedSite} user={user} />
+          ) : activeSection === "reports" ? (
+            <Reports goBack={() => setActiveSection(null)} site={selectedSite} user={user} />
+          ) : activeSection === "ccp" ? (
+            <CCPSection goBack={() => setActiveSection(null)} site={selectedSite} user={user} />
+          ) : activeSection === "haccpDashboard" ? (
+            <HaccpDashboard goBack={() => setActiveSection(null)} site={selectedSite} />
+          ) : activeSection === "dishes" ? (
+            <DishesSection goBack={() => setActiveSection(null)} site={selectedSite} user={user} />
+          ) : activeSection === "training" ? (
+            <StaffTrainingSection goBack={() => setActiveSection(null)} site={selectedSite} user={user} />
+          ) : activeSection === "myRota" ? (
+            <MyRota goBack={() => setActiveSection(null)} user={user} />
+          ) : activeSection === "staff" ? (
+            <StaffManager goBack={() => setActiveSection(null)} user={user} />
+          ) : (
+            <>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, flexWrap: "wrap", marginBottom: 22 }}>
                 <div>
-<div style={{ fontSize: 20, fontWeight: 800, color: "#0f172a", marginBottom: 14 }}>
+                  <h1 style={{ margin: 0, fontSize: isMobile ? 30 : 34, color: "#0f172a", fontWeight: 800, letterSpacing: -0.7 }}>
+                    Dashboard
+                  </h1>
+                  <div style={{ marginTop: 5, color: "#334155", fontSize: 15 }}>{selectedSiteLabel}</div>
+                </div>
 
-  Checklist Progress
+                <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                  <button
+                    onClick={() => setEditDashboard((prev) => !prev)}
+                    style={{
+                      border: "1px solid #e5e7eb",
+                      background: editDashboard ? "#15803d" : "#fff",
+                      color: editDashboard ? "#fff" : "#0f172a",
+                      borderRadius: 999,
+                      padding: "9px 14px",
+                      fontWeight: 800,
+                      cursor: "pointer",
+                    }}
+                  >
+                    {editDashboard ? "Done editing" : "Edit dashboard"}
+                  </button>
 
-</div>
-
-<div style={{ fontSize: 13, color: "#475569", marginBottom: 14 }}>
-
-  {overviewMode === "ALL" ? "All scheduled checks" : `${overviewMode.charAt(0)}${overviewMode.slice(1).toLowerCase()} checks`} · {totalDone}/{totalDue || 0} completed
-
-</div>
-
-                  <div style={{ height: 1, background: "#e5e7eb", margin: "12px 0 16px" }} />
-
-                  <div style={{ fontSize: 18, fontWeight: 800, color: "#0f172a", marginBottom: 12 }}>Checklist Overview</div>
-
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
-                    {["ALL", "DAILY", "WEEKLY", "MONTHLY"].map((mode) => (
-                      <button
-                        key={mode}
-                        onClick={() => setOverviewMode(mode)}
-                        style={{
-                          padding: "9px 14px",
-                          borderRadius: 12,
-                          border: "1px solid #e5e7eb",
-                          background: overviewMode === mode ? "#15985f" : "#fff",
-                          color: overviewMode === mode ? "#fff" : "#0f172a",
-                          fontWeight: 700,
-                          cursor: "pointer",
-                        }}
-                      >
-                        {mode === "ALL" ? "All" : mode.charAt(0) + mode.slice(1).toLowerCase()}
-                      </button>
-                    ))}
-                  </div>
-
-                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                    <span style={chip("#ecfeff", "#075985")}>Daily: <strong>{buckets.daily.done}/{buckets.daily.total}</strong></span>
-                    <span style={chip("#f5f3ff", "#5b21b6")}>Weekly: <strong>{buckets.weekly.done}/{buckets.weekly.total}</strong></span>
-                    <span style={chip("#fef3c7", "#92400e")}>Monthly: <strong>{buckets.monthly.done}/{buckets.monthly.total}</strong></span>
-                  </div>
-
-                  <div style={{ fontSize: 12, color: "#64748b", marginTop: 14 }}>
-                    Scheduled progress: {Math.round(percent)}% ({totalDone}/{totalDue || 0}) · {label}
+                  <FaBell color="#0f172a" />
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, background: "#fff", border: "1px solid #e5e7eb", borderRadius: 999, padding: "8px 12px" }}>
+                    <div style={{ width: 34, height: 34, borderRadius: "50%", background: "#15803d", color: "#fff", display: "grid", placeItems: "center", fontWeight: 800 }}>
+                      {(user?.name || "U").slice(0, 1).toUpperCase()}
+                    </div>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: "#0f172a" }}>{user?.name || "User"}</div>
                   </div>
                 </div>
               </div>
-            </div>
 
-            <div style={{ display: "grid", gap: 18 }}>
-              <div className="safestack-card" style={{ padding: 22, display: "flex", alignItems: "center", gap: 18 }}>
-                <div style={{ width: 58, height: 58, borderRadius: 18, background: "linear-gradient(135deg,#22c55e,#15803d)", color: "#fff", display: "grid", placeItems: "center", fontSize: 28 }}>
-                  <FaShieldAlt />
-                </div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 18, fontWeight: 800, color: "#0f172a" }}>All good today</div>
-                  <div style={{ marginTop: 4, fontSize: 13, color: "#64748b" }}>You’re on track with food safety</div>
-                  <div style={{ marginTop: 12, height: 7, borderRadius: 999, background: "#dcfce7", overflow: "hidden" }}>
-                    <div style={{ width: `${todayCompliance.pct}%`, height: "100%", background: "#15985f" }} />
-                  </div>
-                </div>
-                <div style={{ color: "#15803d", fontWeight: 800 }}>{todayCompliance.pct}%</div>
-              </div>
+              <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1.2fr 1fr", gap: 18, marginBottom: 18 }}>
+                <div className="safestack-card" style={{ padding: 24 }}>
+                  <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "170px 1fr", gap: 20, alignItems: "center" }}>
+                    <div style={{ display: "flex", justifyContent: "center" }}>
+                      <Donut percent={percent} label={`${label}`} size={136} stroke={12} />
+                    </div>
 
-              <div className="safestack-card" style={{ padding: 22 }}>
-                <div style={{ fontSize: 18, fontWeight: 800, color: "#0f172a", marginBottom: 14 }}>Alerts</div>
-
-                {failedTempAlerts.length === 0 && stockAlerts.length === 0 && buckets.daily.total - buckets.daily.done <= 0 && todayCompliance.c.total - todayCompliance.c.pass <= 0 ? (
-                  <div style={{ color: "#64748b", fontSize: 14 }}>No active alerts.</div>
-                ) : (
-                  <div style={{ display: "grid", gap: 12 }}>
-                    {failedTempAlerts.slice(0, 3).map((alert) => (
-                      <div
-                        key={alert.id}
-                        style={{
-                          border: "1px solid #fee2e2",
-                          background: "#fff7f7",
-                          borderRadius: 14,
-                          padding: 12,
-                        }}
-                      >
-                        <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
-                          <FaExclamationTriangle color="#dc2626" style={{ marginTop: 2 }} />
-                          <div style={{ flex: 1 }}>
-                            <div style={{ fontWeight: 900, color: "#0f172a" }}>{alert.equipmentName}</div>
-                            <div style={{ fontSize: 13, color: "#dc2626", marginTop: 2 }}>
-                              {alert.equipmentType} recorded at {alert.temp}°C
-                            </div>
-                            <div style={{ fontSize: 12, color: "#64748b", marginTop: 5 }}>
-                              {alert.corrective}
-                            </div>
-                          </div>
-                        </div>
-
-                        <button
-                          onClick={() => setActiveSection("temp")}
-                          style={{
-                            marginTop: 10,
-                            width: "100%",
-                            border: "none",
-                            borderRadius: 10,
-                            padding: "9px 10px",
-                            background: "#dc2626",
-                            color: "#fff",
-                            fontWeight: 800,
-                            cursor: "pointer",
-                          }}
-                        >
-                          Open temp checks
-                        </button>
+                    <div>
+                      <div style={{ fontSize: 20, fontWeight: 800, color: "#0f172a", marginBottom: 14 }}>
+                        Checklist Progress
                       </div>
-                    ))}
 
-{stockAlerts.slice(0, 4).map((batch) => {
-  const draftDate = stockUseByDrafts[batch.id] || batch.useByDate || "";
+                      <div style={{ fontSize: 13, color: "#475569", marginBottom: 14 }}>
+                        {overviewMode === "ALL" ? "All scheduled checks" : `${overviewMode.charAt(0)}${overviewMode.slice(1).toLowerCase()} checks`} · {totalDone}/{totalDue || 0} completed
+                      </div>
 
-  return (
-    <div
-      key={batch.id}
-      style={{
-        border: "1px solid #fde68a",
-        background: "#fffbeb",
-        borderRadius: 14,
-        padding: 12,
-      }}
-    >
-      <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
-        <FaExclamationTriangle color="#f59e0b" style={{ marginTop: 2 }} />
+                      <div style={{ height: 1, background: "#e5e7eb", margin: "12px 0 16px" }} />
 
-        <div style={{ flex: 1 }}>
-          <div style={{ fontWeight: 900, color: "#0f172a" }}>
-            {batch.stockItemName || batch.itemName || batch.name || "Stock item"}
-          </div>
+                      <div style={{ fontSize: 18, fontWeight: 800, color: "#0f172a", marginBottom: 12 }}>Checklist Overview</div>
 
-          <div style={{ fontSize: 13, color: "#92400e", marginTop: 2 }}>
-            {stockAlertLabel(batch)}
-          </div>
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
+                        {["ALL", "DAILY", "WEEKLY", "MONTHLY"].map((mode) => (
+                          <button
+                            key={mode}
+                            onClick={() => setOverviewMode(mode)}
+                            style={{
+                              padding: "9px 14px",
+                              borderRadius: 12,
+                              border: "1px solid #e5e7eb",
+                              background: overviewMode === mode ? "#15985f" : "#fff",
+                              color: overviewMode === mode ? "#fff" : "#0f172a",
+                              fontWeight: 700,
+                              cursor: "pointer",
+                            }}
+                          >
+                            {mode === "ALL" ? "All" : mode.charAt(0) + mode.slice(1).toLowerCase()}
+                          </button>
+                        ))}
+                      </div>
 
-          <div style={{ fontSize: 12, color: "#64748b", marginTop: 5 }}>
-            Remaining: {batch.quantityRemaining ?? batch.quantity ?? "—"} {batch.measurement || ""} · Received: {batch.dateReceived || "—"}
-          </div>
-        </div>
-      </div>
+                      <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                        <span style={chip("#ecfeff", "#075985")}>Daily: <strong>{buckets.daily.done}/{buckets.daily.total}</strong></span>
+                        <span style={chip("#f5f3ff", "#5b21b6")}>Weekly: <strong>{buckets.weekly.done}/{buckets.weekly.total}</strong></span>
+                        <span style={chip("#fef3c7", "#92400e")}>Monthly: <strong>{buckets.monthly.done}/{buckets.monthly.total}</strong></span>
+                      </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr auto", gap: 8, marginTop: 10 }}>
-        <input
-          type="date"
-          value={draftDate}
-          onChange={(e) =>
-            setStockUseByDrafts((prev) => ({
-              ...prev,
-              [batch.id]: e.target.value,
-            }))
-          }
-          style={{
-            border: "1px solid #f59e0b",
-            borderRadius: 10,
-            padding: "9px 10px",
-            fontSize: 14,
-            background: "#fff",
-          }}
-        />
+                      <div style={{ fontSize: 12, color: "#64748b", marginTop: 14 }}>
+                        Scheduled progress: {Math.round(percent)}% ({totalDone}/{totalDue || 0}) · {label}
+                      </div>
+                    </div>
+                  </div>
+                </div>
 
-        <button
-          onClick={() => updateStockBatchUseBy(batch.id, draftDate)}
-          style={{
-            border: "none",
-            borderRadius: 10,
-            padding: "9px 12px",
-            background: "#f59e0b",
-            color: "#fff",
-            fontWeight: 800,
-            cursor: "pointer",
-          }}
-        >
-          Save
-        </button>
-      </div>
+                <div style={{ display: "grid", gap: 18 }}>
+                  <div className="safestack-card" style={{ padding: 22, display: "flex", alignItems: "center", gap: 18 }}>
+                    <div style={{ width: 58, height: 58, borderRadius: 18, background: "linear-gradient(135deg,#22c55e,#15803d)", color: "#fff", display: "grid", placeItems: "center", fontSize: 28 }}>
+                      <FaShieldAlt />
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 18, fontWeight: 800, color: "#0f172a" }}>All good today</div>
+                      <div style={{ marginTop: 4, fontSize: 13, color: "#64748b" }}>You’re on track with food safety</div>
+                      <div style={{ marginTop: 12, height: 7, borderRadius: 999, background: "#dcfce7", overflow: "hidden" }}>
+                        <div style={{ width: `${todayCompliance.pct}%`, height: "100%", background: "#15985f" }} />
+                      </div>
+                    </div>
+                    <div style={{ color: "#15803d", fontWeight: 800 }}>{todayCompliance.pct}%</div>
+                  </div>
 
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
-        <button
-          onClick={() => setActiveSection("stock")}
-          style={{
-            border: "1px solid #e5e7eb",
-            borderRadius: 10,
-            padding: "9px 12px",
-            background: "#fff",
-            color: "#0f172a",
-            fontWeight: 800,
-            cursor: "pointer",
-          }}
-        >
-          Open stock
-        </button>
+                  <div className="safestack-card" style={{ padding: 22 }}>
+                    <div style={{ fontSize: 18, fontWeight: 800, color: "#0f172a", marginBottom: 14 }}>Alerts</div>
 
-        <button
-          onClick={() => quickUseStockBatch(batch)}
-          style={{
-            border: "none",
-            borderRadius: 10,
-            padding: "9px 12px",
-            background: "#f97316",
-            color: "#fff",
-            fontWeight: 800,
-            cursor: "pointer",
-          }}
-        >
-          Used all
-        </button>
+                    {failedTempAlerts.length === 0 && stockAlerts.length === 0 && buckets.daily.total - buckets.daily.done <= 0 && todayCompliance.c.total - todayCompliance.c.pass <= 0 ? (
+                      <div style={{ color: "#64748b", fontSize: 14 }}>No active alerts.</div>
+                    ) : (
+                      <div style={{ display: "grid", gap: 12 }}>
+                        {failedTempAlerts.slice(0, 3).map((alert) => (
+                          <div
+                            key={alert.id}
+                            style={{
+                              border: "1px solid #fee2e2",
+                              background: "#fff7f7",
+                              borderRadius: 14,
+                              padding: 12,
+                            }}
+                          >
+                            <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+                              <FaExclamationTriangle color="#dc2626" style={{ marginTop: 2 }} />
+                              <div style={{ flex: 1 }}>
+                                <div style={{ fontWeight: 900, color: "#0f172a" }}>{alert.equipmentName}</div>
+                                <div style={{ fontSize: 13, color: "#dc2626", marginTop: 2 }}>
+                                  {alert.equipmentType} recorded at {alert.temp}°C
+                                </div>
+                                <div style={{ fontSize: 12, color: "#64748b", marginTop: 5 }}>
+                                  {alert.corrective}
+                                </div>
+                              </div>
+                            </div>
 
-        <button
-          onClick={() => quickWasteStockBatch(batch)}
-          style={{
-            border: "none",
-            borderRadius: 10,
-            padding: "9px 12px",
-            background: "#dc2626",
-            color: "#fff",
-            fontWeight: 800,
-            cursor: "pointer",
-          }}
-        >
-          Waste all
-        </button>
-      </div>
-    </div>
-  );
-})}
-
-                    {buckets.daily.total - buckets.daily.done > 0 && (
-                      <button
-                        onClick={() => setActiveSection("checklists")}
-                        style={{
-                          border: "1px solid #e5e7eb",
-                          background: "#fff",
-                          borderRadius: 14,
-                          padding: 12,
-                          display: "flex",
-                          justifyContent: "space-between",
-                          alignItems: "center",
-                          cursor: "pointer",
-                          textAlign: "left",
-                        }}
-                      >
-                        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                          <FaClipboardCheck color="#15985f" />
-                          <div>
-                            <div style={{ fontWeight: 900, color: "#0f172a" }}>Overdue daily checks</div>
-                            <div style={{ fontSize: 12, color: "#dc2626" }}>{buckets.daily.total - buckets.daily.done} needs attention</div>
+                            <button
+                              onClick={() => setActiveSection("temp")}
+                              style={{
+                                marginTop: 10,
+                                width: "100%",
+                                border: "none",
+                                borderRadius: 10,
+                                padding: "9px 10px",
+                                background: "#dc2626",
+                                color: "#fff",
+                                fontWeight: 800,
+                                cursor: "pointer",
+                              }}
+                            >
+                              Open temp checks
+                            </button>
                           </div>
-                        </div>
-                        <FaChevronRight color="#94a3b8" />
-                      </button>
-                    )}
+                        ))}
 
-                    {todayCompliance.c.total - todayCompliance.c.pass > 0 && (
-                      <button
-                        onClick={() => setActiveSection("cleaning")}
-                        style={{
-                          border: "1px solid #e5e7eb",
-                          background: "#fff",
-                          borderRadius: 14,
-                          padding: 12,
-                          display: "flex",
-                          justifyContent: "space-between",
-                          alignItems: "center",
-                          cursor: "pointer",
-                          textAlign: "left",
-                        }}
-                      >
-                        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                          <FaBroom color="#f59e0b" />
-                          <div>
-                            <div style={{ fontWeight: 900, color: "#0f172a" }}>Cleaning incomplete</div>
-                            <div style={{ fontSize: 12, color: "#dc2626" }}>{todayCompliance.c.total - todayCompliance.c.pass} needs attention</div>
+                        {stockAlerts.slice(0, 4).map((batch) => {
+                          const draftDate = stockUseByDrafts[batch.id] || batch.useByDate || "";
+                          const actionQty = stockActionDrafts[batch.id] || "";
+                          const remainingQty = Number(batch.quantityRemaining ?? batch.quantity ?? 0);
+
+                          return (
+                            <div
+                              key={batch.id}
+                              style={{
+                                border: "1px solid #fde68a",
+                                background: "#fffbeb",
+                                borderRadius: 14,
+                                padding: 12,
+                              }}
+                            >
+                              <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+                                <FaExclamationTriangle color="#f59e0b" style={{ marginTop: 2 }} />
+
+                                <div style={{ flex: 1 }}>
+                                  <div style={{ fontWeight: 900, color: "#0f172a" }}>
+                                    {batch.stockItemName || batch.itemName || batch.name || "Stock item"}
+                                  </div>
+
+                                  <div style={{ fontSize: 13, color: "#92400e", marginTop: 2 }}>
+                                    {stockAlertLabel(batch)}
+                                  </div>
+
+                                  <div style={{ fontSize: 12, color: "#64748b", marginTop: 5 }}>
+                                    Remaining: {remainingQty} {batch.measurement || ""} · Received: {batch.dateReceived || "—"}
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr auto", gap: 8, marginTop: 10 }}>
+                                <input
+                                  type="date"
+                                  value={draftDate}
+                                  onChange={(e) =>
+                                    setStockUseByDrafts((prev) => ({ ...prev, [batch.id]: e.target.value }))
+                                  }
+                                  style={{
+                                    border: "1px solid #f59e0b",
+                                    borderRadius: 10,
+                                    padding: "9px 10px",
+                                    fontSize: 14,
+                                    background: "#fff",
+                                  }}
+                                />
+
+                                <button
+                                  onClick={() => updateStockBatchUseBy(batch.id, draftDate)}
+                                  style={{
+                                    border: "none",
+                                    borderRadius: 10,
+                                    padding: "9px 12px",
+                                    background: "#f59e0b",
+                                    color: "#fff",
+                                    fontWeight: 800,
+                                    cursor: "pointer",
+                                  }}
+                                >
+                                  Save date
+                                </button>
+                              </div>
+
+                              <div style={{ display: "grid", gap: 8, marginTop: 10 }}>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  max={remainingQty}
+                                  step={batch.measurement === "kg" ? "0.1" : "1"}
+                                  value={actionQty}
+                                  onChange={(e) =>
+                                    setStockActionDrafts((prev) => ({ ...prev, [batch.id]: e.target.value }))
+                                  }
+                                  placeholder={`Qty to use/waste, max ${remainingQty}`}
+                                  style={{
+                                    border: "1px solid #e5e7eb",
+                                    borderRadius: 10,
+                                    padding: "9px 10px",
+                                    fontSize: 14,
+                                    background: "#fff",
+                                  }}
+                                />
+
+                                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                                  <button
+                                    onClick={() => setActiveSection("stock")}
+                                    style={{
+                                      border: "1px solid #e5e7eb",
+                                      borderRadius: 10,
+                                      padding: "9px 12px",
+                                      background: "#fff",
+                                      color: "#0f172a",
+                                      fontWeight: 800,
+                                      cursor: "pointer",
+                                    }}
+                                  >
+                                    Manage stock
+                                  </button>
+
+                                  <button
+                                    onClick={() => quickAdjustStockBatch(batch, "usage", actionQty)}
+                                    style={{
+                                      border: "none",
+                                      borderRadius: 10,
+                                      padding: "9px 12px",
+                                      background: "#f97316",
+                                      color: "#fff",
+                                      fontWeight: 800,
+                                      cursor: "pointer",
+                                    }}
+                                  >
+                                    Use qty
+                                  </button>
+
+                                  <button
+                                    onClick={() => quickAdjustStockBatch(batch, "waste", actionQty)}
+                                    style={{
+                                      border: "none",
+                                      borderRadius: 10,
+                                      padding: "9px 12px",
+                                      background: "#dc2626",
+                                      color: "#fff",
+                                      fontWeight: 800,
+                                      cursor: "pointer",
+                                    }}
+                                  >
+                                    Waste qty
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+
+                        {buckets.daily.total - buckets.daily.done > 0 && (
+                          <button
+                            onClick={() => setActiveSection("checklists")}
+                            style={{
+                              border: "1px solid #e5e7eb",
+                              background: "#fff",
+                              borderRadius: 14,
+                              padding: 12,
+                              display: "flex",
+                              justifyContent: "space-between",
+                              alignItems: "center",
+                              cursor: "pointer",
+                              textAlign: "left",
+                            }}
+                          >
+                            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                              <FaClipboardCheck color="#15985f" />
+                              <div>
+                                <div style={{ fontWeight: 900, color: "#0f172a" }}>Overdue daily checks</div>
+                                <div style={{ fontSize: 12, color: "#dc2626" }}>{buckets.daily.total - buckets.daily.done} needs attention</div>
+                              </div>
+                            </div>
+                            <FaChevronRight color="#94a3b8" />
+                          </button>
+                        )}
+
+                        {todayCompliance.c.total - todayCompliance.c.pass > 0 && (
+                          <button
+                            onClick={() => setActiveSection("cleaning")}
+                            style={{
+                              border: "1px solid #e5e7eb",
+                              background: "#fff",
+                              borderRadius: 14,
+                              padding: 12,
+                              display: "flex",
+                              justifyContent: "space-between",
+                              alignItems: "center",
+                              cursor: "pointer",
+                              textAlign: "left",
+                            }}
+                          >
+                            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                              <FaBroom color="#f59e0b" />
+                              <div>
+                                <div style={{ fontWeight: 900, color: "#0f172a" }}>Cleaning incomplete</div>
+                                <div style={{ fontSize: 12, color: "#dc2626" }}>{todayCompliance.c.total - todayCompliance.c.pass} needs attention</div>
+                              </div>
+                            </div>
+                            <FaChevronRight color="#94a3b8" />
+                          </button>
+                        )}
+
+                        {(failedTempAlerts.length > 3 || stockAlerts.length > 4) && (
+                          <div style={{ fontSize: 12, color: "#64748b", textAlign: "center" }}>
+                            Showing the first urgent items. Manage stock to review everything.
                           </div>
-                        </div>
-                        <FaChevronRight color="#94a3b8" />
-                      </button>
-                    )}
-
-                    {(failedTempAlerts.length > 3 || stockAlerts.length > 4) && (
-                      <div style={{ fontSize: 12, color: "#64748b", textAlign: "center" }}>
-                        Showing the first urgent items. Open the full section to review everything.
+                        )}
                       </div>
                     )}
                   </div>
-                )}
+                </div>
               </div>
-            </div>
-          </div>
 
-          {editDashboard && (
-            <div
-              className="safestack-card"
-              style={{
-                padding: 16,
-                marginBottom: 16,
-                background: "#fff",
-              }}
-            >
-              <div style={{ fontWeight: 800, color: "#0f172a", marginBottom: 6 }}>Edit dashboard</div>
-              <div style={{ fontSize: 13, color: "#64748b" }}>
-                Drag cards using the grip icon. Use the ON/OFF button to hide or show dashboard widgets.
+              {editDashboard && (
+                <div
+                  className="safestack-card"
+                  style={{
+                    padding: 16,
+                    marginBottom: 16,
+                    background: "#fff",
+                  }}
+                >
+                  <div style={{ fontWeight: 800, color: "#0f172a", marginBottom: 6 }}>Edit dashboard</div>
+                  <div style={{ fontSize: 13, color: "#64748b" }}>
+                    Drag cards using the grip icon. Use the ON/OFF button to hide or show dashboard widgets.
+                  </div>
+                </div>
+              )}
+
+              <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDashboardDragEnd}>
+                <SortableContext items={dashboardSections.map((s) => s.key)} strategy={rectSortingStrategy}>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 16 }}>
+                    {dashboardSections
+                      .filter((sec) => editDashboard || enabledDashboardKeys.includes(sec.key))
+                      .map((sec) => (
+                        <SortableDashboardTile
+                          key={sec.key}
+                          sec={sec}
+                          openSection={openDashboardWidget}
+                          editMode={editDashboard}
+                          enabled={enabledDashboardKeys.includes(sec.key)}
+                          toggleWidget={toggleWidget}
+                        />
+                      ))}
+                  </div>
+                </SortableContext>
+              </DndContext>
+
+              <div style={{ display: "flex", justifyContent: "center", marginTop: 24 }}>
+                <button
+                  onClick={resetSite}
+                  style={{
+                    padding: "12px 28px",
+                    borderRadius: 12,
+                    border: "1px solid #e5e7eb",
+                    background: "#fff",
+                    color: "#0f172a",
+                    fontWeight: 700,
+                    cursor: "pointer",
+                  }}
+                >
+                  Back
+                </button>
               </div>
-            </div>
+            </>
           )}
-
-          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDashboardDragEnd}>
-            <SortableContext items={dashboardSections.map((s) => s.key)} strategy={rectSortingStrategy}>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 16 }}>
-                {dashboardSections
-                  .filter((sec) => editDashboard || enabledDashboardKeys.includes(sec.key))
-                  .map((sec) => (
-                    <SortableDashboardTile
-                      key={sec.key}
-                      sec={sec}
-                      openSection={openDashboardWidget}
-                      editMode={editDashboard}
-                      enabled={enabledDashboardKeys.includes(sec.key)}
-                      toggleWidget={toggleWidget}
-                    />
-                  ))}
-              </div>
-            </SortableContext>
-          </DndContext>
-
-          <div style={{ display: "flex", justifyContent: "center", marginTop: 24 }}>
-            <button
-              onClick={resetSite}
-              style={{
-                padding: "12px 28px",
-                borderRadius: 12,
-                border: "1px solid #e5e7eb",
-                background: "#fff",
-                color: "#0f172a",
-                fontWeight: 700,
-                cursor: "pointer",
-              }}
-            >
-              Back
-            </button>
-           </div>
-
-          </>
-
-        )}
-
         </main>
-
       </div>
-
     </div>
-
   );
-
 };
 
 export default SitePage;
