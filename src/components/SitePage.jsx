@@ -230,23 +230,56 @@ const buildChecklistsFromTemplates = (siteId, siteTemplateRows, templatesRows) =
     .filter(Boolean);
 };
 
+const MiniCustomReportChart = ({ report }) => {
+  return (
+    <div style={{ width: "100%" }}>
+      <div style={{ fontWeight: 900, fontSize: 16, marginBottom: 6 }}>
+        {report?.title || "Custom report"}
+      </div>
+
+      <div style={{ fontSize: 12, color: "#64748b", marginBottom: 12 }}>
+        {report?.period || "week"} · {(report?.metrics || []).length} metric(s)
+      </div>
+
+      <div
+        style={{
+          height: 130,
+          borderRadius: 14,
+          border: "1px solid #e5e7eb",
+          background: "#f8fafc",
+          display: "grid",
+          placeItems: "center",
+          color: "#64748b",
+          fontSize: 13,
+          fontWeight: 800,
+        }}
+      >
+        Graph preview
+      </div>
+    </div>
+  );
+};
+
 const SortableDashboardTile = ({ sec, openSection, editMode, enabled, toggleWidget }) => {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: sec.key,
   });
 
-  const wrapperStyle = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    zIndex: isDragging ? 20 : "auto",
-  };
+  const isGraph = sec.type === "customReport";
 
   return (
-    <div ref={setNodeRef} style={wrapperStyle}>
-      <button
+    <div
+      ref={setNodeRef}
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition,
+        zIndex: isDragging ? 20 : "auto",
+      }}
+    >
+      <div
         className="tile-button"
         onClick={() => {
-          if (!editMode) openSection(sec);
+          if (!editMode && !isGraph) openSection(sec);
         }}
         style={{
           position: "relative",
@@ -254,14 +287,13 @@ const SortableDashboardTile = ({ sec, openSection, editMode, enabled, toggleWidg
           background: enabled ? "#fff" : "#f1f5f9",
           border: enabled ? "1px solid #e5e7eb" : "1px dashed #cbd5e1",
           borderRadius: 18,
-          padding: "22px 16px",
-          minHeight: 112,
+          padding: isGraph ? 18 : "22px 16px",
+          minHeight: isGraph ? 230 : 112,
           display: "flex",
           flexDirection: "column",
-          alignItems: "center",
-          justifyContent: "center",
-          cursor: editMode ? "default" : "pointer",
-          transition: "all 0.18s ease",
+          alignItems: isGraph ? "stretch" : "center",
+          justifyContent: isGraph ? "flex-start" : "center",
+          cursor: editMode || isGraph ? "default" : "pointer",
           color: enabled ? "#0f172a" : "#94a3b8",
           boxShadow: isDragging ? "0 12px 28px rgba(15,23,42,0.16)" : "0 2px 8px rgba(15,23,42,0.04)",
           opacity: enabled ? 1 : 0.55,
@@ -269,26 +301,7 @@ const SortableDashboardTile = ({ sec, openSection, editMode, enabled, toggleWidg
       >
         {editMode && (
           <>
-            <span
-              {...attributes}
-              {...listeners}
-              onClick={(e) => e.stopPropagation()}
-              style={{
-                position: "absolute",
-                top: 10,
-                left: 10,
-                width: 30,
-                height: 30,
-                borderRadius: 999,
-                background: "#f8fafc",
-                border: "1px solid #e5e7eb",
-                display: "grid",
-                placeItems: "center",
-                cursor: "grab",
-                color: "#64748b",
-              }}
-              title="Drag to reorder"
-            >
+            <span {...attributes} {...listeners} style={{ position: "absolute", top: 10, left: 10, cursor: "grab" }}>
               <FaGripVertical />
             </span>
 
@@ -307,29 +320,29 @@ const SortableDashboardTile = ({ sec, openSection, editMode, enabled, toggleWidg
                 color: enabled ? "#15803d" : "#dc2626",
                 fontSize: 11,
                 fontWeight: 800,
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 5,
                 cursor: "pointer",
               }}
-              title={enabled ? "Hide from dashboard" : "Show on dashboard"}
             >
-              {enabled ? <FaEye /> : <FaEyeSlash />}
               {enabled ? "ON" : "OFF"}
             </span>
           </>
         )}
 
-        <div style={{ fontSize: 26, color: enabled ? sec.color || "#0f172a" : "#94a3b8", marginBottom: 10 }}>
-          {sec.icon}
-        </div>
-        <div style={{ fontWeight: 800, fontSize: 15, textAlign: "center" }}>{sec.label}</div>
-        {sec.helper && <div style={{ marginTop: 6, fontSize: 12, color: "#64748b", textAlign: "center" }}>{sec.helper}</div>}
-      </button>
+        {isGraph ? (
+          <MiniCustomReportChart report={sec.report} />
+        ) : (
+          <>
+            <div style={{ fontSize: 26, color: sec.color || "#0f172a", marginBottom: 10 }}>
+              {sec.icon}
+            </div>
+            <div style={{ fontWeight: 800, fontSize: 15, textAlign: "center" }}>{sec.label}</div>
+            {sec.helper && <div style={{ marginTop: 6, fontSize: 12, color: "#64748b", textAlign: "center" }}>{sec.helper}</div>}
+          </>
+        )}
+      </div>
     </div>
   );
 };
-
 const SitePage = ({ user, onLogout }) => {
   const isManager =
     (user?.role || "").toLowerCase() === "manager" ||
@@ -871,8 +884,9 @@ return () => {
 
   shortcutTo: "reports",
 
-  helper: `${report.period || "Custom"} · ${(report.metrics || []).length} metric(s)`,
-
+type: "customReport",
+report,
+helper: `${report.period || "Custom"} · ${(report.metrics || []).length} metric(s)`,
 })),
     ],
 [sections, stockAlerts.length, todayCompliance.t.total, todayCompliance.t.pass, customReports]
