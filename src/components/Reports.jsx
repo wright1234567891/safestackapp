@@ -208,6 +208,17 @@ const dateFromRecordParts = (date, time = "00:00") => {
 
     return () => unsubs.forEach((u) => u && u());
   }, [site]);
+  useEffect(() => {
+  if (!site) return;
+
+  const qRef = query(collection(db, "customReports"), where("site", "==", site));
+
+  const unsub = onSnapshot(qRef, (snap) => {
+    setSavedGraphs(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+  });
+
+  return () => unsub();
+}, [site]);
     const tempRecords = useMemo(() => {
     const rows = [];
 
