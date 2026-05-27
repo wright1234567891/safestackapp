@@ -755,15 +755,25 @@ const CustomGraphBuilder = ({ title, data }) => {
   <button
     style={button()}
 onClick={async () => {
-  await addDoc(collection(db, "customReports"), {
-    site,
-    title: customGraphTitle || "Custom Report",
-    chartType: customChartType,
-    period: graphPeriod,
-    metrics: selectedMetrics,
-    enabledOnDashboard: false,
-    createdAt: serverTimestamp(),
-  });
+await addDoc(collection(db, "customReports"), {
+
+  site,
+
+  title: customGraphTitle || "Custom Report",
+
+  chartType: customChartType,
+
+  period: graphPeriod,
+
+  metrics: selectedMetrics,
+
+  previewData: trendData,
+
+  enabledOnDashboard: true,
+
+  createdAt: serverTimestamp(),
+
+});
 
   alert("Custom report saved.");
 }}

@@ -231,39 +231,120 @@ const buildChecklistsFromTemplates = (siteId, siteTemplateRows, templatesRows) =
 };
 
 const MiniCustomReportChart = ({ report }) => {
-  const metrics = report?.metrics || [];
-  const colour = "#9333ea";
+  const data = Array.isArray(report?.previewData) ? report.previewData : [];
+  const metrics = Array.isArray(report?.metrics) ? report.metrics : [];
+
+  const metricLabels = {
+    tempExceptions: "Temp exceptions",
+    stockRisks: "Stock risks",
+    checklistIssues: "Checklist issues",
+    wasteEntries: "Waste entries",
+  };
+
+  const colours = {
+    tempExceptions: "#dc2626",
+    stockRisks: "#f97316",
+    checklistIssues: "#2563eb",
+    wasteEntries: "#7c3aed",
+  };
+
+  const width = 900;
+  const height = 320;
+  const pad = 44;
+
+  const max = Math.max(
+    1,
+    ...data.flatMap((d) => metrics.map((m) => Number(d[m] || 0)))
+  );
+
+  const x = (i) => pad + (i * (width - pad * 2)) / Math.max(data.length - 1, 1);
+  const y = (v) => height - pad - (v / max) * (height - pad * 2);
 
   return (
     <div style={{ width: "100%" }}>
-      <div style={{ fontWeight: 900, fontSize: 16, marginBottom: 6 }}>
+      <div style={{ fontWeight: 950, fontSize: 20, marginBottom: 4 }}>
         {report?.title || "Custom report"}
       </div>
 
-      <div style={{ fontSize: 12, color: "#64748b", marginBottom: 12 }}>
+      <div style={{ fontSize: 13, color: "#64748b", marginBottom: 18 }}>
         {report?.period || "week"} · {metrics.length} metric(s)
       </div>
 
-<svg viewBox="0 0 420 220" style={{ width: "100%", height: 340, marginTop: 12 }}>
-        <line x1="20" y1="100" x2="200" y2="100" stroke="#e5e7eb" />
-        <line x1="20" y1="20" x2="20" y2="100" stroke="#e5e7eb" />
+      {data.length === 0 ? (
+        <div style={{ color: "#64748b", fontSize: 14 }}>
+          No saved graph data yet. Open Reports and save this graph again.
+        </div>
+      ) : (
+        <>
+          <svg viewBox={`0 0 ${width} ${height}`} style={{ width: "100%", height: 360 }}>
+            {[0, 0.25, 0.5, 0.75, 1].map((p) => {
+              const gy = pad + p * (height - pad * 2);
+              return (
+                <line
+                  key={p}
+                  x1={pad}
+                  x2={width - pad}
+                  y1={gy}
+                  y2={gy}
+                  stroke="#e5e7eb"
+                />
+              );
+            })}
 
-        <polyline
-          points="20,90 55,80 90,85 125,45 160,55 200,30"
-          fill="none"
-          stroke={colour}
-          strokeWidth="4"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
+            {metrics.map((metric) =>
+              report.chartType === "bar" ? (
+                data.map((d, i) => {
+                  const value = Number(d[metric] || 0);
+                  return (
+                    <rect
+                      key={`${metric}-${i}`}
+                      x={x(i) - 10}
+                      y={y(value)}
+                      width="20"
+                      height={height - pad - y(value)}
+                      rx="4"
+                      fill={colours[metric] || "#9333ea"}
+                    />
+                  );
+                })
+              ) : (
+                <polyline
+                  key={metric}
+                  points={data
+                    .map((d, i) => `${x(i)},${y(Number(d[metric] || 0))}`)
+                    .join(" ")}
+                  fill="none"
+                  stroke={colours[metric] || "#9333ea"}
+                  strokeWidth="4"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              )
+            )}
 
-        <circle cx="20" cy="90" r="3" fill={colour} />
-        <circle cx="55" cy="80" r="3" fill={colour} />
-        <circle cx="90" cy="85" r="3" fill={colour} />
-        <circle cx="125" cy="45" r="3" fill={colour} />
-        <circle cx="160" cy="55" r="3" fill={colour} />
-        <circle cx="200" cy="30" r="3" fill={colour} />
-      </svg>
+            {data.map((d, i) => (
+              <text
+                key={i}
+                x={x(i)}
+                y={height - 10}
+                textAnchor="middle"
+                fontSize="13"
+                fill="#64748b"
+              >
+                {d.label}
+              </text>
+            ))}
+          </svg>
+
+          <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 10 }}>
+            {metrics.map((metric) => (
+              <span key={metric} style={{ fontSize: 13, fontWeight: 900, color: colours[metric] || "#9333ea" }}>
+                ● {metricLabels[metric] || metric}
+              </span>
+            ))}
+          </div>
+        </>
+      )}
     </div>
   );
 };
