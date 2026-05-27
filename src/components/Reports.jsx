@@ -85,17 +85,23 @@ const [selectedMetrics, setSelectedMetrics] = useState(["tempExceptions"]);
     });
   };
 
-  const dateFromRecordParts = (date, time = "00:00") => {
-    if (!date) return null;
+const dateFromRecordParts = (date, time = "00:00") => {
+  if (!date) return null;
 
-    const maybe = new Date(`${date} ${time}`);
-    if (!Number.isNaN(maybe.getTime())) return maybe;
-
-    const parsed = new Date(date);
+  // Handles UK dates like 27/05/2026
+  if (typeof date === "string" && date.includes("/")) {
+    const [day, month, year] = date.split("/");
+    const fullYear = year?.length === 2 ? `20${year}` : year;
+    const parsed = new Date(`${fullYear}-${month}-${day}T${time || "00:00"}`);
     if (!Number.isNaN(parsed.getTime())) return parsed;
+  }
 
-    return null;
-  };
+  // Handles ISO dates like 2026-05-27
+  const parsed = new Date(`${date} ${time || "00:00"}`);
+  if (!Number.isNaN(parsed.getTime())) return parsed;
+
+  return null;
+};
 
   const getCutoffDate = () => {
     if (dateRange === "all") return null;
@@ -1085,11 +1091,8 @@ const trendData = useMemo(() => {
     };
 
 const tempInBucket = tempRecords.filter((r) => {
-  if (!r.date) return false;
-
-  const d = new Date(r.date);
-
-  return !Number.isNaN(d.getTime()) && d >= start && d <= end;
+  const d = dateFromRecordParts(r.date, r.time);
+  return d && d >= start && d <= end;
 });
 
     buckets.push({
