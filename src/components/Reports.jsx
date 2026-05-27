@@ -1,5 +1,13 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { collection, onSnapshot, query, where } from "firebase/firestore";
+import {
+  collection,
+  onSnapshot,
+  query,
+  where,
+  doc,
+  updateDoc,
+  serverTimestamp,
+} from "firebase/firestore";
 import { db } from "../firebase";
 import {
   FaArrowLeft,
@@ -37,6 +45,11 @@ const Reports = ({ site, goBack }) => {
   const [trainingRecords, setTrainingRecords] = useState([]);
   const [haccpPoints, setHaccpPoints] = useState([]);
   const [dishes, setDishes] = useState([]);
+  const [reviewBatch, setReviewBatch] = useState(null);
+
+const [reviewUseByDate, setReviewUseByDate] = useState("");
+
+const [reviewStatus, setReviewStatus] = useState("active");
 
   const toDate = (value) => {
     if (!value) return null;
@@ -815,6 +828,32 @@ const activeStockBatches = useMemo(() => {
       </table>
     </div>
   );
+  const openBatchReview = (batch) => {
+  setReviewBatch(batch);
+  setReviewUseByDate(batch.useByDate || "");
+  setReviewStatus(batch.status || "active");
+};
+
+const saveBatchReview = async () => {
+  if (!reviewBatch?.id) return;
+
+  await updateDoc(doc(db, "stockBatches", reviewBatch.id), {
+    useByDate: reviewUseByDate || null,
+    needsUseByReview: !reviewUseByDate,
+    status: reviewStatus || "active",
+    updatedAt: serverTimestamp(),
+  });
+
+  setReviewBatch(null);
+  setReviewUseByDate("");
+  setReviewStatus("active");
+};
+
+const closeBatchReview = () => {
+  setReviewBatch(null);
+  setReviewUseByDate("");
+  setReviewStatus("active");
+};
     const DetailPanel = () => {
     if (activeView === "temps") {
       return (
@@ -859,17 +898,48 @@ const activeStockBatches = useMemo(() => {
               { key: "measurement", label: "Unit" },
               { key: "supplier", label: "Supplier" },
               { key: "useByDate", label: "Use-by", render: (r) => r.useByDate || "—" },
-              {
-                key: "risk",
-                label: "Risk",
-                render: (r) => {
-                  const days = daysUntil(r.useByDate);
-                  if (!r.useByDate || r.needsUseByReview) return pill("Review", "warn");
-                  if (days <= 1) return pill("Critical", "bad");
-                  if (days <= 3) return pill("Soon", "warn");
-                  return pill("OK", "good");
-                },
-              },
+                {
+  key: "risk",
+  label: "Risk",
+  render: (r) => {
+    const days = daysUntil(r.useByDate);
+
+    if (!r.useByDate || r.needsUseByReview) {
+      return pill("Review", "warn");
+    }
+
+    if (days <= 1) {
+      return pill("Critical", "bad");
+    }
+
+    if (days <= 3) {
+      return pill("Soon", "warn");
+    }
+
+    return pill("OK", "good");
+  },
+},
+
+{
+  key: "review",
+  label: "Review",
+  render: (r) => (
+    <button
+      onClick={() => openBatchReview(r)}
+      style={{
+        padding: "8px 10px",
+        borderRadius: 10,
+        border: "1px solid #2563eb",
+        background: "#eff6ff",
+        color: "#1d4ed8",
+        fontWeight: 900,
+        cursor: "pointer",
+      }}
+    >
+      Review
+    </button>
+  ),
+},
             ]}
           />
         </div>
@@ -1058,6 +1128,111 @@ const activeStockBatches = useMemo(() => {
       )}
 
       <DetailPanel />
+      {reviewBatch && (
+  <div
+    style={{
+      position: "fixed",
+      inset: 0,
+      background: "rgba(15,23,42,0.45)",
+      display: "grid",
+      placeItems: "center",
+      zIndex: 9999,
+      padding: 16,
+    }}
+  >
+    <div
+      style={{
+        background: "#fff",
+        borderRadius: 18,
+        padding: 22,
+        width: "min(520px, 100%)",
+        boxShadow: "0 20px 45px rgba(15,23,42,0.25)",
+        color: "#111827",
+      }}
+    >
+      <h2 style={{ fontSize: 24, fontWeight: 950, marginTop: 0 }}>
+        Review Stock Batch
+      </h2>
+
+      <div style={{ marginBottom: 14 }}>
+        <strong>Item:</strong>{" "}
+        {reviewBatch.stockItemName || reviewBatch.itemName || "Unnamed item"}
+      </div>
+
+      <div style={{ marginBottom: 14 }}>
+        <strong>Remaining:</strong>{" "}
+        {reviewBatch.quantityRemaining} {reviewBatch.measurement || ""}
+      </div>
+
+      <label style={{ display: "block", fontWeight: 900, marginBottom: 6 }}>
+        Use-by date
+      </label>
+
+      <input
+        type="date"
+        value={reviewUseByDate}
+        onChange={(e) => setReviewUseByDate(e.target.value)}
+        style={{
+          width: "100%",
+          padding: 12,
+          borderRadius: 12,
+          border: "1px solid #e5e7eb",
+          marginBottom: 14,
+        }}
+      />
+
+      <label style={{ display: "block", fontWeight: 900, marginBottom: 6 }}>
+        Batch status
+      </label>
+
+      <select
+        value={reviewStatus}
+        onChange={(e) => setReviewStatus(e.target.value)}
+        style={{
+          width: "100%",
+          padding: 12,
+          borderRadius: 12,
+          border: "1px solid #e5e7eb",
+          marginBottom: 18,
+        }}
+      >
+        <option value="active">Active</option>
+        <option value="closed">Closed</option>
+      </select>
+
+      <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+        <button
+          onClick={closeBatchReview}
+          style={{
+            padding: "10px 14px",
+            borderRadius: 12,
+            border: "1px solid #e5e7eb",
+            background: "#fff",
+            fontWeight: 900,
+            cursor: "pointer",
+          }}
+        >
+          Cancel
+        </button>
+
+        <button
+          onClick={saveBatchReview}
+          style={{
+            padding: "10px 14px",
+            borderRadius: 12,
+            border: "none",
+            background: "#16a34a",
+            color: "#fff",
+            fontWeight: 900,
+            cursor: "pointer",
+          }}
+        >
+          Save Review
+        </button>
+      </div>
+    </div>
+  </div>
+)}
     </div>
   );
 };
