@@ -1236,7 +1236,6 @@ helper: `${report.period || "Custom"} · ${(report.metrics || []).length} metric
         .nav-button:hover {
           background: rgba(255,255,255,0.14) !important;
         }
-
 .tile-button:hover,
 
 .alert-card:hover {
