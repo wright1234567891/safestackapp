@@ -77,6 +77,9 @@ const DishesSection = ({ site, user, goBack }) => {
     ingredients: [], // [{stockItemId, qty, unit}]
     allergens: emptyAllergenMap(),
     mayContain: "", // free text for cross-contact/“may contain” notes
+    shopifyProductId: "",
+
+shopifyVariantId: "",
   });
 
   const [editingId, setEditingId] = useState(null);
@@ -144,17 +147,31 @@ const DishesSection = ({ site, user, goBack }) => {
       ingredients: (newDish.ingredients || []).filter(i => i.stockItemId),
       allergens: normaliseAllergens(newDish.allergens),
       mayContain: (newDish.mayContain || "").trim(),
+
+shopifyProductId: "",
+
+shopifyVariantId: "",
       site,
       createdAt: serverTimestamp(),
       createdBy: user?.uid || null,
     });
-    setNewDish({
-      name: "",
-      description: "",
-      ingredients: [],
-      allergens: emptyAllergenMap(),
-      mayContain: "",
-    });
+setNewDish({
+
+  name: "",
+
+  description: "",
+
+  ingredients: [],
+
+  allergens: emptyAllergenMap(),
+
+  mayContain: "",
+
+  shopifyProductId: "",
+
+  shopifyVariantId: "",
+
+});
   };
 
   const startEdit = (d) => {
@@ -165,6 +182,9 @@ const DishesSection = ({ site, user, goBack }) => {
       ingredients: Array.isArray(d.ingredients) ? d.ingredients : [],
       allergens: normaliseAllergens(d.allergens),
       mayContain: d.mayContain || "",
+      shopifyProductId: d.shopifyProductId || "",
+
+shopifyVariantId: d.shopifyVariantId || "",
     });
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
@@ -178,6 +198,9 @@ const DishesSection = ({ site, user, goBack }) => {
       ingredients: (edit.ingredients || []).filter(i => i.stockItemId),
       allergens: normaliseAllergens(edit.allergens),
       mayContain: (edit.mayContain || "").trim(),
+      shopifyProductId: (edit.shopifyProductId || "").trim(),
+
+shopifyVariantId: (edit.shopifyVariantId || "").trim(),
       updatedAt: serverTimestamp(),
       updatedBy: user?.uid || null,
     });
@@ -222,6 +245,37 @@ const DishesSection = ({ site, user, goBack }) => {
               (editingId ? setEdit : setNewDish)((p) => ({ ...p, description: e.target.value }))
             }
           />
+          <input
+
+  style={{ ...input, minWidth: 220, flex: 1 }}
+
+  placeholder="Shopify product ID"
+
+  value={working.shopifyProductId || ""}
+
+  onChange={(e) =>
+
+    (editingId ? setEdit : setNewDish)((p) => ({ ...p, shopifyProductId: e.target.value }))
+
+  }
+
+/>
+
+<input
+
+  style={{ ...input, minWidth: 220, flex: 1 }}
+
+  placeholder="Shopify variant ID"
+
+  value={working.shopifyVariantId || ""}
+
+  onChange={(e) =>
+
+    (editingId ? setEdit : setNewDish)((p) => ({ ...p, shopifyVariantId: e.target.value }))
+
+  }
+
+/>
         </div>
 
         {/* Ingredients */}
