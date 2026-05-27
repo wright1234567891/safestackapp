@@ -231,6 +231,9 @@ const buildChecklistsFromTemplates = (siteId, siteTemplateRows, templatesRows) =
 };
 
 const MiniCustomReportChart = ({ report }) => {
+  const metrics = report?.metrics || [];
+  const colour = "#9333ea";
+
   return (
     <div style={{ width: "100%" }}>
       <div style={{ fontWeight: 900, fontSize: 16, marginBottom: 6 }}>
@@ -238,29 +241,29 @@ const MiniCustomReportChart = ({ report }) => {
       </div>
 
       <div style={{ fontSize: 12, color: "#64748b", marginBottom: 12 }}>
-        {report?.period || "week"} · {(report?.metrics || []).length} metric(s)
+        {report?.period || "week"} · {metrics.length} metric(s)
       </div>
 
-<svg viewBox="0 0 220 120" style={{ width: "100%", height: 130, marginTop: 12 }}>
-  <line x1="20" y1="100" x2="200" y2="100" stroke="#e5e7eb" />
-  <line x1="20" y1="20" x2="20" y2="100" stroke="#e5e7eb" />
+      <svg viewBox="0 0 220 120" style={{ width: "100%", height: 130, marginTop: 12 }}>
+        <line x1="20" y1="100" x2="200" y2="100" stroke="#e5e7eb" />
+        <line x1="20" y1="20" x2="20" y2="100" stroke="#e5e7eb" />
 
-  <polyline
-    points="20,90 55,80 90,85 125,45 160,55 200,30"
-    fill="none"
-    stroke={sec.color || "#9333ea"}
-    strokeWidth="4"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-  />
+        <polyline
+          points="20,90 55,80 90,85 125,45 160,55 200,30"
+          fill="none"
+          stroke={colour}
+          strokeWidth="4"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
 
-  <circle cx="20" cy="90" r="3" fill={sec.color || "#9333ea"} />
-  <circle cx="55" cy="80" r="3" fill={sec.color || "#9333ea"} />
-  <circle cx="90" cy="85" r="3" fill={sec.color || "#9333ea"} />
-  <circle cx="125" cy="45" r="3" fill={sec.color || "#9333ea"} />
-  <circle cx="160" cy="55" r="3" fill={sec.color || "#9333ea"} />
-  <circle cx="200" cy="30" r="3" fill={sec.color || "#9333ea"} />
-</svg>
+        <circle cx="20" cy="90" r="3" fill={colour} />
+        <circle cx="55" cy="80" r="3" fill={colour} />
+        <circle cx="90" cy="85" r="3" fill={colour} />
+        <circle cx="125" cy="45" r="3" fill={colour} />
+        <circle cx="160" cy="55" r="3" fill={colour} />
+        <circle cx="200" cy="30" r="3" fill={colour} />
+      </svg>
     </div>
   );
 };
