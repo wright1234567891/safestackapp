@@ -732,107 +732,6 @@ const updateStockBatchUseBy = async (batchId, useByDate) => {
       updatedAt: serverTimestamp(),
     });
 
-    const quickUseStockBatch = async (batch) => {
-  const qty = Number(batch.quantityRemaining ?? batch.quantity ?? 0);
-
-  if (!batch?.id || !batch.stockItemId || qty <= 0) return;
-
-  const confirmed = window.confirm(
-    `Mark all remaining ${batch.stockItemName || "stock"} as used?`
-  );
-
-  if (!confirmed) return;
-
-  try {
-    await updateDoc(doc(db, "stockBatches", batch.id), {
-      quantityRemaining: 0,
-      status: "closed",
-      updatedAt: serverTimestamp(),
-    });
-
-    await updateDoc(doc(db, "stockItems", batch.stockItemId), {
-      quantity: increment(-qty),
-      updatedAt: serverTimestamp(),
-    });
-
-    await addDoc(collection(db, "stockMovements"), {
-      stockItemId: batch.stockItemId,
-      stockItemName: batch.stockItemName || batch.itemName || "Stock item",
-      type: "usage",
-      quantity: qty,
-      measurement: batch.measurement || "unit",
-      supplier: batch.supplier || null,
-      location: batch.location || null,
-      source: "dashboard-alert",
-      site: selectedSite,
-      createdAt: serverTimestamp(),
-      createdBy: user?.name || user?.displayName || user?.email || "Unknown",
-      createdByUid: user?.uid || user?.id || null,
-    });
-  } catch (error) {
-    console.error("Error using stock batch:", error);
-    alert("Failed to mark stock as used.");
-  }
-};
-
-const quickWasteStockBatch = async (batch) => {
-  const qty = Number(batch.quantityRemaining ?? batch.quantity ?? 0);
-
-  if (!batch?.id || !batch.stockItemId || qty <= 0) return;
-
-  const confirmed = window.confirm(
-    `Waste all remaining ${batch.stockItemName || "stock"}?`
-  );
-
-  if (!confirmed) return;
-
-  try {
-    await updateDoc(doc(db, "stockBatches", batch.id), {
-      quantityRemaining: 0,
-      status: "closed",
-      updatedAt: serverTimestamp(),
-    });
-
-    await updateDoc(doc(db, "stockItems", batch.stockItemId), {
-      quantity: increment(-qty),
-      updatedAt: serverTimestamp(),
-    });
-
-    await addDoc(collection(db, "stockMovements"), {
-      stockItemId: batch.stockItemId,
-      stockItemName: batch.stockItemName || batch.itemName || "Stock item",
-      type: "waste",
-      quantity: qty,
-      measurement: batch.measurement || "unit",
-      supplier: batch.supplier || null,
-      location: batch.location || null,
-      wasteReason: "Dashboard alert",
-      source: "dashboard-alert",
-      site: selectedSite,
-      createdAt: serverTimestamp(),
-      createdBy: user?.name || user?.displayName || user?.email || "Unknown",
-      createdByUid: user?.uid || user?.id || null,
-    });
-
-    await addDoc(collection(db, "wasteLogs"), {
-      site: selectedSite,
-      item: batch.stockItemName || batch.itemName || "Stock item",
-      qty,
-      unit: batch.measurement || "unit",
-      reason: "Dashboard alert",
-      notes: "Auto-created from dashboard alert",
-      stockItemId: batch.stockItemId,
-      source: "dashboard-alert",
-      createdAt: serverTimestamp(),
-      createdBy: user?.name || user?.uid || "Unknown",
-      createdByUid: user?.uid || null,
-    });
-  } catch (error) {
-    console.error("Error wasting stock batch:", error);
-    alert("Failed to waste stock.");
-  }
-};
-
     setStockUseByDrafts((prev) => {
       const next = { ...prev };
       delete next[batchId];
@@ -842,6 +741,87 @@ const quickWasteStockBatch = async (batch) => {
     console.error("Error updating stock batch use-by date:", error);
     alert("Failed to update use-by date.");
   }
+};
+
+const quickUseStockBatch = async (batch) => {
+  const qty = Number(batch.quantityRemaining ?? batch.quantity ?? 0);
+  if (!batch?.id || !batch.stockItemId || qty <= 0) return;
+
+  if (!window.confirm(`Mark all remaining ${batch.stockItemName || "stock"} as used?`)) return;
+
+  await updateDoc(doc(db, "stockBatches", batch.id), {
+    quantityRemaining: 0,
+    status: "closed",
+    updatedAt: serverTimestamp(),
+  });
+
+  await updateDoc(doc(db, "stockItems", batch.stockItemId), {
+    quantity: increment(-qty),
+    updatedAt: serverTimestamp(),
+  });
+
+  await addDoc(collection(db, "stockMovements"), {
+    stockItemId: batch.stockItemId,
+    stockItemName: batch.stockItemName || batch.itemName || "Stock item",
+    type: "usage",
+    quantity: qty,
+    measurement: batch.measurement || "unit",
+    supplier: batch.supplier || null,
+    location: batch.location || null,
+    source: "dashboard-alert",
+    site: selectedSite,
+    createdAt: serverTimestamp(),
+    createdBy: user?.name || user?.displayName || user?.email || "Unknown",
+    createdByUid: user?.uid || user?.id || null,
+  });
+};
+
+const quickWasteStockBatch = async (batch) => {
+  const qty = Number(batch.quantityRemaining ?? batch.quantity ?? 0);
+  if (!batch?.id || !batch.stockItemId || qty <= 0) return;
+
+  if (!window.confirm(`Waste all remaining ${batch.stockItemName || "stock"}?`)) return;
+
+  await updateDoc(doc(db, "stockBatches", batch.id), {
+    quantityRemaining: 0,
+    status: "closed",
+    updatedAt: serverTimestamp(),
+  });
+
+  await updateDoc(doc(db, "stockItems", batch.stockItemId), {
+    quantity: increment(-qty),
+    updatedAt: serverTimestamp(),
+  });
+
+  await addDoc(collection(db, "stockMovements"), {
+    stockItemId: batch.stockItemId,
+    stockItemName: batch.stockItemName || batch.itemName || "Stock item",
+    type: "waste",
+    quantity: qty,
+    measurement: batch.measurement || "unit",
+    supplier: batch.supplier || null,
+    location: batch.location || null,
+    wasteReason: "Dashboard alert",
+    source: "dashboard-alert",
+    site: selectedSite,
+    createdAt: serverTimestamp(),
+    createdBy: user?.name || user?.displayName || user?.email || "Unknown",
+    createdByUid: user?.uid || user?.id || null,
+  });
+
+  await addDoc(collection(db, "wasteLogs"), {
+    site: selectedSite,
+    item: batch.stockItemName || batch.itemName || "Stock item",
+    qty,
+    unit: batch.measurement || "unit",
+    reason: "Dashboard alert",
+    notes: "Auto-created from dashboard alert",
+    stockItemId: batch.stockItemId,
+    source: "dashboard-alert",
+    createdAt: serverTimestamp(),
+    createdBy: user?.name || user?.uid || "Unknown",
+    createdByUid: user?.uid || null,
+  });
 };
 
   const { buckets, totalDue, totalDone, percent, label } = overview;
@@ -1514,119 +1494,121 @@ const quickWasteStockBatch = async (batch) => {
                       </div>
                     ))}
 
-                    {stockAlerts.slice(0, 4).map((batch) => {
-                      const draftDate = stockUseByDrafts[batch.id] || batch.useByDate || "";
+{stockAlerts.slice(0, 4).map((batch) => {
+  const draftDate = stockUseByDrafts[batch.id] || batch.useByDate || "";
 
-                      return (
-                        <div
-                          key={batch.id}
-                          style={{
-                            border: "1px solid #fde68a",
-                            background: "#fffbeb",
-                            borderRadius: 14,
-                            padding: 12,
-                          }}
-                        >
-                          <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
-                            <FaExclamationTriangle color="#f59e0b" style={{ marginTop: 2 }} />
-                            <div style={{ flex: 1 }}>
-                              <div style={{ fontWeight: 900, color: "#0f172a" }}>
-                                {batch.stockItemName || batch.itemName || batch.name || "Stock item"}
-                              </div>
-                              <div style={{ fontSize: 13, color: "#92400e", marginTop: 2 }}>
-{stockAlertLabel(batch)}
-                              </div>
-                              <div style={{ fontSize: 12, color: "#64748b", marginTop: 5 }}>
-                                Remaining: {batch.quantityRemaining ?? batch.quantity ?? "—"} {batch.measurement || ""} · Received: {batch.dateReceived || "—"}
-                              </div>
-                            </div>
-                          </div>
+  return (
+    <div
+      key={batch.id}
+      style={{
+        border: "1px solid #fde68a",
+        background: "#fffbeb",
+        borderRadius: 14,
+        padding: 12,
+      }}
+    >
+      <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+        <FaExclamationTriangle color="#f59e0b" style={{ marginTop: 2 }} />
 
-                          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr auto", gap: 8, marginTop: 10 }}>
-                            <input
-                              type="date"
-                              value={draftDate}
-                              onChange={(e) =>
-                                setStockUseByDrafts((prev) => ({
-                                  ...prev,
-                                  [batch.id]: e.target.value,
-                                }))
-                              }
-                              style={{
-                                border: "1px solid #f59e0b",
-                                borderRadius: 10,
-                                padding: "9px 10px",
-                                fontSize: 14,
-                                background: "#fff",
-                              }}
-                            />
+        <div style={{ flex: 1 }}>
+          <div style={{ fontWeight: 900, color: "#0f172a" }}>
+            {batch.stockItemName || batch.itemName || batch.name || "Stock item"}
+          </div>
 
-                            <button
-                              onClick={() => updateStockBatchUseBy(batch.id, draftDate)}
-                              style={{
-                                border: "none",
-                                borderRadius: 10,
-                                padding: "9px 12px",
-                                background: "#f59e0b",
-                                color: "#fff",
-                                fontWeight: 800,
-                                cursor: "pointer",
-                              }}
-                            >
-                              Save
-                            </button>
-                          </div>
-                        </div>
-                        
-                      );
-                    })}
+          <div style={{ fontSize: 13, color: "#92400e", marginTop: 2 }}>
+            {stockAlertLabel(batch)}
+          </div>
 
-                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
-  <button
-    onClick={() => setActiveSection("stock")}
-    style={{
-      border: "1px solid #e5e7eb",
-      borderRadius: 10,
-      padding: "9px 12px",
-      background: "#fff",
-      color: "#0f172a",
-      fontWeight: 800,
-      cursor: "pointer",
-    }}
-  >
-    Open stock
-  </button>
+          <div style={{ fontSize: 12, color: "#64748b", marginTop: 5 }}>
+            Remaining: {batch.quantityRemaining ?? batch.quantity ?? "—"} {batch.measurement || ""} · Received: {batch.dateReceived || "—"}
+          </div>
+        </div>
+      </div>
 
-  <button
-    onClick={() => quickUseStockBatch(batch)}
-    style={{
-      border: "none",
-      borderRadius: 10,
-      padding: "9px 12px",
-      background: "#f97316",
-      color: "#fff",
-      fontWeight: 800,
-      cursor: "pointer",
-    }}
-  >
-    Used all
-  </button>
+      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr auto", gap: 8, marginTop: 10 }}>
+        <input
+          type="date"
+          value={draftDate}
+          onChange={(e) =>
+            setStockUseByDrafts((prev) => ({
+              ...prev,
+              [batch.id]: e.target.value,
+            }))
+          }
+          style={{
+            border: "1px solid #f59e0b",
+            borderRadius: 10,
+            padding: "9px 10px",
+            fontSize: 14,
+            background: "#fff",
+          }}
+        />
 
-  <button
-    onClick={() => quickWasteStockBatch(batch)}
-    style={{
-      border: "none",
-      borderRadius: 10,
-      padding: "9px 12px",
-      background: "#dc2626",
-      color: "#fff",
-      fontWeight: 800,
-      cursor: "pointer",
-    }}
-  >
-    Waste all
-  </button>
-</div>
+        <button
+          onClick={() => updateStockBatchUseBy(batch.id, draftDate)}
+          style={{
+            border: "none",
+            borderRadius: 10,
+            padding: "9px 12px",
+            background: "#f59e0b",
+            color: "#fff",
+            fontWeight: 800,
+            cursor: "pointer",
+          }}
+        >
+          Save
+        </button>
+      </div>
+
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
+        <button
+          onClick={() => setActiveSection("stock")}
+          style={{
+            border: "1px solid #e5e7eb",
+            borderRadius: 10,
+            padding: "9px 12px",
+            background: "#fff",
+            color: "#0f172a",
+            fontWeight: 800,
+            cursor: "pointer",
+          }}
+        >
+          Open stock
+        </button>
+
+        <button
+          onClick={() => quickUseStockBatch(batch)}
+          style={{
+            border: "none",
+            borderRadius: 10,
+            padding: "9px 12px",
+            background: "#f97316",
+            color: "#fff",
+            fontWeight: 800,
+            cursor: "pointer",
+          }}
+        >
+          Used all
+        </button>
+
+        <button
+          onClick={() => quickWasteStockBatch(batch)}
+          style={{
+            border: "none",
+            borderRadius: 10,
+            padding: "9px 12px",
+            background: "#dc2626",
+            color: "#fff",
+            fontWeight: 800,
+            cursor: "pointer",
+          }}
+        >
+          Waste all
+        </button>
+      </div>
+    </div>
+  );
+})}
 
                     {buckets.daily.total - buckets.daily.done > 0 && (
                       <button
