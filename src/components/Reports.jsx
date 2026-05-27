@@ -608,6 +608,67 @@ const activeStockBatches = useMemo(() => {
     );
   };
 
+  const BarChart = ({ title, data, valueLabel = "count", onClick }) => {
+  const max = Math.max(...data.map((d) => Number(d.value || d.total || 0)), 1);
+
+  return (
+    <div style={{ ...card, minHeight: 300 }}>
+      <div style={{ fontSize: 16, fontWeight: 950, marginBottom: 14, color: "#111827" }}>
+        {title}
+      </div>
+
+      {data.length === 0 ? (
+        <div style={{ color: "#6b7280", fontSize: 13 }}>
+          No data in this period.
+        </div>
+      ) : (
+        <div style={{ display: "grid", gap: 12 }}>
+          {data.map((item) => {
+            const value = Number(item.value || item.total || 0);
+            const width = `${Math.max((value / max) * 100, 6)}%`;
+
+            return (
+              <button
+                key={item.label}
+                onClick={onClick}
+                style={{
+                  border: "none",
+                  background: "transparent",
+                  padding: 0,
+                  textAlign: "left",
+                  cursor: onClick ? "pointer" : "default",
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 10, fontSize: 13, fontWeight: 800, marginBottom: 4 }}>
+                  <span>{item.label}</span>
+                  <span>{value} {valueLabel}</span>
+                </div>
+
+                <div style={{ width: "100%", height: 12, background: "#f3f4f6", borderRadius: 999, overflow: "hidden" }}>
+                  <div
+                    style={{
+                      width,
+                      height: "100%",
+                      background: item.exceptions > 0 ? "#dc2626" : "#2563eb",
+                      borderRadius: 999,
+                    }}
+                  />
+                </div>
+
+                {item.exceptions > 0 && (
+                  <div style={{ marginTop: 4 }}>
+                    {pill(`${item.exceptions} exception(s)`, "bad")}
+                  </div>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+};
+
 const TrendChart = ({ title, data }) => {
   const width = 640;
   const height = 260;
