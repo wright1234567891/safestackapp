@@ -1658,21 +1658,49 @@ helper: `${report.period || "Custom"} · ${(report.metrics || []).length} metric
               <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDashboardDragEnd}>
                 <SortableContext items={dashboardSections.map((s) => s.key)} strategy={rectSortingStrategy}>
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 16 }}>
-                    {dashboardSections
-                      .filter((sec) => editDashboard || enabledDashboardKeys.includes(sec.key))
-                      .map((sec) => (
-                        <SortableDashboardTile
-                          key={sec.key}
-                          sec={sec}
-                          openSection={openDashboardWidget}
-                          editMode={editDashboard}
-                          enabled={enabledDashboardKeys.includes(sec.key)}
-                          toggleWidget={toggleWidget}
-                        />
-                      ))}
+{dashboardSections
+
+  .filter((sec) => sec.type !== "customReport")
+
+  .filter((sec) => editDashboard || enabledDashboardKeys.includes(sec.key))
+
+  .map((sec) => (
+
+    <SortableDashboardTile
+
+      key={sec.key}
+
+      sec={sec}
+
+      openSection={openDashboardWidget}
+
+      editMode={editDashboard}
+
+      enabled={enabledDashboardKeys.includes(sec.key)}
+
+      toggleWidget={toggleWidget}
+
+    />
+
+  ))}
                   </div>
                 </SortableContext>
               </DndContext>
+              {dashboardSections
+
+  .filter((sec) => sec.type === "customReport")
+
+  .filter((sec) => editDashboard || enabledDashboardKeys.includes(sec.key))
+
+  .map((sec) => (
+
+    <div key={sec.key} className="safestack-card" style={{ padding: 22, marginTop: 18 }}>
+
+      <MiniCustomReportChart report={sec.report} />
+
+    </div>
+
+  ))}
 
               <div style={{ display: "flex", justifyContent: "center", marginTop: 24 }}>
                 <button
