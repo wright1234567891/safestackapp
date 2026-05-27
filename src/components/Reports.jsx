@@ -19,7 +19,7 @@ import {
 } from "react-icons/fa";
 
 const Reports = ({ site, goBack }) => {
-  const [activeTab, setActiveTab] = useState("overview");
+  const [activeView, setActiveView] = useState("dashboard");
   const [dateRange, setDateRange] = useState("30");
   const [search, setSearch] = useState("");
   const [exceptionsOnly, setExceptionsOnly] = useState(false);
@@ -43,10 +43,12 @@ const Reports = ({ site, goBack }) => {
     if (value.toDate) return value.toDate();
     if (value.seconds) return new Date(value.seconds * 1000);
     if (value instanceof Date) return value;
+
     if (typeof value === "string") {
-      const d = new Date(value);
-      return Number.isNaN(d.getTime()) ? null : d;
+      const parsed = new Date(value);
+      if (!Number.isNaN(parsed.getTime())) return parsed;
     }
+
     return null;
   };
 
@@ -65,8 +67,21 @@ const Reports = ({ site, goBack }) => {
     });
   };
 
+  const dateFromRecordParts = (date, time = "00:00") => {
+    if (!date) return null;
+
+    const maybe = new Date(`${date} ${time}`);
+    if (!Number.isNaN(maybe.getTime())) return maybe;
+
+    const parsed = new Date(date);
+    if (!Number.isNaN(parsed.getTime())) return parsed;
+
+    return null;
+  };
+
   const getCutoffDate = () => {
     if (dateRange === "all") return null;
+
     const d = new Date();
     d.setDate(d.getDate() - Number(dateRange));
     d.setHours(0, 0, 0, 0);
@@ -76,17 +91,31 @@ const Reports = ({ site, goBack }) => {
   const isInRange = (value) => {
     const cutoff = getCutoffDate();
     if (!cutoff) return true;
+
     const d = toDate(value);
     if (!d) return true;
+
+    return d >= cutoff;
+  };
+
+  const isRecordDateInRange = (date, time) => {
+    const cutoff = getCutoffDate();
+    if (!cutoff) return true;
+
+    const d = dateFromRecordParts(date, time);
+    if (!d) return true;
+
     return d >= cutoff;
   };
 
   const daysUntil = (value) => {
     const d = toDate(value);
     if (!d) return null;
+
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     d.setHours(0, 0, 0, 0);
+
     return Math.ceil((d - today) / (1000 * 60 * 60 * 24));
   };
 
@@ -101,28 +130,35 @@ const Reports = ({ site, goBack }) => {
     setLoading(true);
     const unsubs = [];
 
-    const listenSite = (name, setter) => {
-      const qRef = query(collection(db, name), where("site", "==", site));
+    const listenSite = (collectionName, setter) => {
+      const qRef = query(collection(db, collectionName), where("site", "==", site));
+
       const unsub = onSnapshot(
         qRef,
-        (snap) => setter(snap.docs.map((d) => ({ id: d.id, ...d.data() }))),
+        (snap) => {
+          setter(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+        },
         (err) => {
-          console.error(`${name} report listener error:`, err);
+          console.error(`${collectionName} reports listener error:`, err);
           setter([]);
         }
       );
+
       unsubs.push(unsub);
     };
 
-    const listenAll = (name, setter) => {
+    const listenAll = (collectionName, setter) => {
       const unsub = onSnapshot(
-        collection(db, name),
-        (snap) => setter(snap.docs.map((d) => ({ id: d.id, ...d.data() }))),
+        collection(db, collectionName),
+        (snap) => {
+          setter(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+        },
         (err) => {
-          console.error(`${name} report listener error:`, err);
+          console.error(`${collectionName} reports listener error:`, err);
           setter([]);
         }
       );
+
       unsubs.push(unsub);
     };
 
@@ -164,36 +200,43 @@ const Reports = ({ site, goBack }) => {
       });
     });
 
-    return rows.reverse();
-  }, [equipment]);
+    return rows
+      .filter((r) => isRecordDateInRange(r.date, r.time))
+      .reverse();
+  }, [equipment, dateRange]);
 
-  const tempExceptions = useMemo(() => {
-    return tempRecords.filter((r) => {
-      const n = Number(r.temp);
-      if (!Number.isFinite(n)) return false;
+  const isTempException = (row) => {
+    const n = Number(row.temp);
+    if (!Number.isFinite(n)) return false;
 
-      const type = String(r.equipmentType || "").toLowerCase();
+    const type = String(row.equipmentType || row.equipmentName || "").toLowerCase();
 
-      if (type.includes("fridge")) return n > 5;
-      if (type.includes("freezer")) return n > -18;
-      if (type.includes("hot")) return n < 63;
+    if (type.includes("fridge")) return n > 5;
+    if (type.includes("freezer")) return n > -18;
+    if (type.includes("hot")) return n < 63;
 
-      return false;
-    });
-  }, [tempRecords]);
+    return false;
+  };
+
+  const tempExceptions = useMemo(
+    () => tempRecords.filter(isTempException),
+    [tempRecords]
+  );
 
   const checklistIssues = useMemo(() => {
-    return completed.filter((c) => {
-      const questions = Array.isArray(c.questions) ? c.questions : [];
+    return completed
+      .filter((c) => isInRange(c.createdAt))
+      .filter((c) => {
+        const questions = Array.isArray(c.questions) ? c.questions : [];
 
-      return questions.some((q) => {
-        if (q.corrective) return true;
-        if (q.followUpAnswers?.yes?.corrective) return true;
-        if (q.followUpAnswers?.no?.corrective) return true;
-        return false;
+        return questions.some((q) => {
+          if (q.corrective) return true;
+          if (q.followUpAnswers?.yes?.corrective) return true;
+          if (q.followUpAnswers?.no?.corrective) return true;
+          return false;
+        });
       });
-    });
-  }, [completed]);
+  }, [completed, dateRange]);
 
   const activeStockBatches = useMemo(() => {
     return stockBatches.filter(
@@ -206,6 +249,7 @@ const Reports = ({ site, goBack }) => {
   const stockRisks = useMemo(() => {
     return activeStockBatches.filter((b) => {
       if (b.needsUseByReview || !b.useByDate) return true;
+
       const days = daysUntil(b.useByDate);
       return days !== null && days <= 3;
     });
@@ -214,6 +258,7 @@ const Reports = ({ site, goBack }) => {
   const fridgeRisks = useMemo(() => {
     return fridgeBatches.filter((b) => {
       if (String(b.status || "").toUpperCase() === "DISCARDED") return false;
+
       const days = daysUntil(b.useBy);
       return days !== null && days <= 1;
     });
@@ -223,6 +268,7 @@ const Reports = ({ site, goBack }) => {
     return trainingRecords.filter((t) => {
       if (t.deleted === true) return false;
       if (!t.expiresOn) return false;
+
       const days = daysUntil(t.expiresOn);
       return days !== null && days <= 30;
     });
@@ -236,6 +282,7 @@ const Reports = ({ site, goBack }) => {
 
       return linkedEquipmentIds.some((eqId) => {
         const eq = equipment.find((e) => e.id === eqId);
+
         if (!eq || !Array.isArray(eq.records) || eq.records.length === 0) {
           return false;
         }
@@ -256,52 +303,139 @@ const Reports = ({ site, goBack }) => {
     });
   }, [haccpPoints, equipment]);
 
-  const filteredRows = {
-    temp: tempRecords
-      .filter((r) => isInRange(r.date))
-      .filter(textMatch)
-      .filter((r) => !exceptionsOnly || tempExceptions.some((e) => e.id === r.id)),
+  const wasteByReason = useMemo(() => {
+    const map = {};
 
-    checklists: completed
-      .filter((r) => isInRange(r.createdAt))
+    wasteLogs
+      .filter((w) => isInRange(w.createdAt))
+      .forEach((w) => {
+        const reason = w.reason || "Other";
+        map[reason] = (map[reason] || 0) + Number(w.qty || w.quantity || 1);
+      });
+
+    return Object.entries(map)
+      .map(([label, value]) => ({ label, value }))
+      .sort((a, b) => b.value - a.value);
+  }, [wasteLogs, dateRange]);
+
+  const cleaningByTask = useMemo(() => {
+    const map = {};
+
+    cleaningRecords
+      .filter((c) => isInRange(c.createdAt))
+      .forEach((c) => {
+        const task = c.task || c.area || "Cleaning";
+        map[task] = (map[task] || 0) + 1;
+      });
+
+    return Object.entries(map)
+      .map(([label, value]) => ({ label, value }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 8);
+  }, [cleaningRecords, dateRange]);
+
+  const checklistCompletionByTitle = useMemo(() => {
+    const map = {};
+
+    completed
+      .filter((c) => isInRange(c.createdAt))
+      .forEach((c) => {
+        const title = c.title || "Checklist";
+        map[title] = (map[title] || 0) + 1;
+      });
+
+    return Object.entries(map)
+      .map(([label, value]) => ({ label, value }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 8);
+  }, [completed, dateRange]);
+
+  const tempByEquipment = useMemo(() => {
+    const map = {};
+
+    tempRecords.forEach((r) => {
+      const name = r.equipmentName || "Equipment";
+
+      if (!map[name]) {
+        map[name] = {
+          label: name,
+          total: 0,
+          exceptions: 0,
+        };
+      }
+
+      map[name].total += 1;
+
+      if (isTempException(r)) {
+        map[name].exceptions += 1;
+      }
+    });
+
+    return Object.values(map)
+      .sort((a, b) => b.exceptions - a.exceptions || b.total - a.total)
+      .slice(0, 8);
+  }, [tempRecords]);
+
+  const activeStaff = useMemo(
+    () => staff.filter((s) => s.active !== false),
+    [staff]
+  );
+
+  const filtered = {
+    temps: tempRecords
       .filter(textMatch)
-      .filter((r) => !exceptionsOnly || checklistIssues.some((e) => e.id === r.id)),
+      .filter((r) => !exceptionsOnly || isTempException(r)),
+
+    stock: activeStockBatches
+      .filter(textMatch)
+      .filter((r) => !exceptionsOnly || stockRisks.some((x) => x.id === r.id)),
+
+    fridge: fridgeBatches
+      .filter(textMatch)
+      .filter((r) => !exceptionsOnly || fridgeRisks.some((x) => x.id === r.id)),
+
+    training: trainingRecords
+      .filter((r) => r.deleted !== true)
+      .filter(textMatch)
+      .filter((r) => !exceptionsOnly || trainingRisks.some((x) => x.id === r.id)),
 
     cleaning: cleaningRecords
       .filter((r) => isInRange(r.createdAt))
       .filter(textMatch),
 
-    stock: stockItems
-      .filter(textMatch),
-
-    stockBatches: activeStockBatches
-      .filter(textMatch)
-      .filter((r) => !exceptionsOnly || stockRisks.some((e) => e.id === r.id)),
-
     waste: wasteLogs
       .filter((r) => isInRange(r.createdAt))
       .filter(textMatch),
 
-    fridge: fridgeBatches
+    checklists: completed
+      .filter((r) => isInRange(r.createdAt))
       .filter(textMatch)
-      .filter((r) => !exceptionsOnly || fridgeRisks.some((e) => e.id === r.id)),
-
-    training: trainingRecords
-      .filter((r) => r.deleted !== true)
-      .filter(textMatch)
-      .filter((r) => !exceptionsOnly || trainingRisks.some((e) => e.id === r.id)),
+      .filter((r) => !exceptionsOnly || checklistIssues.some((x) => x.id === r.id)),
 
     haccp: haccpPoints
       .filter(textMatch)
-      .filter((r) => !exceptionsOnly || haccpAlerts.some((e) => e.id === r.id)),
+      .filter((r) => !exceptionsOnly || haccpAlerts.some((x) => x.id === r.id)),
   };
-
-  const activeStaff = staff.filter((s) => s.active !== false);
 
   const exportCSV = (rows, filename) => {
     if (!rows || rows.length === 0) return;
 
-    const headers = Object.keys(rows[0]);
+    const flatRows = rows.map((row) => {
+      const out = {};
+
+      Object.entries(row).forEach(([key, value]) => {
+        if (typeof value === "object" && value !== null) {
+          out[key] = JSON.stringify(value);
+        } else {
+          out[key] = value;
+        }
+      });
+
+      return out;
+    });
+
+    const headers = Object.keys(flatRows[0]);
+
     const escape = (value) => {
       const s = String(value ?? "");
       return s.includes(",") || s.includes('"') || s.includes("\n")
@@ -311,59 +445,75 @@ const Reports = ({ site, goBack }) => {
 
     const csv = [
       headers.map(escape).join(","),
-      ...rows.map((row) => headers.map((h) => escape(row[h])).join(",")),
+      ...flatRows.map((row) => headers.map((h) => escape(row[h])).join(",")),
     ].join("\n");
 
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
+
     a.href = url;
     a.download = filename;
     a.click();
+
     URL.revokeObjectURL(url);
+  };
+    const page = {
+    maxWidth: 1220,
+    margin: "0 auto",
+    padding: "32px 20px",
+    color: "#111827",
+    fontFamily: "'Inter', system-ui, -apple-system, Arial",
+  };
+
+  const panel = {
+    background: "#fff",
+    border: "1px solid #e5e7eb",
+    borderRadius: 18,
+    boxShadow: "0 4px 16px rgba(15,23,42,0.06)",
   };
 
   const card = {
-    background: "#fff",
-    borderRadius: 14,
+    ...panel,
     padding: 18,
-    boxShadow: "0 2px 6px rgba(0,0,0,0.08)",
-    border: "1px solid #e5e7eb",
   };
 
   const button = (active = false) => ({
-    padding: "10px 13px",
-    borderRadius: 10,
+    padding: "10px 14px",
+    borderRadius: 12,
     border: active ? "1px solid #2563eb" : "1px solid #e5e7eb",
     background: active ? "#eff6ff" : "#fff",
     color: active ? "#1d4ed8" : "#111827",
     cursor: "pointer",
-    fontWeight: 800,
+    fontWeight: 900,
     display: "inline-flex",
     alignItems: "center",
     gap: 8,
+    boxShadow: "0 1px 3px rgba(15,23,42,0.06)",
   });
 
-  const riskPill = (label, level = "low") => {
-    const colours = {
-      low: ["#dcfce7", "#166534"],
-      medium: ["#fef3c7", "#92400e"],
-      high: ["#fee2e2", "#991b1b"],
-      neutral: ["#e5e7eb", "#374151"],
+  const pill = (label, tone = "neutral") => {
+    const tones = {
+      good: ["#dcfce7", "#166534"],
+      warn: ["#fef3c7", "#92400e"],
+      bad: ["#fee2e2", "#991b1b"],
+      info: ["#dbeafe", "#1d4ed8"],
+      neutral: ["#f3f4f6", "#374151"],
     };
 
-    const [bg, fg] = colours[level] || colours.neutral;
+    const [bg, fg] = tones[tone] || tones.neutral;
 
     return (
       <span
         style={{
           display: "inline-flex",
-          padding: "4px 9px",
+          alignItems: "center",
+          padding: "5px 10px",
           borderRadius: 999,
           background: bg,
           color: fg,
           fontSize: 12,
-          fontWeight: 800,
+          fontWeight: 900,
         }}
       >
         {label}
@@ -371,13 +521,244 @@ const Reports = ({ site, goBack }) => {
     );
   };
 
+  const StatCard = ({ title, value, icon, tone = "info", badge, onClick }) => {
+    const colours = {
+      info: "#2563eb",
+      good: "#16a34a",
+      warn: "#f97316",
+      bad: "#dc2626",
+      cold: "#0891b2",
+      dark: "#111827",
+    };
+
+    return (
+      <button
+        onClick={onClick}
+        style={{
+          ...card,
+          textAlign: "left",
+          cursor: "pointer",
+          minHeight: 150,
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            gap: 12,
+            alignItems: "flex-start",
+          }}
+        >
+          <div>
+            {badge && <div style={{ marginBottom: 12 }}>{badge}</div>}
+
+            <div
+              style={{
+                color: "#6b7280",
+                fontSize: 14,
+                fontWeight: 800,
+              }}
+            >
+              {title}
+            </div>
+
+            <div
+              style={{
+                fontSize: 38,
+                lineHeight: 1,
+                fontWeight: 950,
+                marginTop: 4,
+                color: "#111827",
+              }}
+            >
+              {value}
+            </div>
+          </div>
+
+          <div style={{ color: colours[tone] || colours.info, fontSize: 32 }}>
+            {icon}
+          </div>
+        </div>
+      </button>
+    );
+  };
+
+  const BarChart = ({ title, data, valueLabel = "count", onClick }) => {
+    const max = Math.max(...data.map((d) => Number(d.value || d.total || 0)), 1);
+
+    return (
+      <div style={{ ...card, minHeight: 300 }}>
+        <div
+          style={{
+            fontSize: 16,
+            fontWeight: 950,
+            marginBottom: 14,
+            color: "#111827",
+          }}
+        >
+          {title}
+        </div>
+
+        {data.length === 0 ? (
+          <div style={{ color: "#6b7280", fontSize: 13 }}>
+            No data in this period.
+          </div>
+        ) : (
+          <div style={{ display: "grid", gap: 12 }}>
+            {data.map((item) => {
+              const value = Number(item.value || item.total || 0);
+              const width = `${Math.max((value / max) * 100, 6)}%`;
+
+              return (
+                <button
+                  key={item.label}
+                  onClick={onClick}
+                  style={{
+                    border: "none",
+                    background: "transparent",
+                    padding: 0,
+                    textAlign: "left",
+                    cursor: onClick ? "pointer" : "default",
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      gap: 10,
+                      fontSize: 13,
+                      fontWeight: 800,
+                      marginBottom: 4,
+                      color: "#111827",
+                    }}
+                  >
+                    <span>{item.label}</span>
+                    <span>
+                      {value} {valueLabel}
+                    </span>
+                  </div>
+
+                  <div
+                    style={{
+                      width: "100%",
+                      height: 12,
+                      background: "#f3f4f6",
+                      borderRadius: 999,
+                      overflow: "hidden",
+                    }}
+                  >
+                    <div
+                      style={{
+                        width,
+                        height: "100%",
+                        background:
+                          item.exceptions > 0 ? "#dc2626" : "#2563eb",
+                        borderRadius: 999,
+                      }}
+                    />
+                  </div>
+
+                  {item.exceptions > 0 && (
+                    <div style={{ marginTop: 4 }}>
+                      {pill(`${item.exceptions} exception(s)`, "bad")}
+                    </div>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const DonutCard = ({ title, value, subtitle, tone = "info", onClick }) => {
+    const colours = {
+      info: "#2563eb",
+      good: "#16a34a",
+      warn: "#f97316",
+      bad: "#dc2626",
+      cold: "#0891b2",
+    };
+
+    return (
+      <button
+        onClick={onClick}
+        style={{
+          ...card,
+          minHeight: 220,
+          display: "grid",
+          placeItems: "center",
+          cursor: "pointer",
+        }}
+      >
+        <div style={{ textAlign: "center" }}>
+          <div
+            style={{
+              width: 112,
+              height: 112,
+              borderRadius: "50%",
+              border: `12px solid ${colours[tone] || colours.info}`,
+              display: "grid",
+              placeItems: "center",
+              margin: "0 auto 12px",
+              background: "#fff",
+            }}
+          >
+            <span
+              style={{
+                fontSize: 36,
+                fontWeight: 950,
+                color: "#111827",
+              }}
+            >
+              {value}
+            </span>
+          </div>
+
+          <div style={{ fontWeight: 950, color: "#111827" }}>
+            {title}
+          </div>
+
+          <div style={{ color: "#6b7280", fontSize: 13, marginTop: 4 }}>
+            {subtitle}
+          </div>
+        </div>
+      </button>
+    );
+  };
+
   const DataTable = ({ columns, rows, emptyText = "No records found." }) => (
-    <div style={{ overflowX: "auto", border: "1px solid #e5e7eb", borderRadius: 12 }}>
-      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
+    <div
+      style={{
+        overflowX: "auto",
+        border: "1px solid #e5e7eb",
+        borderRadius: 14,
+        background: "#fff",
+      }}
+    >
+      <table
+        style={{
+          width: "100%",
+          borderCollapse: "collapse",
+          fontSize: 14,
+          color: "#111827",
+        }}
+      >
         <thead>
           <tr style={{ background: "#f9fafb" }}>
             {columns.map((col) => (
-              <th key={col.key} style={{ textAlign: "left", padding: 10 }}>
+              <th
+                key={col.key}
+                style={{
+                  textAlign: "left",
+                  padding: 12,
+                  color: "#111827",
+                  fontWeight: 950,
+                  borderBottom: "1px solid #e5e7eb",
+                  whiteSpace: "nowrap",
+                }}
+              >
                 {col.label}
               </th>
             ))}
@@ -387,15 +768,33 @@ const Reports = ({ site, goBack }) => {
         <tbody>
           {rows.length === 0 ? (
             <tr>
-              <td colSpan={columns.length} style={{ padding: 14, color: "#6b7280" }}>
+              <td
+                colSpan={columns.length}
+                style={{
+                  padding: 18,
+                  color: "#6b7280",
+                }}
+              >
                 {emptyText}
               </td>
             </tr>
           ) : (
             rows.map((row, index) => (
-              <tr key={row.id || index} style={{ borderBottom: "1px solid #f1f5f9" }}>
+              <tr
+                key={row.id || index}
+                style={{
+                  borderBottom: "1px solid #f1f5f9",
+                }}
+              >
                 {columns.map((col) => (
-                  <td key={col.key} style={{ padding: 10, verticalAlign: "top" }}>
+                  <td
+                    key={col.key}
+                    style={{
+                      padding: 12,
+                      color: "#111827",
+                      verticalAlign: "top",
+                    }}
+                  >
                     {col.render ? col.render(row) : row[col.key] ?? "—"}
                   </td>
                 ))}
@@ -406,105 +805,201 @@ const Reports = ({ site, goBack }) => {
       </table>
     </div>
   );
-    if (loading) {
-    return (
-      <div className="p-6 text-center text-gray-500">
-        Loading reports...
-      </div>
-    );
+    const DetailPanel = () => {
+    if (activeView === "temps") {
+      return (
+        <div style={card}>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", marginBottom: 14 }}>
+            <h2 style={{ fontSize: 22, fontWeight: 950, margin: 0 }}>Temperature Records</h2>
+            {pill(`${tempExceptions.length} outside limits`, tempExceptions.length ? "bad" : "good")}
+          </div>
+
+          <DataTable
+            rows={filtered.temps}
+            columns={[
+              { key: "equipmentName", label: "Equipment" },
+              {
+                key: "temp",
+                label: "Temp",
+                render: (r) => (
+                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <span>{r.temp !== "" ? `${r.temp}°C` : "—"}</span>
+                    {isTempException(r) && pill("Alert", "bad")}
+                  </div>
+                ),
+              },
+              { key: "date", label: "Date" },
+              { key: "time", label: "Time" },
+              { key: "person", label: "Staff" },
+            ]}
+          />
+        </div>
+      );
+    }
+
+    if (activeView === "stock") {
+      return (
+        <div style={card}>
+          <h2 style={{ fontSize: 22, fontWeight: 950, marginTop: 0 }}>Stock at Risk</h2>
+          <DataTable
+            rows={filtered.stock}
+            columns={[
+              { key: "stockItemName", label: "Item", render: (r) => r.stockItemName || r.itemName || "—" },
+              { key: "quantityRemaining", label: "Remaining" },
+              { key: "measurement", label: "Unit" },
+              { key: "supplier", label: "Supplier" },
+              { key: "useByDate", label: "Use-by", render: (r) => r.useByDate || "—" },
+              {
+                key: "risk",
+                label: "Risk",
+                render: (r) => {
+                  const days = daysUntil(r.useByDate);
+                  if (!r.useByDate || r.needsUseByReview) return pill("Review", "warn");
+                  if (days <= 1) return pill("Critical", "bad");
+                  if (days <= 3) return pill("Soon", "warn");
+                  return pill("OK", "good");
+                },
+              },
+            ]}
+          />
+        </div>
+      );
+    }
+
+    if (activeView === "fridge") {
+      return (
+        <div style={card}>
+          <h2 style={{ fontSize: 22, fontWeight: 950, marginTop: 0 }}>Fridge Batches</h2>
+          <DataTable
+            rows={filtered.fridge}
+            columns={[
+              { key: "itemName", label: "Item" },
+              { key: "equipmentName", label: "Location" },
+              { key: "useBy", label: "Use-by", render: (r) => formatDate(r.useBy) },
+              { key: "status", label: "Status", render: (r) => r.status || "IN_USE" },
+              { key: "notes", label: "Notes" },
+            ]}
+          />
+        </div>
+      );
+    }
+
+    if (activeView === "training") {
+      return (
+        <div style={card}>
+          <h2 style={{ fontSize: 22, fontWeight: 950, marginTop: 0 }}>Training Records</h2>
+          <DataTable
+            rows={filtered.training}
+            columns={[
+              {
+                key: "staffId",
+                label: "Staff",
+                render: (r) => staff.find((s) => s.id === r.staffId)?.name || r.staffName || "—",
+              },
+              { key: "course", label: "Course", render: (r) => r.course || r.courseName || "—" },
+              { key: "provider", label: "Provider" },
+              { key: "completedOn", label: "Completed", render: (r) => formatDate(r.completedOn) },
+              { key: "expiresOn", label: "Expires", render: (r) => formatDate(r.expiresOn) },
+              {
+                key: "status",
+                label: "Status",
+                render: (r) => {
+                  const days = daysUntil(r.expiresOn);
+                  if (!r.expiresOn) return pill("No expiry", "neutral");
+                  if (days < 0) return pill("Expired", "bad");
+                  if (days <= 30) return pill(`Expires ${days}d`, "warn");
+                  return pill("Valid", "good");
+                },
+              },
+            ]}
+          />
+        </div>
+      );
+    }
+
+    if (activeView === "cleaning") {
+      return (
+        <div style={card}>
+          <h2 style={{ fontSize: 22, fontWeight: 950, marginTop: 0 }}>Cleaning Records</h2>
+          <DataTable
+            rows={filtered.cleaning}
+            columns={[
+              { key: "task", label: "Task" },
+              { key: "frequency", label: "Frequency" },
+              { key: "area", label: "Area" },
+              { key: "person", label: "Staff" },
+              { key: "createdAt", label: "Date", render: (r) => formatDate(r.createdAt) },
+              { key: "notes", label: "Notes" },
+            ]}
+          />
+        </div>
+      );
+    }
+
+    if (activeView === "waste") {
+      return (
+        <div style={card}>
+          <h2 style={{ fontSize: 22, fontWeight: 950, marginTop: 0 }}>Waste Logs</h2>
+          <DataTable
+            rows={filtered.waste}
+            columns={[
+              { key: "item", label: "Item", render: (r) => r.item || r.itemName || "—" },
+              { key: "qty", label: "Qty", render: (r) => r.qty || r.quantity || "—" },
+              { key: "unit", label: "Unit" },
+              { key: "reason", label: "Reason" },
+              { key: "estimatedCost", label: "Est. Cost", render: (r) => r.estimatedCost ? `£${Number(r.estimatedCost).toFixed(2)}` : "—" },
+              { key: "createdAt", label: "Date", render: (r) => formatDate(r.createdAt) },
+            ]}
+          />
+        </div>
+      );
+    }
+
+    return null;
+  };
+
+  if (loading) {
+    return <div style={{ padding: 30, textAlign: "center" }}>Loading reports...</div>;
   }
 
   return (
-    <div className="p-4 md:p-6 space-y-6">
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          gap: 20,
-          flexWrap: "wrap",
-          alignItems: "center",
-        }}
-      >
+    <div style={page}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 16, flexWrap: "wrap", marginBottom: 18 }}>
         <div>
-          <h1
-            style={{
-              fontSize: 36,
-              fontWeight: 900,
-              marginBottom: 4,
-            }}
-          >
-            Reports Dashboard
-          </h1>
-
-          <p style={{ color: "#6b7280" }}>
-            Site: {site || "All Sites"}
-          </p>
+          <h1 style={{ fontSize: 36, fontWeight: 950, margin: 0 }}>Reports Dashboard</h1>
+          <div style={{ color: "#6b7280", marginTop: 4 }}>Site: {site || "All Sites"}</div>
         </div>
 
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
           {goBack && (
             <button style={button()} onClick={goBack}>
-              <FaArrowLeft />
-              Back
+              <FaArrowLeft /> Back
             </button>
           )}
-
           <button
             style={button()}
-            onClick={() => exportCSV(filteredRows.temp, "temperature-report.csv")}
+            onClick={() => exportCSV(filtered[activeView] || filtered.temps, `${activeView}-report.csv`)}
           >
-            <FaDownload />
-            Export CSV
+            <FaDownload /> Export CSV
           </button>
         </div>
       </div>
 
-      <div
-        style={{
-          display: "flex",
-          gap: 12,
-          flexWrap: "wrap",
-          alignItems: "center",
-        }}
-      >
-        <div
-          style={{
-            flex: 1,
-            minWidth: 220,
-            display: "flex",
-            alignItems: "center",
-            gap: 10,
-            border: "1px solid #e5e7eb",
-            borderRadius: 12,
-            background: "#fff",
-            padding: "10px 14px",
-          }}
-        >
-          <FaSearch style={{ color: "#6b7280" }} />
-
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 18 }}>
+        <div style={{ flex: 1, minWidth: 260, ...panel, padding: "10px 14px", display: "flex", alignItems: "center", gap: 10 }}>
+          <FaSearch color="#6b7280" />
           <input
-            placeholder="Search reports..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            style={{
-              border: "none",
-              outline: "none",
-              width: "100%",
-              background: "transparent",
-            }}
+            placeholder="Search dashboard..."
+            style={{ border: "none", outline: "none", width: "100%", color: "#111827" }}
           />
         </div>
 
         <select
           value={dateRange}
           onChange={(e) => setDateRange(e.target.value)}
-          style={{
-            border: "1px solid #e5e7eb",
-            borderRadius: 12,
-            padding: "10px 14px",
-            background: "#fff",
-            fontWeight: 700,
-          }}
+          style={{ ...button(), minWidth: 150 }}
         >
           <option value="7">Last 7 Days</option>
           <option value="30">Last 30 Days</option>
@@ -512,409 +1007,47 @@ const Reports = ({ site, goBack }) => {
           <option value="all">All Time</option>
         </select>
 
-        <button
-          style={button(exceptionsOnly)}
-          onClick={() => setExceptionsOnly(!exceptionsOnly)}
-        >
-          <FaFilter />
-          Exceptions Only
+        <button style={button(exceptionsOnly)} onClick={() => setExceptionsOnly((v) => !v)}>
+          <FaFilter /> Exceptions Only
         </button>
       </div>
 
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))",
-          gap: 16,
-        }}
-      >
-        <div style={card}>
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="text-sm text-gray-500">
-                Temperature Records
-              </div>
-
-              <div className="text-3xl font-black">
-                {tempRecords.length}
-              </div>
-
-              <div className="mt-2">
-                {riskPill(
-                  `${tempExceptions.length} exceptions`,
-                  tempExceptions.length > 0 ? "high" : "low"
-                )}
-              </div>
-            </div>
-
-            <FaThermometerHalf size={30} color="#2563eb" />
-          </div>
-        </div>
-
-        <div style={card}>
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="text-sm text-gray-500">
-                Active Staff
-              </div>
-
-              <div className="text-3xl font-black">
-                {activeStaff.length}
-              </div>
-            </div>
-
-            <FaUsers size={30} color="#16a34a" />
-          </div>
-        </div>
-
-        <div style={card}>
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="text-sm text-gray-500">
-                Training Expiring
-              </div>
-
-              <div className="text-3xl font-black">
-                {trainingRisks.length}
-              </div>
-
-              <div className="mt-2">
-                {riskPill(
-                  trainingRisks.length > 0 ? "Attention Needed" : "Compliant",
-                  trainingRisks.length > 0 ? "medium" : "low"
-                )}
-              </div>
-            </div>
-
-            <FaUserGraduate size={30} color="#ea580c" />
-          </div>
-        </div>
-
-        <div style={card}>
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="text-sm text-gray-500">
-                HACCP Alerts
-              </div>
-
-              <div className="text-3xl font-black">
-                {haccpAlerts.length}
-              </div>
-
-              <div className="mt-2">
-                {riskPill(
-                  haccpAlerts.length > 0 ? "Critical" : "Stable",
-                  haccpAlerts.length > 0 ? "high" : "low"
-                )}
-              </div>
-            </div>
-
-            <FaShieldAlt size={30} color="#dc2626" />
-          </div>
-        </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 16, marginBottom: 18 }}>
+        <StatCard title="Temp Exceptions" value={tempExceptions.length} tone={tempExceptions.length ? "bad" : "good"} icon={<FaThermometerHalf />} badge={pill("Temperature", "info")} onClick={() => setActiveView("temps")} />
+        <StatCard title="Stock Risks" value={stockRisks.length} tone={stockRisks.length ? "warn" : "good"} icon={<FaWarehouse />} badge={pill("Stock", "neutral")} onClick={() => setActiveView("stock")} />
+        <StatCard title="Training Due" value={trainingRisks.length} tone={trainingRisks.length ? "warn" : "good"} icon={<FaUserGraduate />} badge={pill("Staff", "good")} onClick={() => setActiveView("training")} />
+        <StatCard title="HACCP Alerts" value={haccpAlerts.length} tone={haccpAlerts.length ? "bad" : "good"} icon={<FaShieldAlt />} badge={pill("HACCP", haccpAlerts.length ? "bad" : "good")} onClick={() => setActiveView("haccp")} />
       </div>
 
-      <div
-        style={{
-          display: "flex",
-          gap: 10,
-          flexWrap: "wrap",
-        }}
-      >
-        <button
-          style={button(activeTab === "overview")}
-          onClick={() => setActiveTab("overview")}
-        >
-          Overview
-        </button>
-
-        <button
-          style={button(activeTab === "temps")}
-          onClick={() => setActiveTab("temps")}
-        >
-          Temps
-        </button>
-
-        <button
-          style={button(activeTab === "stock")}
-          onClick={() => setActiveTab("stock")}
-        >
-          Stock
-        </button>
-
-        <button
-          style={button(activeTab === "fridge")}
-          onClick={() => setActiveTab("fridge")}
-        >
-          Fridge
-        </button>
-
-        <button
-          style={button(activeTab === "training")}
-          onClick={() => setActiveTab("training")}
-        >
-          Training
-        </button>
-
-        <button
-          style={button(activeTab === "cleaning")}
-          onClick={() => setActiveTab("cleaning")}
-        >
-          Cleaning
-        </button>
-
-        <button
-          style={button(activeTab === "waste")}
-          onClick={() => setActiveTab("waste")}
-        >
-          Waste
-        </button>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 16, marginBottom: 18 }}>
+        <DonutCard title="Completed Checks" value={completed.filter((c) => isInRange(c.createdAt)).length} subtitle="within selected date range" tone="info" onClick={() => setActiveView("checklists")} />
+        <DonutCard title="Cleaning Records" value={cleaningRecords.filter((c) => isInRange(c.createdAt)).length} subtitle="cleaning activity" tone="good" onClick={() => setActiveView("cleaning")} />
+        <DonutCard title="Waste Entries" value={wasteLogs.filter((w) => isInRange(w.createdAt)).length} subtitle="logged waste records" tone="warn" onClick={() => setActiveView("waste")} />
+        <DonutCard title="Active Staff" value={activeStaff.length} subtitle="current active staff" tone="cold" onClick={() => setActiveView("training")} />
       </div>
 
-      {(activeTab === "overview" || activeTab === "temps") && (
-        <div style={card}>
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xl font-bold">
-              Temperature Records
-            </h2>
-
-            {riskPill(
-              `${tempExceptions.length} outside limits`,
-              tempExceptions.length > 0 ? "high" : "low"
-            )}
-          </div>
-
-          <DataTable
-            rows={filteredRows.temp}
-            columns={[
-              {
-                key: "equipmentName",
-                label: "Equipment",
-              },
-              {
-                key: "temp",
-                label: "Temperature",
-                render: (row) => {
-                  const temp = Number(row.temp);
-
-                  let level = "low";
-
-                  if (temp > 5) level = "high";
-
-                  return (
-                    <div className="flex items-center gap-2">
-                      <span>{row.temp}°C</span>
-                      {level === "high" &&
-                        riskPill("Alert", "high")}
-                    </div>
-                  );
-                },
-              },
-              {
-                key: "date",
-                label: "Date",
-              },
-              {
-                key: "time",
-                label: "Time",
-              },
-              {
-                key: "person",
-                label: "Staff",
-              },
-            ]}
-          />
+      {activeView === "dashboard" && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 16 }}>
+          <BarChart title="Temperature Checks by Equipment" data={tempByEquipment.map((x) => ({ label: x.label, value: x.total, exceptions: x.exceptions }))} valueLabel="checks" onClick={() => setActiveView("temps")} />
+          <BarChart title="Checklist Completion" data={checklistCompletionByTitle} valueLabel="completed" onClick={() => setActiveView("checklists")} />
+          <BarChart title="Cleaning by Task" data={cleaningByTask} valueLabel="records" onClick={() => setActiveView("cleaning")} />
+          <BarChart title="Waste by Reason" data={wasteByReason} valueLabel="qty" onClick={() => setActiveView("waste")} />
         </div>
       )}
 
-      {(activeTab === "overview" || activeTab === "stock") && (
-        <div style={card}>
-          <div className="flex items-center gap-2 mb-4">
-            <FaWarehouse />
-            <h2 className="text-xl font-bold">
-              Stock Batch Risks
-            </h2>
-          </div>
-
-          <DataTable
-            rows={filteredRows.stockBatches}
-            columns={[
-              {
-                key: "itemName",
-                label: "Item",
-              },
-              {
-                key: "quantityRemaining",
-                label: "Remaining",
-              },
-              {
-                key: "useByDate",
-                label: "Use By",
-                render: (row) => formatDate(row.useByDate),
-              },
-              {
-                key: "risk",
-                label: "Risk",
-                render: (row) => {
-                  const days = daysUntil(row.useByDate);
-
-                  if (days === null) {
-                    return riskPill("Review", "medium");
-                  }
-
-                  if (days <= 1) {
-                    return riskPill("Critical", "high");
-                  }
-
-                  if (days <= 3) {
-                    return riskPill("Warning", "medium");
-                  }
-
-                  return riskPill("Good", "low");
-                },
-              },
-            ]}
-          />
+      {activeView !== "dashboard" && (
+        <div style={{ marginBottom: 18, display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <button style={button(activeView === "dashboard")} onClick={() => setActiveView("dashboard")}>Dashboard</button>
+          <button style={button(activeView === "temps")} onClick={() => setActiveView("temps")}>Temps</button>
+          <button style={button(activeView === "stock")} onClick={() => setActiveView("stock")}>Stock</button>
+          <button style={button(activeView === "fridge")} onClick={() => setActiveView("fridge")}>Fridge</button>
+          <button style={button(activeView === "training")} onClick={() => setActiveView("training")}>Training</button>
+          <button style={button(activeView === "cleaning")} onClick={() => setActiveView("cleaning")}>Cleaning</button>
+          <button style={button(activeView === "waste")} onClick={() => setActiveView("waste")}>Waste</button>
         </div>
       )}
 
-      {(activeTab === "overview" || activeTab === "fridge") && (
-        <div style={card}>
-          <div className="flex items-center gap-2 mb-4">
-            <FaSnowflake />
-            <h2 className="text-xl font-bold">
-              Fridge Batch Tracking
-            </h2>
-          </div>
-
-          <DataTable
-            rows={filteredRows.fridge}
-            columns={[
-              {
-                key: "itemName",
-                label: "Item",
-              },
-              {
-                key: "quantity",
-                label: "Quantity",
-              },
-              {
-                key: "useBy",
-                label: "Use By",
-                render: (row) => formatDate(row.useBy),
-              },
-              {
-                key: "status",
-                label: "Status",
-              },
-            ]}
-          />
-        </div>
-      )}
-
-      {(activeTab === "overview" || activeTab === "training") && (
-        <div style={card}>
-          <div className="flex items-center gap-2 mb-4">
-            <FaUserGraduate />
-            <h2 className="text-xl font-bold">
-              Training Records
-            </h2>
-          </div>
-
-          <DataTable
-            rows={filteredRows.training}
-            columns={[
-              {
-                key: "staffName",
-                label: "Staff",
-              },
-              {
-                key: "courseName",
-                label: "Course",
-              },
-              {
-                key: "completedOn",
-                label: "Completed",
-                render: (row) => formatDate(row.completedOn),
-              },
-              {
-                key: "expiresOn",
-                label: "Expires",
-                render: (row) => formatDate(row.expiresOn),
-              },
-            ]}
-          />
-        </div>
-      )}
-
-      {(activeTab === "overview" || activeTab === "cleaning") && (
-        <div style={card}>
-          <div className="flex items-center gap-2 mb-4">
-            <FaBroom />
-            <h2 className="text-xl font-bold">
-              Cleaning Records
-            </h2>
-          </div>
-
-          <DataTable
-            rows={filteredRows.cleaning}
-            columns={[
-              {
-                key: "area",
-                label: "Area",
-              },
-              {
-                key: "staffName",
-                label: "Staff",
-              },
-              {
-                key: "createdAt",
-                label: "Date",
-                render: (row) => formatDate(row.createdAt),
-              },
-              {
-                key: "createdAtTime",
-                label: "Time",
-                render: (row) => formatTime(row.createdAt),
-              },
-            ]}
-          />
-        </div>
-      )}
-
-      {(activeTab === "overview" || activeTab === "waste") && (
-        <div style={card}>
-          <div className="flex items-center gap-2 mb-4">
-            <FaTrashAlt />
-            <h2 className="text-xl font-bold">
-              Waste Logs
-            </h2>
-          </div>
-
-          <DataTable
-            rows={filteredRows.waste}
-            columns={[
-              {
-                key: "itemName",
-                label: "Item",
-              },
-              {
-                key: "quantity",
-                label: "Qty",
-              },
-              {
-                key: "reason",
-                label: "Reason",
-              },
-              {
-                key: "createdAt",
-                label: "Date",
-                render: (row) => formatDate(row.createdAt),
-              },
-            ]}
-          />
-        </div>
-      )}
+      <DetailPanel />
     </div>
   );
 };
