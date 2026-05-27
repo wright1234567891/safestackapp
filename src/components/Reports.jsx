@@ -673,15 +673,177 @@ const activeStockBatches = useMemo(() => {
 };
 
 const CustomGraphBuilder = ({ title, data }) => {
+  const metrics = [
+    { key: "tempExceptions", label: "Temp exceptions", color: "#dc2626" },
+    { key: "stockRisks", label: "Stock risks", color: "#f97316" },
+    { key: "checklistIssues", label: "Checklist issues", color: "#2563eb" },
+    { key: "wasteEntries", label: "Waste entries", color: "#7c3aed" },
+  ];
+
+  const activeMetrics = metrics.filter((m) => selectedMetrics.includes(m.key));
+
+  const width = 720;
+  const height = 280;
+  const pad = 36;
+
+  const max = Math.max(
+    1,
+    ...data.flatMap((d) => activeMetrics.map((m) => Number(d[m.key] || 0)))
+  );
+
+  const x = (i) => pad + (i * (width - pad * 2)) / Math.max(data.length - 1, 1);
+  const y = (v) => height - pad - (v / max) * (height - pad * 2);
+
+  const toggleMetric = (key) => {
+    setSelectedMetrics((prev) =>
+      prev.includes(key)
+        ? prev.filter((m) => m !== key)
+        : [...prev, key]
+    );
+  };
+
   return (
-    <div style={{ ...card, minHeight: 260 }}>
-      <div style={{ fontSize: 16, fontWeight: 950, marginBottom: 10 }}>
-        Custom Graph Builder
+    <div style={{ ...card, minHeight: 380 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", marginBottom: 14 }}>
+        <div>
+          <div style={{ fontSize: 16, fontWeight: 950 }}>Custom Graph Builder</div>
+          <div style={{ fontSize: 13, color: "#6b7280", marginTop: 4 }}>
+            Choose what you want to compare. Keep related data together for clearer reports.
+          </div>
+        </div>
+
+        <select
+          value={customChartType}
+          onChange={(e) => setCustomChartType(e.target.value)}
+          style={button()}
+        >
+          <option value="line">Line chart</option>
+          <option value="bar">Bar chart</option>
+        </select>
       </div>
 
-      <div style={{ color: "#6b7280", fontSize: 13 }}>
-        This is where your custom graph controls will go.
+      <input
+        value={customGraphTitle}
+        onChange={(e) => setCustomGraphTitle(e.target.value)}
+        placeholder="Graph title"
+        style={{
+          width: "100%",
+          padding: 12,
+          borderRadius: 12,
+          border: "1px solid #e5e7eb",
+          marginBottom: 12,
+          fontWeight: 800,
+        }}
+      />
+
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
+        {metrics.map((metric) => (
+          <button
+            key={metric.key}
+            onClick={() => toggleMetric(metric.key)}
+            style={{
+              padding: "9px 12px",
+              borderRadius: 999,
+              border: selectedMetrics.includes(metric.key)
+                ? `1px solid ${metric.color}`
+                : "1px solid #e5e7eb",
+              background: selectedMetrics.includes(metric.key) ? "#f8fafc" : "#fff",
+              color: selectedMetrics.includes(metric.key) ? metric.color : "#374151",
+              fontWeight: 900,
+              cursor: "pointer",
+            }}
+          >
+            {selectedMetrics.includes(metric.key) ? "✓ " : ""}
+            {metric.label}
+          </button>
+        ))}
       </div>
+
+      {activeMetrics.length === 0 ? (
+        <div style={{ color: "#6b7280", fontSize: 13 }}>
+          Select at least one metric to build a graph.
+        </div>
+      ) : (
+        <>
+          <div style={{ fontSize: 18, fontWeight: 950, marginBottom: 10 }}>
+            {customGraphTitle || title}
+          </div>
+
+          <svg viewBox={`0 0 ${width} ${height}`} style={{ width: "100%", height }}>
+            {[0, 0.25, 0.5, 0.75, 1].map((p) => {
+              const gy = pad + p * (height - pad * 2);
+              return (
+                <line
+                  key={p}
+                  x1={pad}
+                  x2={width - pad}
+                  y1={gy}
+                  y2={gy}
+                  stroke="#e5e7eb"
+                  strokeWidth="1"
+                />
+              );
+            })}
+
+            {customChartType === "line" &&
+              activeMetrics.map((metric) => (
+                <polyline
+                  key={metric.key}
+                  points={data
+                    .map((d, i) => `${x(i)},${y(Number(d[metric.key] || 0))}`)
+                    .join(" ")}
+                  fill="none"
+                  stroke={metric.color}
+                  strokeWidth="3"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              ))}
+
+            {customChartType === "bar" &&
+              data.map((d, i) =>
+                activeMetrics.map((metric, metricIndex) => {
+                  const barGroupWidth = 24;
+                  const barWidth = barGroupWidth / activeMetrics.length;
+                  const value = Number(d[metric.key] || 0);
+
+                  return (
+                    <rect
+                      key={`${d.label}-${metric.key}`}
+                      x={x(i) - barGroupWidth / 2 + metricIndex * barWidth}
+                      y={y(value)}
+                      width={barWidth - 2}
+                      height={height - pad - y(value)}
+                      fill={metric.color}
+                      rx="3"
+                    />
+                  );
+                })
+              )}
+
+            {data.map((d, i) => (
+              <text
+                key={d.label}
+                x={x(i)}
+                y={height - 8}
+                textAnchor="middle"
+                fontSize="11"
+                fill="#64748b"
+              >
+                {d.label}
+              </text>
+            ))}
+          </svg>
+
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 8 }}>
+            {activeMetrics.map((metric) => (
+              <span key={metric.key} style={{ fontSize: 12, fontWeight: 900, color: metric.color }}>
+                ● {metric.label}
+              </span>
+            ))}
+          </div>
+        </>
+      )}
     </div>
   );
 };
