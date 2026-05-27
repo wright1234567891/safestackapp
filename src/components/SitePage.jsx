@@ -346,6 +346,7 @@ const SitePage = ({ user, onLogout }) => {
   const [cleanLogs, setCleanLogs] = useState([]);
   const [stockBatches, setStockBatches] = useState([]);
   const [checklists, setChecklists] = useState([]);
+  const [customReports, setCustomReports] = useState([]);
 
   const [tempChecks, setTempChecks] = useState([]);
   const [cleaningRecords, setCleaningRecords] = useState([]);
@@ -436,15 +437,35 @@ const SitePage = ({ user, onLogout }) => {
       () => setStockBatches([])
     );
 
-    return () => {
-      unsubSiteTemplates();
-      unsubTemplates();
-      unsubLegacy();
-      unsubDone();
-      unsubEquip();
-      unsubClean();
-      unsubStockBatches();
-    };
+    const unsubCustomReports = onSnapshot(
+
+  query(collection(db, "customReports"), where("site", "==", selectedSite)),
+
+  (snap) => setCustomReports(snap.docs.map((d) => ({ id: d.id, ...d.data() }))),
+
+  () => setCustomReports([])
+
+);
+
+return () => {
+
+  unsubSiteTemplates();
+
+  unsubTemplates();
+
+  unsubLegacy();
+
+  unsubDone();
+
+  unsubEquip();
+
+  unsubClean();
+
+  unsubStockBatches();
+
+  unsubCustomReports();
+
+};
   }, [selectedSite, filterForSelectedSite]);
 
   useEffect(() => {
@@ -838,16 +859,23 @@ const SitePage = ({ user, onLogout }) => {
         shortcutTo: "fridgeLog",
         helper: "Open fridge records",
       },
-      {
-        label: "Waste Log Today",
-        key: "shortcutWasteToday",
-        icon: <FaTrashAlt size={17} />,
-        color: "#111827",
-        shortcutTo: "wasteLog",
-        helper: "Record or review waste",
-      },
+      ...customReports.map((report) => ({
+
+  label: report.title || "Custom Report",
+
+  key: `customReport_${report.id}`,
+
+  icon: <FaChartBar size={17} />,
+
+  color: "#9333ea",
+
+  shortcutTo: "reports",
+
+  helper: `${report.period || "Custom"} · ${(report.metrics || []).length} metric(s)`,
+
+})),
     ],
-    [sections, stockAlerts.length, todayCompliance.t.total, todayCompliance.t.pass]
+[sections, stockAlerts.length, todayCompliance.t.total, todayCompliance.t.pass, customReports]
   );
 
   const dashboardConfigId = selectedSite

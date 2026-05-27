@@ -743,17 +743,19 @@ const CustomGraphBuilder = ({ title, data }) => {
 
   <button
     style={button()}
-    onClick={() =>
-      setSavedGraphs((prev) => [
-        ...prev,
-        {
-          title: customGraphTitle,
-          chartType: customChartType,
-          period: graphPeriod,
-          metrics: selectedMetrics,
-        },
-      ])
-    }
+onClick={async () => {
+  await addDoc(collection(db, "customReports"), {
+    site,
+    title: customGraphTitle || "Custom Report",
+    chartType: customChartType,
+    period: graphPeriod,
+    metrics: selectedMetrics,
+    enabledOnDashboard: false,
+    createdAt: serverTimestamp(),
+  });
+
+  alert("Custom report saved.");
+}}
   >
     Save graph
   </button>
