@@ -385,7 +385,11 @@ const SortableDashboardTile = ({ sec, openSection, editMode, enabled, toggleWidg
           background: enabled ? "#fff" : "#f1f5f9",
           border: enabled ? "1px solid #e5e7eb" : "1px dashed #cbd5e1",
           borderRadius: 18,
-          padding: isGraph ? 18 : "22px 16px",
+padding: isGraph ? 18 : "16px 12px",
+
+minHeight: isGraph ? 420 : 92,
+
+height: isGraph ? "auto" : 92,
 minHeight: isGraph ? 460 : 112,
           display: "flex",
           flexDirection: "column",
@@ -1233,12 +1237,15 @@ helper: `${report.period || "Custom"} · ${(report.metrics || []).length} metric
           background: rgba(255,255,255,0.14) !important;
         }
 
-        .tile-button:hover,
-        .alert-card:hover {
-          transform: translateY(-2px);
-          box-shadow: 0 8px 20px rgba(15,23,42,0.08) !important;
-          background: #fff !important;
-        }
+.tile-button:hover,
+
+.alert-card:hover {
+
+  box-shadow: 0 8px 20px rgba(15,23,42,0.08) !important;
+
+  background: #fff !important;
+
+}
 
         @media (max-width: 820px) {
           .safestack-shell {
@@ -1745,7 +1752,21 @@ helper: `${report.period || "Custom"} · ${(report.metrics || []).length} metric
 
 <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDashboardDragEnd}>
   <SortableContext items={dashboardSections.map((s) => s.key)} strategy={rectSortingStrategy}>
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 16 }}>
+<div
+
+  style={{
+
+    display: "grid",
+
+    gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+
+    gap: 14,
+
+    alignItems: "start",
+
+  }}
+
+>
       {dashboardSections
         .filter((sec) => {
           if (sec.type !== "customReport") return editDashboard || enabledDashboardKeys.includes(sec.key);
