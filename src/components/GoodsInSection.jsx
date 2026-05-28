@@ -28,6 +28,7 @@ const GoodsInSection = ({ site, goBack, user }) => {
   const [stockItems, setStockItems] = useState([]);
   const [equipment, setEquipment] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
+  const [goodsInRecords, setGoodsInRecords] = useState([]);
 
   const [supplier, setSupplier] = useState("");
   const [deliveryRef, setDeliveryRef] = useState("");
@@ -169,6 +170,26 @@ const GoodsInSection = ({ site, goBack, user }) => {
     });
     return () => unsub();
   }, [site]);
+
+  useEffect(() => {
+  if (!site) return;
+
+  const q = query(collection(db, "goodsIn"), where("site", "==", site));
+
+  const unsub = onSnapshot(q, (snapshot) => {
+    const rows = snapshot.docs
+      .map((d) => ({ id: d.id, ...d.data() }))
+      .sort((a, b) => {
+        const aTime = a.createdAt?.toMillis?.() || 0;
+        const bTime = b.createdAt?.toMillis?.() || 0;
+        return bTime - aTime;
+      });
+
+    setGoodsInRecords(rows);
+  });
+
+  return () => unsub();
+}, [site]);
 
   const stockMap = useMemo(
     () => Object.fromEntries(stockItems.map((item) => [item.id, item])),
@@ -760,6 +781,92 @@ const GoodsInSection = ({ site, goBack, user }) => {
             Save goods in & update stock
           </button>
         </div>
+      </div>
+
+      <div style={card}>
+
+        <div style={sectionHeader}>
+
+          <FaTruckLoading color="#2563eb" />
+
+          Recent goods in records
+
+        </div>
+
+        {goodsInRecords.length === 0 ? (
+
+          <div style={subtle}>No goods in records yet.</div>
+
+        ) : (
+
+          <div style={{ display: "grid", gap: 10 }}>
+
+            {goodsInRecords.slice(0, 20).map((record) => (
+
+              <div
+
+                key={record.id}
+
+                style={{
+
+                  border: "1px solid #e5e7eb",
+
+                  borderRadius: 12,
+
+                  padding: 12,
+
+                  background: "#f9fafb",
+
+                  display: "grid",
+
+                  gap: 4,
+
+                }}
+
+              >
+
+                <div style={{ fontWeight: 800 }}>
+
+                  {record.supplier || "Unknown supplier"}
+
+                </div>
+
+                <div style={subtle}>
+
+                  Date: {record.deliveryDate || "—"} · Lines: {record.lineCount || 0}
+
+                </div>
+
+                <div style={subtle}>
+
+                  Ref: {record.deliveryRef || "No ref"} · Status: {record.status || "—"}
+
+                </div>
+
+                <div style={subtle}>
+
+                  Added by: {record.createdBy || "Unknown"}
+
+                </div>
+
+                {record.notes && (
+
+                  <div style={{ ...subtle, marginTop: 4 }}>
+
+                    Notes: {record.notes}
+
+                  </div>
+
+                )}
+
+              </div>
+
+            ))}
+
+          </div>
+
+        )}
+
       </div>
 
       <div style={card}>
