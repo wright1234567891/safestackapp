@@ -769,31 +769,53 @@ return () => {
   };
 
 const stockAlerts = useMemo(() => {
+
   return stockBatches
+
     .filter((batch) => {
+
       const status = (batch.status || "active").toString().toLowerCase();
+
       const remaining = Number(batch.quantityRemaining ?? batch.quantity ?? 0);
 
       if (status === "closed" || remaining <= 0) return false;
 
-      // Missing use-by date must always alert
       if (!batch.useByDate || batch.needsUseByReview === true) return true;
 
       const days = daysUntil(batch.useByDate);
-      return days !== null && days <= 3;
+
+      if (days === null) return false;
+
+      if (days < 0) return true;
+
+      const acknowledged =
+
+        batch.acknowledgedUseByRisk === true &&
+
+        batch.acknowledgedUseByDate === batch.useByDate;
+
+      return days <= 3 && !acknowledged;
+
     })
+
     .sort((a, b) => {
+
       const aMissing = !a.useByDate || a.needsUseByReview === true;
+
       const bMissing = !b.useByDate || b.needsUseByReview === true;
 
       if (aMissing && !bMissing) return -1;
+
       if (!aMissing && bMissing) return 1;
 
       const aDays = daysUntil(a.useByDate) ?? 999;
+
       const bDays = daysUntil(b.useByDate) ?? 999;
 
       return aDays - bDays;
+
     });
+
 }, [stockBatches]);
 
   const stockAlertLabel = (batch) => {
@@ -863,6 +885,36 @@ const stockAlerts = useMemo(() => {
       console.error("Error updating stock batch use-by date:", error);
       alert("Failed to update use-by date.");
     }
+  };
+
+   const acknowledgeStockRisk = async (batch) => {
+
+    if (!batch?.id || !batch.useByDate) return;
+
+    try {
+
+      await updateDoc(doc(db, "stockBatches", batch.id), {
+
+        acknowledgedUseByRisk: true,
+
+        acknowledgedUseByDate: batch.useByDate,
+
+        acknowledgedAt: serverTimestamp(),
+
+        acknowledgedBy: user?.name || user?.displayName || user?.email || "Unknown",
+
+        updatedAt: serverTimestamp(),
+
+      });
+
+    } catch (error) {
+
+      console.error("Error acknowledging stock risk:", error);
+
+      alert("Failed to acknowledge stock risk.");
+
+    }
+
   };
 
   const quickAdjustStockBatch = async (batch, type, qtyToAdjust) => {
@@ -1848,6 +1900,41 @@ helper: `${report.period || "Custom"} · ${(report.metrics || []).length} metric
                                   >
                                     Waste qty
                                   </button>
+{batch.useByDate &&
+
+  batch.needsUseByReview !== true &&
+
+  daysUntil(batch.useByDate) >= 0 && (
+
+  <button
+
+    onClick={() => acknowledgeStockRisk(batch)}
+
+    style={{
+
+      border: "none",
+
+      borderRadius: 10,
+
+      padding: "9px 12px",
+
+      background: "#64748b",
+
+      color: "#fff",
+
+      fontWeight: 800,
+
+      cursor: "pointer",
+
+    }}
+
+  >
+
+    Acknowledge risk
+
+  </button>
+
+)}
                                 </div>
                               </div>
                             </div>
