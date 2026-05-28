@@ -1077,8 +1077,13 @@ const StockSection = ({ site, goBack, user }) => {
                             }
                             style={smallSelect}
                           >
-                            <option value="unit">Units</option>
-                            <option value="kg">Kilograms</option>
+<option value="unit">Units</option>
+
+<option value="slice">Slices</option>
+
+<option value="portion">Portions</option>
+
+<option value="kg">Kilograms</option>
                           </select>
                         </td>
 
@@ -1213,8 +1218,13 @@ const StockSection = ({ site, goBack, user }) => {
               onChange={(e) => setNewMeasurement(e.target.value)}
               style={selectInput}
             >
-              <option value="unit">Units</option>
-              <option value="kg">Kilograms</option>
+<option value="unit">Units</option>
+
+<option value="slice">Slices</option>
+
+<option value="portion">Portions</option>
+
+<option value="kg">Kilograms</option>
             </select>
           </div>
 
@@ -1381,8 +1391,13 @@ const StockSection = ({ site, goBack, user }) => {
                     onChange={(e) => handleEdit(item.id, "measurement", e.target.value)}
                     style={smallSelect}
                   >
-                    <option value="unit">Units</option>
-                    <option value="kg">Kilograms</option>
+<option value="unit">Units</option>
+
+<option value="slice">Slices</option>
+
+<option value="portion">Portions</option>
+
+<option value="kg">Kilograms</option>
                   </select>
 
                   <select
@@ -1636,7 +1651,7 @@ const StockSection = ({ site, goBack, user }) => {
               <label style={label}>Quantity</label>
               <input
                 type="number"
-                step={selectedItem.measurement === "kg" ? "0.1" : "1"}
+step={selectedItem.measurement === "kg" ? "0.1" : "1"}
                 value={movementQty}
                 onChange={(e) => setMovementQty(Number(e.target.value))}
                 style={{ ...input, minWidth: 140 }}

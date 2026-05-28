@@ -110,7 +110,7 @@ shopifyVariantId: "",
   const addIngredientRow = (setFn) =>
     setFn((p) => ({
       ...p,
-      ingredients: [...(p.ingredients || []), { stockItemId: "", qty: "", unit: "unit" }],
+ingredients: [...(p.ingredients || []), { stockItemId: "", qty: "", unit: "unit" }],
     }));
 
   const updateIngredient = (setFn, idx, key, val) =>
@@ -148,9 +148,9 @@ shopifyVariantId: "",
       allergens: normaliseAllergens(newDish.allergens),
       mayContain: (newDish.mayContain || "").trim(),
 
-shopifyProductId: "",
+shopifyProductId: (newDish.shopifyProductId || "").trim(),
 
-shopifyVariantId: "",
+shopifyVariantId: (newDish.shopifyVariantId || "").trim(),
       site,
       createdAt: serverTimestamp(),
       createdBy: user?.uid || null,
@@ -314,11 +314,19 @@ shopifyVariantId: (edit.shopifyVariantId || "").trim(),
                   updateIngredient(editingId ? setEdit : setNewDish, idx, "unit", e.target.value)
                 }
               >
-                <option value="unit">unit</option>
-                <option value="kg">kg</option>
-                <option value="g">g</option>
-                <option value="ml">ml</option>
-                <option value="l">l</option>
+<option value="unit">unit</option>
+
+<option value="slice">slice</option>
+
+<option value="portion">portion</option>
+
+<option value="kg">kg</option>
+
+<option value="g">g</option>
+
+<option value="ml">ml</option>
+
+<option value="l">l</option>
               </select>
               <button
                 onClick={() => removeIngredient(editingId ? setEdit : setNewDish, idx)}
