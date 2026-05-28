@@ -500,44 +500,6 @@ const GoodsInSection = ({ site, goBack, user }) => {
     }
   };
 
-  <div style={card}>
-
-  <div style={sectionHeader}>
-
-    <FaIndustry color="#0891b2" />
-
-    Add new supplier
-
-  </div>
-
-  <div style={row}>
-
-    <input
-
-      type="text"
-
-      placeholder="Supplier name"
-
-      value={newSupplierName}
-
-      onChange={(e) => setNewSupplierName(e.target.value)}
-
-      style={{ ...input, flex: 1, minWidth: 260 }}
-
-    />
-
-    <button onClick={addSupplier} style={primaryBtn}>
-
-      <FaPlus />
-
-      Add supplier
-
-    </button>
-
-  </div>
-
-</div>
-
   return (
     <div style={wrap}>
       <h2 style={title}>
@@ -599,6 +561,44 @@ const GoodsInSection = ({ site, goBack, user }) => {
           />
         </div>
       </div>
+
+      <div style={card}>
+
+  <div style={sectionHeader}>
+
+    <FaIndustry color="#0891b2" />
+
+    Add new supplier
+
+  </div>
+
+  <div style={row}>
+
+    <input
+
+      type="text"
+
+      placeholder="Supplier name"
+
+      value={newSupplierName}
+
+      onChange={(e) => setNewSupplierName(e.target.value)}
+
+      style={{ ...input, flex: 1, minWidth: 260 }}
+
+    />
+
+    <button onClick={addSupplier} style={primaryBtn}>
+
+      <FaPlus />
+
+      Add supplier
+
+    </button>
+
+  </div>
+
+</div>
 
       <div style={card}>
         <div style={sectionHeader}>
