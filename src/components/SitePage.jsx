@@ -387,9 +387,9 @@ const SortableDashboardTile = ({ sec, openSection, editMode, enabled, toggleWidg
           borderRadius: 18,
 padding: isGraph ? 18 : "14px 12px",
 
-height: isGraph ? "auto" : 105,
+minHeight: isGraph ? 420 : 132,
 
-minHeight: isGraph ? 420 : 105,
+height: "100%",
           display: "flex",
           flexDirection: "column",
           alignItems: isGraph ? "stretch" : "center",
@@ -1929,11 +1929,13 @@ helper: `${report.period || "Custom"} · ${(report.metrics || []).length} metric
 
     display: "grid",
 
-gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
 
-    gap: 14,
+gridAutoRows: "minmax(132px, auto)",
 
-    alignItems: "start",
+gap: 18,
+
+alignItems: "stretch",
 
   }}
 
