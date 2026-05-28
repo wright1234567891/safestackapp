@@ -370,6 +370,7 @@ const SortableDashboardTile = ({ sec, openSection, editMode, enabled, toggleWidg
     zIndex: isDragging ? 20 : "auto",
 
     gridColumn: isGraph ? "1 / -1" : "auto",
+        height: isGraph ? "auto" : 118,
 
   }}
 
@@ -387,9 +388,12 @@ const SortableDashboardTile = ({ sec, openSection, editMode, enabled, toggleWidg
           borderRadius: 18,
 padding: isGraph ? 18 : "14px 12px",
 
-minHeight: isGraph ? 420 : 132,
+height: isGraph ? "auto" : 118,
 
-height: "100%",
+minHeight: isGraph ? 420 : 118,
+
+boxSizing: "border-box",
+
           display: "flex",
           flexDirection: "column",
           alignItems: isGraph ? "stretch" : "center",
@@ -1929,13 +1933,13 @@ helper: `${report.period || "Custom"} · ${(report.metrics || []).length} metric
 
     display: "grid",
 
-gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+ridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
 
-gridAutoRows: "minmax(132px, auto)",
+gridAutoRows: "118px",
 
-gap: 18,
+gap: 14,
 
-alignItems: "stretch",
+alignItems: "start",
 
   }}
 
