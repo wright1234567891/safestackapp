@@ -768,18 +768,33 @@ return () => {
     return Math.ceil((d - today) / (1000 * 60 * 60 * 24));
   };
 
-  const stockAlerts = useMemo(() => {
-    return stockBatches.filter((batch) => {
+const stockAlerts = useMemo(() => {
+  return stockBatches
+    .filter((batch) => {
       const status = (batch.status || "active").toString().toLowerCase();
       const remaining = Number(batch.quantityRemaining ?? batch.quantity ?? 0);
 
       if (status === "closed" || remaining <= 0) return false;
+
+      // Missing use-by date must always alert
       if (!batch.useByDate || batch.needsUseByReview === true) return true;
 
       const days = daysUntil(batch.useByDate);
       return days !== null && days <= 3;
+    })
+    .sort((a, b) => {
+      const aMissing = !a.useByDate || a.needsUseByReview === true;
+      const bMissing = !b.useByDate || b.needsUseByReview === true;
+
+      if (aMissing && !bMissing) return -1;
+      if (!aMissing && bMissing) return 1;
+
+      const aDays = daysUntil(a.useByDate) ?? 999;
+      const bDays = daysUntil(b.useByDate) ?? 999;
+
+      return aDays - bDays;
     });
-  }, [stockBatches]);
+}, [stockBatches]);
 
   const stockAlertLabel = (batch) => {
     if (!batch.useByDate || batch.needsUseByReview === true) return "Missing use-by date";
@@ -1703,7 +1718,7 @@ helper: `${report.period || "Custom"} · ${(report.metrics || []).length} metric
                           </div>
                         ))}
 
-                        {stockAlerts.slice(0, 4).map((batch) => {
+                        {stockAlerts.slice(0, 3).map((batch) => {
                           const draftDate = stockUseByDrafts[batch.id] || batch.useByDate || "";
                           const actionQty = stockActionDrafts[batch.id] || "";
                           const remainingQty = Number(batch.quantityRemaining ?? batch.quantity ?? 0);
@@ -1891,7 +1906,7 @@ helper: `${report.period || "Custom"} · ${(report.metrics || []).length} metric
                           </button>
                         )}
 
-                        {(failedTempAlerts.length > 3 || stockAlerts.length > 4) && (
+                        {(failedTempAlerts.length > 3 || stockAlerts.length > 3) && (
                           <div style={{ fontSize: 12, color: "#64748b", textAlign: "center" }}>
                             Showing the first urgent items. Manage stock to review everything.
                           </div>
