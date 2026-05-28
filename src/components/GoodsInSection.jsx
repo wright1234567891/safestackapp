@@ -33,6 +33,7 @@ const GoodsInSection = ({ site, goBack, user }) => {
   const [deliveryRef, setDeliveryRef] = useState("");
   const [deliveryDate, setDeliveryDate] = useState(today);
   const [notes, setNotes] = useState("");
+  const [newSupplierName, setNewSupplierName] = useState("");
 
   const [lines, setLines] = useState([
     {
@@ -301,6 +302,64 @@ const GoodsInSection = ({ site, goBack, user }) => {
     });
   };
 
+  const addSupplier = async () => {
+
+  const cleanName = newSupplierName.trim();
+
+  if (!cleanName) {
+
+    alert("Enter a supplier name.");
+
+    return;
+
+  }
+
+  const exists = suppliers.some(
+
+    (sup) => sup.name?.toLowerCase().trim() === cleanName.toLowerCase()
+
+  );
+
+  if (exists) {
+
+    alert("Supplier already exists.");
+
+    setSupplier(cleanName);
+
+    setNewSupplierName("");
+
+    return;
+
+  }
+
+  try {
+
+    await addDoc(collection(db, "suppliers"), {
+
+      name: cleanName,
+
+      site,
+
+      createdAt: serverTimestamp(),
+
+      createdBy: user?.uid || null,
+
+    });
+
+    setSupplier(cleanName);
+
+    setNewSupplierName("");
+
+  } catch (error) {
+
+    console.error("Error adding supplier:", error);
+
+    alert("Failed to add supplier.");
+
+  }
+
+};
+
   const saveGoodsIn = async () => {
     if (!supplier || !deliveryDate) {
       alert("Please choose supplier and delivery date.");
@@ -440,6 +499,44 @@ const GoodsInSection = ({ site, goBack, user }) => {
       alert("Failed to save goods in.");
     }
   };
+
+  <div style={card}>
+
+  <div style={sectionHeader}>
+
+    <FaIndustry color="#0891b2" />
+
+    Add new supplier
+
+  </div>
+
+  <div style={row}>
+
+    <input
+
+      type="text"
+
+      placeholder="Supplier name"
+
+      value={newSupplierName}
+
+      onChange={(e) => setNewSupplierName(e.target.value)}
+
+      style={{ ...input, flex: 1, minWidth: 260 }}
+
+    />
+
+    <button onClick={addSupplier} style={primaryBtn}>
+
+      <FaPlus />
+
+      Add supplier
+
+    </button>
+
+  </div>
+
+</div>
 
   return (
     <div style={wrap}>

@@ -55,7 +55,6 @@ const StockSection = ({ site, goBack, user }) => {
   const [movementUseByDate, setMovementUseByDate] = useState("");
   const [wasteReason, setWasteReason] = useState("Out of date");
 
-  const [newSupplierName, setNewSupplierName] = useState("");
   const [editBuffer, setEditBuffer] = useState({});
   const [stockSearch, setStockSearch] = useState("");
   const [expandedBatches, setExpandedBatches] = useState({});
@@ -527,23 +526,6 @@ const StockSection = ({ site, goBack, user }) => {
     } catch (error) {
       console.error("Error adding stock item:", error);
       alert("Failed to add stock item.");
-    }
-  };
-
-  const addSupplier = async () => {
-    if (!newSupplierName) return;
-
-    try {
-      await addDoc(collection(db, "suppliers"), {
-        name: newSupplierName,
-        site,
-        createdAt: serverTimestamp(),
-        createdBy: user?.uid || null,
-      });
-      setNewSupplierName("");
-    } catch (error) {
-      console.error("Error adding supplier:", error);
-      alert("Failed to add supplier.");
     }
   };
 
@@ -1748,30 +1730,6 @@ step={selectedItem.measurement === "kg" ? "0.1" : "1"}
           )}
         </div>
       )}
-
-      <div style={card}>
-        <div style={sectionHeader}>
-          <FaIndustry color="#0891b2" />
-          Add Supplier
-        </div>
-
-        <div style={row}>
-          <input
-            type="text"
-            placeholder="Supplier name"
-            value={newSupplierName}
-            onChange={(e) => setNewSupplierName(e.target.value)}
-            style={{ ...input, flex: 1, minWidth: 260 }}
-          />
-
-          <button onClick={addSupplier} style={primaryBtn}>
-            <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-              <FaPlus />
-              Add
-            </span>
-          </button>
-        </div>
-      </div>
 
       <div style={{ display: "flex", justifyContent: "center", marginTop: 18 }}>
         <button onClick={goBack} style={grayBtn}>
