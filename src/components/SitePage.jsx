@@ -23,6 +23,7 @@ import {
   FaGripVertical,
   FaEye,
   FaEyeSlash,
+FaTruckLoading,
 } from "react-icons/fa";
 
 import {
@@ -71,6 +72,7 @@ import FridgeLogSection from "./FridgeLogSection";
 import WasteLogSection from "./WasteLogSection";
 import HowToSection from "./HowToSection";
 import MyRota from "./MyRota";
+import GoodsInSection from "./GoodsInSection";
 
 const sites = [
   { id: "thorganby", label: "Thorganby Site" },
@@ -1010,9 +1012,13 @@ const stockAlerts = useMemo(() => {
     { label: "My Rota", key: "myRota", icon: <FaRegCalendarCheck size={17} />, color: "#111827" },
     { label: "How To", key: "howto", icon: <FaUtensils size={17} />, color: "#111827" },
     { label: "Cleaning", key: "cleaning", icon: <FaBroom size={17} />, color: "#15985f" },
-    { label: "Cooking & Cooling", key: "cooking", icon: <FaDrumstickBite size={17} />, color: "#f59e0b" },
-    { label: "Stock", key: "stock", icon: <FaBoxes size={17} />, color: "#7c3aed" },
-    { label: "Reports", key: "reports", icon: <FaChartBar size={17} />, color: "#9333ea" },
+{ label: "Cooking & Cooling", key: "cooking", icon: <FaDrumstickBite size={17} />, color: "#f59e0b" },
+
+{ label: "Goods In", key: "goodsIn", icon: <FaTruckLoading size={17} />, color: "#2563eb" },
+
+{ label: "Stock", key: "stock", icon: <FaBoxes size={17} />, color: "#7c3aed" },
+
+{ label: "Reports", key: "reports", icon: <FaChartBar size={17} />, color: "#9333ea" },
     { label: "Dishes", key: "dishes", icon: <FaUtensils size={17} />, color: "#0284c7" },
     { label: "Staff Training", key: "training", icon: <FaUserGraduate size={17} />, color: "#0284c7" },
     ...(isManager ? [{ label: "Staff", key: "staff", icon: <FaUserCheck size={17} />, color: "#111827" }] : []),
@@ -1601,9 +1607,15 @@ helper: `${report.period || "Custom"} · ${(report.metrics || []).length} metric
             <CleaningSection goBack={() => setActiveSection(null)} site={selectedSite} user={user} cleaningRecords={cleaningRecords} setCleaningRecords={setCleaningRecords} />
           ) : activeSection === "cooking" ? (
             <CookingSection goBack={() => setActiveSection(null)} cookingEquipment={tempChecks.filter((e) => selectedSiteKeys.includes(e.site) && e.type === "Cooking")} setTempChecks={setTempChecks} site={selectedSite} user={user} />
-          ) : activeSection === "stock" ? (
-            <StockSection goBack={() => setActiveSection(null)} site={selectedSite} user={user} />
-          ) : activeSection === "reports" ? (
+) : activeSection === "goodsIn" ? (
+
+  <GoodsInSection goBack={() => setActiveSection(null)} site={selectedSite} user={user} />
+
+) : activeSection === "stock" ? (
+
+  <StockSection goBack={() => setActiveSection(null)} site={selectedSite} user={user} />
+
+) : activeSection === "reports" ? (
             <Reports goBack={() => setActiveSection(null)} site={selectedSite} user={user} />
           ) : activeSection === "ccp" ? (
             <CCPSection goBack={() => setActiveSection(null)} site={selectedSite} user={user} />
