@@ -358,19 +358,12 @@ const SortableDashboardTile = ({ sec, openSection, editMode, enabled, toggleWidg
 
   return (
 <div
-
   ref={setNodeRef}
-
   style={{
-
     transform: CSS.Transform.toString(transform),
-
     transition,
-
     zIndex: isDragging ? 20 : "auto",
-
-    gridColumn: isGraph ? "1 / -1" : "auto",
-        height: isGraph ? "auto" : 118,
+gridColumn: sec.type === "customReport" ? "1 / -1" : undefined,
 
   }}
 
@@ -1933,13 +1926,13 @@ helper: `${report.period || "Custom"} · ${(report.metrics || []).length} metric
 
     display: "grid",
 
-ridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+    gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
 
-gridAutoRows: "118px",
+    gridAutoRows: "118px",
 
-gap: 14,
+    gap: 14,
 
-alignItems: "start",
+    alignItems: "start",
 
   }}
 
