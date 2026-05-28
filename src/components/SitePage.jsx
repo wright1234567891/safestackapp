@@ -1197,59 +1197,38 @@ helper: `${report.period || "Custom"} · ${(report.metrics || []).length} metric
       if (cancelled) return;
 
 if (snap.exists()) {
-
   const saved = snap.data();
 
   const defaultKeys = defaultDashboardSections.map((s) => s.key);
-
   const savedOrder = saved.order || [];
-
   const savedEnabled = saved.enabledKeys || [];
 
+  const newKeys = defaultKeys.filter((key) => !savedOrder.includes(key));
+
   const mergedConfig = {
-
     ...saved,
-
     order: [
-
       ...savedOrder.filter((key) => defaultKeys.includes(key)),
-
-      ...defaultKeys.filter((key) => !savedOrder.includes(key)),
-
+      ...newKeys,
     ],
-
     enabledKeys: [
-
       ...savedEnabled.filter((key) => defaultKeys.includes(key)),
-
-      ...defaultKeys.filter((key) => !savedEnabled.includes(key)),
-
+      ...newKeys,
     ],
-
   };
 
   setDashboardConfig(mergedConfig);
 
   await setDoc(
-
     dashboardConfigRef,
-
     {
-
       ...mergedConfig,
-
       site: selectedSite,
-
       userId: user?.uid || user?.email || user?.name || "default",
-
       updatedAt: new Date().toISOString(),
-
     },
-
     { merge: true }
-
   );
-
 } else {
         const initialConfig = {
           order: defaultDashboardSections.map((s) => s.key),
