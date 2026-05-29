@@ -73,6 +73,7 @@ import WasteLogSection from "./WasteLogSection";
 import HowToSection from "./HowToSection";
 import MyRota from "./MyRota";
 import GoodsInSection from "./GoodsInSection";
+import AdminSection from "./AdminSection";
 
 const sites = [
   { id: "thorganby", label: "Thorganby Site" },
@@ -1024,7 +1025,13 @@ const stockAlerts = useMemo(() => {
     ...(isManager ? [{ label: "Staff", key: "staff", icon: <FaUserCheck size={17} />, color: "#111827" }] : []),
     { label: "HACCP Dashboard", key: "haccpDashboard", icon: <FaExclamationTriangle size={17} />, color: "#15985f" },
     { label: "CCPs", key: "ccp", icon: <FaExclamationTriangle size={17} />, color: "#dc2626" },
-    { label: "Add Equipment", key: "equipment", icon: <FaTools size={17} />, color: "#111827" },
+{ label: "Add Equipment", key: "equipment", icon: <FaTools size={17} />, color: "#111827" },
+
+...(isManager
+
+  ? [{ label: "Admin", key: "admin", icon: <FaTools size={17} />, color: "#111827" }]
+
+  : []),
   ], [isManager]);
 
   const defaultDashboardSections = useMemo(
@@ -1666,9 +1673,15 @@ const mergedConfig = {
             <StaffTrainingSection goBack={() => setActiveSection(null)} site={selectedSite} user={user} />
           ) : activeSection === "myRota" ? (
             <MyRota goBack={() => setActiveSection(null)} user={user} />
-          ) : activeSection === "staff" ? (
-            <StaffManager goBack={() => setActiveSection(null)} user={user} />
-          ) : (
+) : activeSection === "staff" ? (
+
+  <StaffManager goBack={() => setActiveSection(null)} user={user} />
+
+) : activeSection === "admin" ? (
+
+  <AdminSection goBack={() => setActiveSection(null)} site={selectedSite} user={user} />
+
+) : (
             <>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, flexWrap: "wrap", marginBottom: 22 }}>
                 <div>
