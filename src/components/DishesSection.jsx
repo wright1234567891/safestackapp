@@ -70,6 +70,7 @@ const normaliseAllergens = (maybeObj) => {
 const DishesSection = ({ site, user, goBack }) => {
   const [dishes, setDishes] = useState([]);
   const [stock, setStock] = useState([]);
+  const [measurements, setMeasurements] = useState([]);
 
   const [newDish, setNewDish] = useState({
     name: "",
@@ -103,6 +104,36 @@ shopifyVariantId: "",
     );
     return () => unsub();
   }, [site]);
+
+  useEffect(() => {
+
+  if (!site) return;
+
+  const qMeasurements = query(
+
+    collection(db, "adminOptions"),
+
+    where("site", "==", site),
+
+    where("type", "==", "measurements")
+
+  );
+
+  const unsub = onSnapshot(qMeasurements, (snap) => {
+
+    const rows = snap.docs
+
+      .map((d) => ({ id: d.id, ...d.data() }))
+
+      .sort((a, b) => (a.value || "").localeCompare(b.value || ""));
+
+    setMeasurements(rows);
+
+  });
+
+  return () => unsub();
+
+}, [site]);
 
   const stockMap = useMemo(() => Object.fromEntries(stock.map(s => [s.id, s])), [stock]);
 
@@ -314,19 +345,39 @@ shopifyVariantId: (edit.shopifyVariantId || "").trim(),
                   updateIngredient(editingId ? setEdit : setNewDish, idx, "unit", e.target.value)
                 }
               >
-<option value="unit">unit</option>
+{measurements.length === 0 ? (
 
-<option value="slice">slice</option>
+  <>
 
-<option value="portion">portion</option>
+    <option value="unit">unit</option>
 
-<option value="kg">kg</option>
+    <option value="slice">slice</option>
 
-<option value="g">g</option>
+    <option value="portion">portion</option>
 
-<option value="ml">ml</option>
+    <option value="kg">kg</option>
 
-<option value="l">l</option>
+    <option value="g">g</option>
+
+    <option value="ml">ml</option>
+
+    <option value="l">l</option>
+
+  </>
+
+) : (
+
+  measurements.map((m) => (
+
+    <option key={m.id} value={m.value}>
+
+      {m.value}
+
+    </option>
+
+  ))
+
+)}
               </select>
               <button
                 onClick={() => removeIngredient(editingId ? setEdit : setNewDish, idx)}
