@@ -38,6 +38,11 @@ const StockSection = ({ site, goBack, user }) => {
   const [equipment, setEquipment] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
   const [haccpPoints, setHaccpPoints] = useState([]);
+  const [measurements, setMeasurements] = useState([]);
+
+const [locations, setLocations] = useState([]);
+
+const [wasteReasons, setWasteReasons] = useState([]);
 
   const [newItemName, setNewItemName] = useState("");
   const [newItemQty, setNewItemQty] = useState(0);
@@ -277,6 +282,22 @@ const StockSection = ({ site, goBack, user }) => {
     value: ccp.id,
     label: ccp.name,
   }));
+
+  useEffect(() => {
+  if (!site) return;
+
+  const qOptions = query(collection(db, "adminOptions"), where("site", "==", site));
+
+  const unsub = onSnapshot(qOptions, (snapshot) => {
+    const rows = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
+
+    setMeasurements(rows.filter((r) => r.type === "measurements"));
+    setLocations(rows.filter((r) => r.type === "locations"));
+    setWasteReasons(rows.filter((r) => r.type === "wasteReasons"));
+  });
+
+  return () => unsub();
+}, [site]);
 
   const normaliseStockName = (name) =>
     (name || "").toString().trim().toLowerCase().replace(/\s+/g, " ");
@@ -1059,13 +1080,33 @@ const StockSection = ({ site, goBack, user }) => {
                             }
                             style={smallSelect}
                           >
-<option value="unit">Units</option>
+{measurements.length === 0 ? (
 
-<option value="slice">Slices</option>
+  <>
 
-<option value="portion">Portions</option>
+    <option value="unit">Units</option>
 
-<option value="kg">Kilograms</option>
+    <option value="slice">Slices</option>
+
+    <option value="portion">Portions</option>
+
+    <option value="kg">Kilograms</option>
+
+  </>
+
+) : (
+
+  measurements.map((m) => (
+
+    <option key={m.id} value={m.value}>
+
+      {m.value}
+
+    </option>
+
+  ))
+
+)}
                           </select>
                         </td>
 
@@ -1094,12 +1135,37 @@ const StockSection = ({ site, goBack, user }) => {
                             }
                             style={{ ...smallSelect, minWidth: 170 }}
                           >
-                            <option value="Ambient">Ambient</option>
-                            {equipment.map((eq) => (
-                              <option key={eq.id} value={eq.name || eq.id}>
-                                {eq.name || eq.type}
-                              </option>
-                            ))}
+{locations.length === 0 ? (
+
+  <>
+
+    <option value="Ambient">Ambient</option>
+
+    {equipment.map((eq) => (
+
+      <option key={eq.id} value={eq.name || eq.id}>
+
+        {eq.name || eq.type}
+
+      </option>
+
+    ))}
+
+  </>
+
+) : (
+
+  locations.map((loc) => (
+
+    <option key={loc.id} value={loc.value}>
+
+      {loc.value}
+
+    </option>
+
+  ))
+
+)}
                           </select>
                         </td>
 
@@ -1200,13 +1266,20 @@ const StockSection = ({ site, goBack, user }) => {
               onChange={(e) => setNewMeasurement(e.target.value)}
               style={selectInput}
             >
-<option value="unit">Units</option>
-
-<option value="slice">Slices</option>
-
-<option value="portion">Portions</option>
-
-<option value="kg">Kilograms</option>
+{measurements.length === 0 ? (
+  <>
+    <option value="unit">Units</option>
+    <option value="slice">Slices</option>
+    <option value="portion">Portions</option>
+    <option value="kg">Kilograms</option>
+  </>
+) : (
+  measurements.map((m) => (
+    <option key={m.id} value={m.value}>
+      {m.value}
+    </option>
+  ))
+)}
             </select>
           </div>
 
@@ -1373,13 +1446,33 @@ const StockSection = ({ site, goBack, user }) => {
                     onChange={(e) => handleEdit(item.id, "measurement", e.target.value)}
                     style={smallSelect}
                   >
-<option value="unit">Units</option>
+{measurements.length === 0 ? (
 
-<option value="slice">Slices</option>
+  <>
 
-<option value="portion">Portions</option>
+    <option value="unit">Units</option>
 
-<option value="kg">Kilograms</option>
+    <option value="slice">Slices</option>
+
+    <option value="portion">Portions</option>
+
+    <option value="kg">Kilograms</option>
+
+  </>
+
+) : (
+
+  measurements.map((m) => (
+
+    <option key={m.id} value={m.value}>
+
+      {m.value}
+
+    </option>
+
+  ))
+
+)}
                   </select>
 
                   <select
@@ -1387,12 +1480,57 @@ const StockSection = ({ site, goBack, user }) => {
                     onChange={(e) => handleEdit(item.id, "location", e.target.value)}
                     style={{ ...smallSelect, minWidth: 160 }}
                   >
-                    <option value="Ambient">Ambient</option>
-                    {equipment.map((eq) => (
-                      <option key={eq.id} value={eq.name || eq.id}>
-                        {eq.name || eq.type}
-                      </option>
-                    ))}
+{locations.length === 0 ? (
+
+  <>
+
+{locations.length === 0 ? (
+
+  <>
+
+    <option value="Ambient">Ambient</option>
+
+    {equipment.map((eq) => (
+
+      <option key={eq.id} value={eq.name || eq.id}>
+
+        {eq.name || eq.type}
+
+      </option>
+
+    ))}
+
+  </>
+
+) : (
+
+  locations.map((loc) => (
+
+    <option key={loc.id} value={loc.value}>
+
+      {loc.value}
+
+    </option>
+
+  ))
+
+)}
+
+  </>
+
+) : (
+
+  locations.map((loc) => (
+
+    <option key={loc.id} value={loc.value}>
+
+      {loc.value}
+
+    </option>
+
+  ))
+
+)}
                   </select>
 
                   <select
@@ -1672,14 +1810,41 @@ step={selectedItem.measurement === "kg" ? "0.1" : "1"}
                   onChange={(e) => setWasteReason(e.target.value)}
                   style={input}
                 >
-                  <option value="Out of date">Out of date</option>
-                  <option value="Spoiled">Spoiled</option>
-                  <option value="Damaged">Damaged</option>
-                  <option value="Overproduction">Overproduction</option>
-                  <option value="Dropped/spillage">Dropped/spillage</option>
-                  <option value="Temperature issue">Temperature issue</option>
-                  <option value="Customer return">Customer return</option>
-                  <option value="Other">Other</option>
+{wasteReasons.length === 0 ? (
+
+  <>
+
+    <option value="Out of date">Out of date</option>
+
+    <option value="Spoiled">Spoiled</option>
+
+    <option value="Damaged">Damaged</option>
+
+    <option value="Overproduction">Overproduction</option>
+
+    <option value="Dropped/spillage">Dropped/spillage</option>
+
+    <option value="Temperature issue">Temperature issue</option>
+
+    <option value="Customer return">Customer return</option>
+
+    <option value="Other">Other</option>
+
+  </>
+
+) : (
+
+  wasteReasons.map((reason) => (
+
+    <option key={reason.id} value={reason.value}>
+
+      {reason.value}
+
+    </option>
+
+  ))
+
+)}
                 </select>
               </div>
             )}
