@@ -832,37 +832,44 @@ const stockAlerts = useMemo(() => {
     return `Use-by in ${days} days`;
   };
 
-  const failedTempAlerts = useMemo(() => {
-    const todayStr = new Date().toLocaleDateString();
+const failedTempAlerts = useMemo(() => {
+  const todayStr = new Date().toLocaleDateString();
 
-    return equipment.flatMap((eq) => {
-      if (eq.type !== "Fridge" && eq.type !== "Freezer") return [];
-
+  return equipment
+    .filter((eq) => eq.type === "Fridge" || eq.type === "Freezer")
+    .map((eq) => {
       const recs = Array.isArray(eq.records) ? eq.records : [];
 
-      return recs
-        .filter((r) => r?.date === todayStr)
-        .map((r, index) => {
-          const temp = Number(r?.temp);
+      const todaysRecords = recs.filter((r) => r?.date === todayStr);
 
-          const failed =
-            eq.type === "Fridge"
-              ? !Number.isNaN(temp) && (temp < TEMP_LIMITS.Fridge.min || temp > TEMP_LIMITS.Fridge.max)
-              : !Number.isNaN(temp) && temp > TEMP_LIMITS.Freezer.max;
+      if (!todaysRecords.length) return null;
 
-          if (!failed) return null;
+      const latest = todaysRecords[todaysRecords.length - 1];
 
-          return {
-            id: `${eq.id}-${r.date}-${index}`,
-            equipmentName: eq.name || eq.type || "Equipment",
-            equipmentType: eq.type,
-            temp,
-            corrective: r.corrective || r.correctiveAction || "Corrective action needed",
-          };
-        })
-        .filter(Boolean);
-    });
-  }, [equipment]);
+      const temp = Number(latest?.temp);
+
+      if (Number.isNaN(temp)) return null;
+
+      const failed =
+        eq.type === "Fridge"
+          ? temp < TEMP_LIMITS.Fridge.min || temp > TEMP_LIMITS.Fridge.max
+          : temp > TEMP_LIMITS.Freezer.max;
+
+      if (!failed) return null;
+
+      return {
+        id: `${eq.id}-${latest.date}`,
+        equipmentName: eq.name || eq.type || "Equipment",
+        equipmentType: eq.type,
+        temp,
+        corrective:
+          latest.corrective ||
+          latest.correctiveAction ||
+          "Corrective action needed",
+      };
+    })
+    .filter(Boolean);
+}, [equipment]);
 
   const updateStockBatchUseBy = async (batchId, useByDate) => {
     if (!useByDate) {
