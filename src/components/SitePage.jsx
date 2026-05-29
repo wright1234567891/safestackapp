@@ -1205,17 +1205,25 @@ if (snap.exists()) {
 
   const newKeys = defaultKeys.filter((key) => !savedOrder.includes(key));
 
-  const mergedConfig = {
-    ...saved,
-    order: [
-      ...savedOrder.filter((key) => defaultKeys.includes(key)),
-      ...newKeys,
-    ],
-    enabledKeys: [
-      ...savedEnabled.filter((key) => defaultKeys.includes(key)),
-      ...newKeys,
-    ],
-  };
+const mergedConfig = {
+
+  ...saved,
+
+  order: [
+
+    ...savedOrder.filter((key) => defaultKeys.includes(key)),
+
+    ...newKeys,
+
+  ],
+
+  enabledKeys: Array.isArray(saved.enabledKeys)
+
+    ? saved.enabledKeys.filter((key) => defaultKeys.includes(key))
+
+    : defaultKeys,
+
+};
 
   setDashboardConfig(mergedConfig);
 
