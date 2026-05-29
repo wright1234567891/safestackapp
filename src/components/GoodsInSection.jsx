@@ -29,6 +29,11 @@ const GoodsInSection = ({ site, goBack, user }) => {
   const [equipment, setEquipment] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
   const [goodsInRecords, setGoodsInRecords] = useState([]);
+  const [measurements, setMeasurements] = useState([]);
+
+const [locations, setLocations] = useState([]);
+
+const [deliveryStatuses, setDeliveryStatuses] = useState([]);
 
   const [supplier, setSupplier] = useState("");
   const [deliveryRef, setDeliveryRef] = useState("");
@@ -184,6 +189,39 @@ const GoodsInSection = ({ site, goBack, user }) => {
         const bTime = b.createdAt?.toMillis?.() || 0;
         return bTime - aTime;
       });
+
+      useEffect(() => {
+  if (!site) return;
+
+  const qOptions = query(
+    collection(db, "adminOptions"),
+    where("site", "==", site)
+  );
+
+  const unsub = onSnapshot(qOptions, (snapshot) => {
+    const rows = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
+
+    setMeasurements(
+      rows
+        .filter((r) => r.type === "measurements")
+        .sort((a, b) => (a.value || "").localeCompare(b.value || ""))
+    );
+
+    setLocations(
+      rows
+        .filter((r) => r.type === "locations")
+        .sort((a, b) => (a.value || "").localeCompare(b.value || ""))
+    );
+
+    setDeliveryStatuses(
+      rows
+        .filter((r) => r.type === "deliveryStatuses")
+        .sort((a, b) => (a.value || "").localeCompare(b.value || ""))
+    );
+  });
+
+  return () => unsub();
+}, [site]);
 
     setGoodsInRecords(rows);
   });
@@ -406,7 +444,7 @@ const GoodsInSection = ({ site, goBack, user }) => {
         deliveryDate,
         notes: notes || null,
         lineCount: validLines.length,
-        status: "posted-to-stock",
+        status: deliveryStatuses[0]?.value || "posted-to-stock",
         createdAt: serverTimestamp(),
         createdBy: user?.name || user?.displayName || user?.email || "Unknown",
         createdByUid: user?.uid || user?.id || null,
@@ -699,10 +737,33 @@ const GoodsInSection = ({ site, goBack, user }) => {
                     style={smallInput}
                     disabled={line.mode === "existing" && !!line.stockItemId}
                   >
-                    <option value="unit">Units</option>
-                    <option value="slice">Slices</option>
-                    <option value="portion">Portions</option>
-                    <option value="kg">Kilograms</option>
+{measurements.length === 0 ? (
+
+  <>
+
+    <option value="unit">Units</option>
+
+    <option value="slice">Slices</option>
+
+    <option value="portion">Portions</option>
+
+    <option value="kg">Kilograms</option>
+
+  </>
+
+) : (
+
+  measurements.map((m) => (
+
+    <option key={m.id} value={m.value}>
+
+      {m.value}
+
+    </option>
+
+  ))
+
+)}
                   </select>
                 </div>
 
@@ -714,12 +775,37 @@ const GoodsInSection = ({ site, goBack, user }) => {
                     style={{ ...smallInput, minWidth: 160 }}
                     disabled={line.mode === "existing" && !!line.stockItemId}
                   >
-                    <option value="Ambient">Ambient</option>
-                    {equipment.map((eq) => (
-                      <option key={eq.id} value={eq.name || eq.id}>
-                        {eq.name || eq.type}
-                      </option>
-                    ))}
+{locations.length === 0 ? (
+
+  <>
+
+    <option value="Ambient">Ambient</option>
+
+    {equipment.map((eq) => (
+
+      <option key={eq.id} value={eq.name || eq.id}>
+
+        {eq.name || eq.type}
+
+      </option>
+
+    ))}
+
+  </>
+
+) : (
+
+  locations.map((loc) => (
+
+    <option key={loc.id} value={loc.value}>
+
+      {loc.value}
+
+    </option>
+
+  ))
+
+)}
                   </select>
                 </div>
 
