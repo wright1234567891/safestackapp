@@ -34,6 +34,7 @@ const GoodsInSection = ({ site, goBack, user }) => {
 const [locations, setLocations] = useState([]);
 
 const [deliveryStatuses, setDeliveryStatuses] = useState([]);
+const [goodsInFilter, setGoodsInFilter] = useState("30");
 
   const [supplier, setSupplier] = useState("");
   const [deliveryRef, setDeliveryRef] = useState("");
@@ -176,7 +177,7 @@ const [deliveryStatuses, setDeliveryStatuses] = useState([]);
     return () => unsub();
   }, [site]);
 
-  useEffect(() => {
+useEffect(() => {
   if (!site) return;
 
   const q = query(collection(db, "goodsIn"), where("site", "==", site));
@@ -190,7 +191,13 @@ const [deliveryStatuses, setDeliveryStatuses] = useState([]);
         return bTime - aTime;
       });
 
-      useEffect(() => {
+    setGoodsInRecords(rows);
+  });
+
+  return () => unsub();
+}, [site]);
+
+useEffect(() => {
   if (!site) return;
 
   const qOptions = query(
@@ -223,11 +230,20 @@ const [deliveryStatuses, setDeliveryStatuses] = useState([]);
   return () => unsub();
 }, [site]);
 
-    setGoodsInRecords(rows);
-  });
+const filteredGoodsInRecords = goodsInRecords.filter((record) => {
+  if (goodsInFilter === "all") return true;
 
-  return () => unsub();
-}, [site]);
+  const days = Number(goodsInFilter);
+  const recordDate = record.deliveryDate ? new Date(record.deliveryDate) : null;
+
+  if (!recordDate || Number.isNaN(recordDate.getTime())) return true;
+
+  const from = new Date();
+  from.setDate(from.getDate() - days);
+  from.setHours(0, 0, 0, 0);
+
+  return recordDate >= from;
+});
 
   const stockMap = useMemo(
     () => Object.fromEntries(stockItems.map((item) => [item.id, item])),
@@ -879,7 +895,39 @@ const [deliveryStatuses, setDeliveryStatuses] = useState([]);
 
         </div>
 
-        {goodsInRecords.length === 0 ? (
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+
+  {[
+
+    { label: "7 days", value: "7" },
+
+    { label: "30 days", value: "30" },
+
+    { label: "90 days", value: "90" },
+
+    { label: "All", value: "all" },
+
+  ].map((option) => (
+
+    <button
+
+      key={option.value}
+
+      onClick={() => setGoodsInFilter(option.value)}
+
+      style={goodsInFilter === option.value ? blueBtn : grayBtn}
+
+    >
+
+      {option.label}
+
+    </button>
+
+  ))}
+
+</div>
+
+        {filteredGoodsInRecords.length === 0 ? (
 
           <div style={subtle}>No goods in records yet.</div>
 
@@ -887,7 +935,7 @@ const [deliveryStatuses, setDeliveryStatuses] = useState([]);
 
           <div style={{ display: "grid", gap: 10 }}>
 
-            {goodsInRecords.slice(0, 20).map((record) => (
+            {filteredGoodsInRecords.slice(0, 100).map((record) => (
 
               <div
 
