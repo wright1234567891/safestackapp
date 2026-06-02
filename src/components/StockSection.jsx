@@ -1092,6 +1092,8 @@ const [wasteReasons, setWasteReasons] = useState([]);
 
     <option value="kg">Kilograms</option>
 
+    <option value="ml">Milliliter</option>
+
   </>
 
 ) : (
@@ -1272,6 +1274,7 @@ const [wasteReasons, setWasteReasons] = useState([]);
     <option value="slice">Slices</option>
     <option value="portion">Portions</option>
     <option value="kg">Kilograms</option>
+    <option value="ml">Milliliter</option>
   </>
 ) : (
   measurements.map((m) => (
@@ -1457,6 +1460,8 @@ const [wasteReasons, setWasteReasons] = useState([]);
     <option value="portion">Portions</option>
 
     <option value="kg">Kilograms</option>
+
+    <option value="ml">Milliliter</option>
 
   </>
 

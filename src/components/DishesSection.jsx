@@ -355,13 +355,14 @@ shopifyVariantId: (edit.shopifyVariantId || "").trim(),
 
     <option value="portion">portion</option>
 
-    <option value="kg">kg</option>
+    <option value="kg">Kilograms</option>
 
-    <option value="g">g</option>
+    <option value="g">grams</option>
 
-    <option value="ml">ml</option>
+    <option value="ml">Milliliter</option>
 
-    <option value="l">l</option>
+
+    
 
   </>
 

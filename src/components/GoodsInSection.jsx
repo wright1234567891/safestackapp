@@ -765,6 +765,8 @@ const filteredGoodsInRecords = goodsInRecords.filter((record) => {
 
     <option value="kg">Kilograms</option>
 
+     <option value="ml">Milliliter</option>
+
   </>
 
 ) : (
