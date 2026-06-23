@@ -17,6 +17,52 @@ exports.shopifyOrderWebhook = functions.https.onRequest(async (req, res) => {
       const variantId = String(item.variant_id || "");
       const soldQty = Number(item.quantity || 1);
 
+      const pickupProperty = (item.properties || []).find(
+
+  (p) => p.name === "Pickup" || p.name === "pickup"
+
+);
+
+if (pickupProperty && pickupProperty.value) {
+
+  await db.collection("preOrders").add({
+
+    shopifyOrderId: order.id || null,
+
+    orderName: order.name || "",
+
+    customerName: order.customer
+
+      ? `${order.customer.first_name || ""} ${order.customer.last_name || ""}`.trim()
+
+      : "",
+
+    productTitle: item.title || "",
+
+    quantity: soldQty,
+
+    pickup: pickupProperty.value,
+
+    status: "new",
+
+    source: "shopify-preorder",
+
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+
+  });
+
+  console.log("Pre-order saved:", {
+
+    product: item.title,
+
+    quantity: soldQty,
+
+    pickup: pickupProperty.value,
+
+  });
+
+}
+
       console.log("Line item:", {
         title: item.title,
         product_id: productId,
