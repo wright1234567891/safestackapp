@@ -24,6 +24,9 @@ import {
   FaEye,
   FaEyeSlash,
 FaTruckLoading,
+
+FaClock,
+
 } from "react-icons/fa";
 
 import {
@@ -74,6 +77,7 @@ import HowToSection from "./HowToSection";
 import MyRota from "./MyRota";
 import GoodsInSection from "./GoodsInSection";
 import AdminSection from "./AdminSection";
+import PreOrdersSection from "./PreOrdersSection";
 
 const sites = [
   { id: "thorganby", label: "Thorganby Site" },
@@ -1024,6 +1028,8 @@ const failedTempAlerts = useMemo(() => {
 
 { label: "Goods In", key: "goodsIn", icon: <FaTruckLoading size={17} />, color: "#2563eb" },
 
+{ label: "Pre Orders", key: "preOrders", icon: <FaClock size={17} />, color: "#15803d" },
+
 { label: "Stock", key: "stock", icon: <FaBoxes size={17} />, color: "#7c3aed" },
 
 { label: "Reports", key: "reports", icon: <FaChartBar size={17} />, color: "#9333ea" },
@@ -1663,6 +1669,10 @@ const mergedConfig = {
 ) : activeSection === "goodsIn" ? (
 
   <GoodsInSection goBack={() => setActiveSection(null)} site={selectedSite} user={user} />
+
+) : activeSection === "preOrders" ? (
+
+  <PreOrdersSection goBack={() => setActiveSection(null)} site={selectedSite} user={user} />
 
 ) : activeSection === "stock" ? (
 
