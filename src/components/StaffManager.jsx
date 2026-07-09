@@ -352,6 +352,25 @@ export default function StaffManager({ goBack }) {
     return map;
   }, [activeStaff, days, shifts]);
 
+  const getApprovedHolidayForStaffDay = (staffId, d) => {
+  const day = new Date(d);
+  day.setHours(12, 0, 0, 0);
+
+  return holidayRequests.find((h) => {
+    if (String(h.status || "").toLowerCase() !== "approved") return false;
+    if (String(h.staffId || "") !== String(staffId || "")) return false;
+
+    const start = h.startDate?.toDate ? h.startDate.toDate() : null;
+    const end = h.endDate?.toDate ? h.endDate.toDate() : null;
+    if (!start || !end) return false;
+
+    start.setHours(0, 0, 0, 0);
+    end.setHours(23, 59, 59, 999);
+
+    return day >= start && day <= end;
+  });
+};
+
   const openAddShift = (d) => {
     setShiftDate(isoDate(d));
     const firstActive = staff.find((s) => s.active !== false);
@@ -366,17 +385,24 @@ export default function StaffManager({ goBack }) {
     setShowAddShift(true);
   };
 
-  const openAddShiftForStaffDay = (staffId, d) => {
-    setShiftDate(isoDate(d));
-    setShiftStaffId(staffId);
-    const st = staffById.get(staffId);
-    setShiftRole(st?.role || "Staff");
-    setShiftStart("09:00");
-    setShiftEnd("15:00");
-    setShiftNotes("");
-    setShiftLocation("");
-    setShowAddShift(true);
-  };
+const openAddShiftForStaffDay = (staffId, d) => {
+  const holiday = getApprovedHolidayForStaffDay(staffId, d);
+
+  if (holiday) {
+    alert("This staff member has approved holiday on this date.");
+    return;
+  }
+
+  setShiftDate(isoDate(d));
+  setShiftStaffId(staffId);
+  const st = staffById.get(staffId);
+  setShiftRole(st?.role || "Staff");
+  setShiftStart("09:00");
+  setShiftEnd("15:00");
+  setShiftNotes("");
+  setShiftLocation("");
+  setShowAddShift(true);
+};
 
   const canSaveShift = useMemo(() => {
     if (busy) return false;
@@ -1304,25 +1330,51 @@ export default function StaffManager({ goBack }) {
                           </div>
 
                           {days.map((d) => {
-                            const dayKey = isoDate(d);
-                            const cellShifts = inner?.get(dayKey) || [];
+const dayKey = isoDate(d);
+
+const cellShifts = inner?.get(dayKey) || [];
+
+const approvedHoliday = getApprovedHolidayForStaffDay(st.id, d);
                             return (
                               <div key={dayKey} style={{ padding: 10, borderLeft: "1px solid #e5e7eb", minHeight: 64 }}>
-                                <button
-                                  onClick={() => openAddShiftForStaffDay(st.id, d)}
-                                  style={{
-                                    padding: "6px 8px",
-                                    borderRadius: 10,
-                                    border: "1px solid #e5e7eb",
-                                    background: "#fff",
-                                    cursor: "pointer",
-                                    fontWeight: 900,
-                                    fontSize: 12,
-                                  }}
-                                  title="Add shift for this person on this day"
-                                >
-                                  + Add
-                                </button>
+<button
+  disabled={!!approvedHoliday}
+  onClick={() => openAddShiftForStaffDay(st.id, d)}
+  style={{
+    padding: "6px 8px",
+    borderRadius: 10,
+    border: "1px solid #e5e7eb",
+    background: approvedHoliday ? "#dcfce7" : "#fff",
+    color: approvedHoliday ? "#166534" : "#111",
+    cursor: approvedHoliday ? "not-allowed" : "pointer",
+    fontWeight: 900,
+    fontSize: 12,
+  }}
+  title={
+    approvedHoliday
+      ? "Approved holiday - cannot add shift"
+      : "Add shift for this person on this day"
+  }
+>
+  {approvedHoliday ? "Holiday" : "+ Add"}
+</button>
+
+{approvedHoliday ? (
+  <div
+    style={{
+      marginTop: 8,
+      border: "1px solid #86efac",
+      borderRadius: 10,
+      padding: 8,
+      background: "#f0fdf4",
+      color: "#166534",
+      fontWeight: 900,
+      fontSize: 12,
+    }}
+  >
+    Approved holiday
+  </div>
+) : null}
 
                                 {cellShifts.length === 0 ? null : (
                                   <div style={{ marginTop: 8, display: "grid", gap: 8 }}>

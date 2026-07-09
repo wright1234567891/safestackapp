@@ -101,6 +101,7 @@ export default function MyRota({ user, goBack }) {
   const [holidayEnd, setHolidayEnd] = useState(() => toDateInput(new Date()));
   const [holidayReason, setHolidayReason] = useState("");
   const [holidayBusy, setHolidayBusy] = useState(false);
+  const [holidayRequests, setHolidayRequests] = useState([]);
 
   const weekEnd = useMemo(() => addDays(weekStart, 7), [weekStart]);
 
@@ -160,6 +161,39 @@ export default function MyRota({ user, goBack }) {
 
     return () => unsub();
   }, [hasIdentity, staffId, staffEmail, staffName, weekStart, weekEnd]);
+
+  useEffect(() => {
+  if (!hasIdentity) {
+    setHolidayRequests([]);
+    return;
+  }
+
+  const qRef = query(
+    collection(db, HOLIDAY_COLLECTION),
+    where("status", "==", "Approved"),
+    orderBy("startDate", "asc")
+  );
+
+  const unsub = onSnapshot(qRef, (snap) => {
+    const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+
+    const mine = rows.filter((r) => {
+      const requestStaffId = String(r.staffId || "").trim();
+      const requestEmail = String(r.staffEmail || "").trim().toLowerCase();
+      const requestName = String(r.staffName || "").trim().toLowerCase();
+
+      return (
+        (staffId && requestStaffId === staffId) ||
+        (staffEmail && requestEmail === staffEmail) ||
+        (staffName && requestName === staffName)
+      );
+    });
+
+    setHolidayRequests(mine);
+  });
+
+  return () => unsub();
+}, [hasIdentity, staffId, staffEmail, staffName]);
 
   const visibleShifts = useMemo(() => {
     if (!onlyPublished) return shifts;
@@ -374,6 +408,21 @@ export default function MyRota({ user, goBack }) {
           const key = fmtDay(d);
           const dayShifts = shiftsByDay.get(key) || [];
 
+          const dayDate = new Date(d);
+dayDate.setHours(12, 0, 0, 0);
+
+const dayHolidays = holidayRequests.filter((h) => {
+  const start = h.startDate?.toDate();
+  const end = h.endDate?.toDate();
+
+  if (!start || !end) return false;
+
+  start.setHours(0, 0, 0, 0);
+  end.setHours(23, 59, 59, 999);
+
+  return dayDate >= start && dayDate <= end;
+});
+
           return (
             <div
               key={key}
@@ -401,6 +450,27 @@ export default function MyRota({ user, goBack }) {
                   {dayShifts.length} shift(s)
                 </span>
               </div>
+
+              {dayHolidays.length > 0 && (
+  <div style={{ marginTop: 10 }}>
+    {dayHolidays.map((h) => (
+      <div
+        key={h.id}
+        style={{
+          background: "#dcfce7",
+          color: "#166534",
+          border: "1px solid #86efac",
+          borderRadius: 12,
+          padding: 12,
+          marginBottom: 10,
+          fontWeight: 800,
+        }}
+      >
+        🌴 On approved holiday
+      </div>
+    ))}
+  </div>
+)}
 
               {dayShifts.length === 0 ? (
                 <div style={{ marginTop: 10, fontSize: 13, color: "#6b7280" }}>
