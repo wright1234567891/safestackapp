@@ -1391,48 +1391,32 @@ export default function StaffManager({ goBack }) {
                 </div>
               </div>
             ) : null}
-<div style={{ marginTop: 30 }}>
-  <h3 style={{ marginBottom: 12 }}>Holiday Requests</h3>
+<div style={{ marginTop: 30, border: "1px solid #e5e7eb", borderRadius: 14, padding: 18 }}>
+  <h3 style={{ margin: "0 0 12px 0" }}>Holiday Requests</h3>
 
   {holidayRequests.length === 0 ? (
-    <div style={{ color: "#6b7280" }}>
-      No holiday requests.
-    </div>
+    <div style={{ color: "#6b7280", fontSize: 14 }}>No holiday requests.</div>
   ) : (
     holidayRequests.map((r) => (
-      <div
-        key={r.id}
-        style={{
-          border: "1px solid #e5e7eb",
-          borderRadius: 12,
-          padding: 14,
-          marginBottom: 10,
-          background: "#fff",
-        }}
-      >
-        <div style={{ fontWeight: 800 }}>
-          {r.staffName}
+      <div key={r.id} style={{ border: "1px solid #e5e7eb", borderRadius: 12, padding: 14, marginBottom: 10 }}>
+        <div style={{ fontWeight: 800 }}>{r.staffName || "Unknown staff"}</div>
+
+        <div style={{ marginTop: 6 }}>
+          {r.startDate?.toDate ? fmtDateLong(r.startDate.toDate()) : ""} →{" "}
+          {r.endDate?.toDate ? fmtDateLong(r.endDate.toDate()) : ""}
         </div>
 
         <div style={{ marginTop: 6 }}>
-{r.startDate?.toDate ? fmtDateLong(r.startDate.toDate()) : ""} →{" "}
-{r.endDate?.toDate ? fmtDateLong(r.endDate.toDate()) : ""}
+          Status: <strong>{r.status || "pending"}</strong>
         </div>
 
-        <div style={{ marginTop: 6 }}>
-          Status: <strong>{r.status || "Pending"}</strong>
-        </div>
+        {r.reason ? <div style={{ marginTop: 6 }}>{r.reason}</div> : null}
 
-        {r.reason && (
-          <div style={{ marginTop: 6 }}>
-            {r.reason}
-          </div>
-        )}
-
-        {(r.status === "Pending" || !r.status) && (
+        {String(r.status || "pending").toLowerCase() === "pending" && (
           <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
             <button
-              onClick={() => updateHolidayRequest(r.id, "Approved")}
+              onClick={() => updateHolidayRequest(r.id, "approved")}
+              disabled={busy}
               style={{
                 padding: "8px 14px",
                 borderRadius: 10,
@@ -1440,14 +1424,15 @@ export default function StaffManager({ goBack }) {
                 background: "#16a34a",
                 color: "#fff",
                 fontWeight: 700,
-                cursor: "pointer",
+                cursor: busy ? "not-allowed" : "pointer",
               }}
             >
               Approve
             </button>
 
             <button
-              onClick={() => updateHolidayRequest(r.id, "Rejected")}
+              onClick={() => updateHolidayRequest(r.id, "rejected")}
+              disabled={busy}
               style={{
                 padding: "8px 14px",
                 borderRadius: 10,
@@ -1455,7 +1440,7 @@ export default function StaffManager({ goBack }) {
                 background: "#dc2626",
                 color: "#fff",
                 fontWeight: 700,
-                cursor: "pointer",
+                cursor: busy ? "not-allowed" : "pointer",
               }}
             >
               Reject
