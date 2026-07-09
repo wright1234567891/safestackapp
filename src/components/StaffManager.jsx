@@ -691,6 +691,22 @@ const openAddShiftForStaffDay = (staffId, d) => {
   }
 };
 
+const deleteHolidayRequest = async (requestId) => {
+  if (!requestId) return;
+  if (!confirm("Delete this holiday request?")) return;
+
+  setBusy(true);
+
+  try {
+    await deleteDoc(doc(db, HOLIDAY_COLLECTION, requestId));
+  } catch (e) {
+    console.error("Holiday delete failed:", e);
+    alert("Couldn't delete holiday request.");
+  } finally {
+    setBusy(false);
+  }
+};
+
   const toggleBtn = (active) => ({
     padding: "8px 10px",
     borderRadius: 10,
@@ -1464,62 +1480,44 @@ const approvedHoliday = getApprovedHolidayForStaffDay(st.id, d);
 >
 <h3 style={{ margin: "0 0 12px 0", color: "#111827" }}>Holiday Requests</h3>
 
-  {holidayRequests.length === 0 ? (
-    <div style={{ color: "#6b7280", fontSize: 14 }}>No holiday requests.</div>
-  ) : (
-    holidayRequests.map((r) => (
-      <div key={r.id} style={{ border: "1px solid #e5e7eb", borderRadius: 12, padding: 14, marginBottom: 10 }}>
-        <div style={{ fontWeight: 800 }}>{r.staffName || "Unknown staff"}</div>
+{holidayRequests.length === 0 ? (
+  <div style={{ color: "#6b7280", fontSize: 14 }}>No holiday requests.</div>
+) : (
+  holidayRequests.map((r) => (
+    <div key={r.id} style={{ border: "1px solid #e5e7eb", borderRadius: 12, padding: 14, marginBottom: 10 }}>
+      <div style={{ fontWeight: 800 }}>{r.staffName || "Unknown staff"}</div>
 
-        <div style={{ marginTop: 6 }}>
-          {r.startDate?.toDate ? fmtDateLong(r.startDate.toDate()) : ""} →{" "}
-          {r.endDate?.toDate ? fmtDateLong(r.endDate.toDate()) : ""}
-        </div>
+      <div style={{ marginTop: 6 }}>
+        {r.startDate?.toDate ? fmtDateLong(r.startDate.toDate()) : ""} →{" "}
+        {r.endDate?.toDate ? fmtDateLong(r.endDate.toDate()) : ""}
+      </div>
 
-        <div style={{ marginTop: 6 }}>
-          Status: <strong>{r.status || "pending"}</strong>
-        </div>
+      <div style={{ marginTop: 6 }}>
+        Status: <strong>{r.status || "pending"}</strong>
+      </div>
 
-        {r.reason ? <div style={{ marginTop: 6 }}>{r.reason}</div> : null}
+      {r.reason ? <div style={{ marginTop: 6 }}>{r.reason}</div> : null}
 
-        {String(r.status || "pending").toLowerCase() === "pending" && (
-          <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
-            <button
-              onClick={() => updateHolidayRequest(r.id, "approved")}
-              disabled={busy}
-              style={{
-                padding: "8px 14px",
-                borderRadius: 10,
-                border: "none",
-                background: "#16a34a",
-                color: "#fff",
-                fontWeight: 700,
-                cursor: busy ? "not-allowed" : "pointer",
-              }}
-            >
+      <div style={{ display: "flex", gap: 10, marginTop: 12, flexWrap: "wrap" }}>
+        {String(r.status || "pending").toLowerCase() === "pending" ? (
+          <>
+            <button onClick={() => updateHolidayRequest(r.id, "approved")} disabled={busy}>
               Approve
             </button>
 
-            <button
-              onClick={() => updateHolidayRequest(r.id, "rejected")}
-              disabled={busy}
-              style={{
-                padding: "8px 14px",
-                borderRadius: 10,
-                border: "none",
-                background: "#dc2626",
-                color: "#fff",
-                fontWeight: 700,
-                cursor: busy ? "not-allowed" : "pointer",
-              }}
-            >
+            <button onClick={() => updateHolidayRequest(r.id, "rejected")} disabled={busy}>
               Reject
             </button>
-          </div>
-        )}
+          </>
+        ) : null}
+
+        <button onClick={() => deleteHolidayRequest(r.id)} disabled={busy}>
+          Delete
+        </button>
       </div>
-    ))
-  )}
+    </div>
+  ))
+)}
 </div>
           </div>
 
