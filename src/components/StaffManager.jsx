@@ -1391,8 +1391,26 @@ export default function StaffManager({ goBack }) {
                 </div>
               </div>
             ) : null}
-<div style={{ marginTop: 30, border: "1px solid #e5e7eb", borderRadius: 14, padding: 18 }}>
-  <h3 style={{ margin: "0 0 12px 0" }}>Holiday Requests</h3>
+<div
+
+  style={{
+
+    marginTop: 30,
+
+    border: "1px solid #e5e7eb",
+
+    borderRadius: 14,
+
+    padding: 18,
+
+    color: "#111827",
+
+    background: "#fff",
+
+  }}
+
+>
+<h3 style={{ margin: "0 0 12px 0", color: "#111827" }}>Holiday Requests</h3>
 
   {holidayRequests.length === 0 ? (
     <div style={{ color: "#6b7280", fontSize: 14 }}>No holiday requests.</div>
