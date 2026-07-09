@@ -27,21 +27,28 @@ if (pickupProperty && pickupProperty.value) {
 
   await db.collection("preOrders").add({
 
+    site: "micklegate",
+
     shopifyOrderId: order.id || null,
 
     orderName: order.name || "",
 
     customerName: order.customer
-
       ? `${order.customer.first_name || ""} ${order.customer.last_name || ""}`.trim()
-
       : "",
 
-    productTitle: item.title || "",
-
-    quantity: soldQty,
-
     pickup: pickupProperty.value,
+
+    items: [
+      {
+        title: item.title || "",
+        productTitle: item.title || "",
+        variantTitle: item.variant_title || "",
+        quantity: soldQty,
+        shopifyProductId: productId,
+        shopifyVariantId: variantId,
+      },
+    ],
 
     status: "new",
 
