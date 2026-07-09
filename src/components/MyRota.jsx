@@ -170,7 +170,7 @@ export default function MyRota({ user, goBack }) {
 
   const qRef = query(
     collection(db, HOLIDAY_COLLECTION),
-    where("status", "==", "Approved"),
+    where("status", "==", "approved"),
     orderBy("startDate", "asc")
   );
 
