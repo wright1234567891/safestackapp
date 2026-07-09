@@ -1,12 +1,16 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
+
   addDoc,
+
   collection,
+
   onSnapshot,
+
   query,
-  where,
-  orderBy,
+
   Timestamp,
+
 } from "firebase/firestore";
 import { db } from "../firebase";
 import { FaChevronLeft } from "react-icons/fa";
@@ -162,35 +166,43 @@ export default function MyRota({ user, goBack }) {
     return () => unsub();
   }, [hasIdentity, staffId, staffEmail, staffName, weekStart, weekEnd]);
 
-  useEffect(() => {
+useEffect(() => {
   if (!hasIdentity) {
     setHolidayRequests([]);
     return;
   }
 
-  const qRef = query(
-    collection(db, HOLIDAY_COLLECTION),
-    where("status", "==", "approved"),
-    orderBy("startDate", "asc")
+  const qRef = query(collection(db, HOLIDAY_COLLECTION));
+
+  const unsub = onSnapshot(
+    qRef,
+    (snap) => {
+      const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+
+      const mine = rows.filter((r) => {
+        const status = String(r.status || "").toLowerCase();
+
+        const requestStaffId = String(r.staffId || "").trim();
+        const requestEmail = String(r.staffEmail || "").trim().toLowerCase();
+        const requestName = String(r.staffName || "").trim().toLowerCase();
+
+        return (
+          status === "approved" &&
+          (
+            (staffId && requestStaffId === staffId) ||
+            (staffEmail && requestEmail === staffEmail) ||
+            (staffName && requestName === staffName)
+          )
+        );
+      });
+
+      setHolidayRequests(mine);
+    },
+    (err) => {
+      console.error(err);
+      setHolidayRequests([]);
+    }
   );
-
-  const unsub = onSnapshot(qRef, (snap) => {
-    const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-
-    const mine = rows.filter((r) => {
-      const requestStaffId = String(r.staffId || "").trim();
-      const requestEmail = String(r.staffEmail || "").trim().toLowerCase();
-      const requestName = String(r.staffName || "").trim().toLowerCase();
-
-      return (
-        (staffId && requestStaffId === staffId) ||
-        (staffEmail && requestEmail === staffEmail) ||
-        (staffName && requestName === staffName)
-      );
-    });
-
-    setHolidayRequests(mine);
-  });
 
   return () => unsub();
 }, [hasIdentity, staffId, staffEmail, staffName]);
