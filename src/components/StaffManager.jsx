@@ -29,6 +29,7 @@ import {
 
 const STAFF_COLLECTION = "stafflogin";
 const SHIFTS_COLLECTION = "Shifts";
+const HOLIDAY_COLLECTION = "HolidayRequests";
 
 const chip = (bg, fg) => ({
   display: "inline-flex",
@@ -146,6 +147,7 @@ export default function StaffManager({ goBack }) {
 
   const [weekStart, setWeekStart] = useState(() => startOfWeekMonday(new Date()));
   const [shifts, setShifts] = useState([]);
+  const [holidayRequests, setHolidayRequests] = useState([]);
 
   const [rotaView, setRotaView] = useState("list");
 
@@ -292,6 +294,26 @@ export default function StaffManager({ goBack }) {
     );
     return () => unsub();
   }, [weekStart, weekEnd]);
+
+  useEffect(() => {
+  const qy = query(
+    collection(db, HOLIDAY_COLLECTION),
+    orderBy("createdAt", "desc")
+  );
+
+  const unsub = onSnapshot(
+    qy,
+    (snap) => {
+      setHolidayRequests(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+    },
+    (err) => {
+      console.error("Holiday requests subscribe error:", err);
+      setHolidayRequests([]);
+    }
+  );
+
+  return () => unsub();
+}, []);
 
   const shiftsByDay = useMemo(() => {
     const map = new Map();
@@ -624,6 +646,24 @@ export default function StaffManager({ goBack }) {
       setBusy(false);
     }
   };
+
+  const updateHolidayRequest = async (requestId, status) => {
+  if (!requestId) return;
+
+  setBusy(true);
+
+  try {
+    await updateDoc(doc(db, HOLIDAY_COLLECTION, requestId), {
+      status,
+      reviewedAt: Timestamp.now(),
+    });
+  } catch (e) {
+    console.error("Holiday update failed:", e);
+    alert("Couldn't update holiday request.");
+  } finally {
+    setBusy(false);
+  }
+};
 
   const toggleBtn = (active) => ({
     padding: "8px 10px",
@@ -1239,6 +1279,7 @@ export default function StaffManager({ goBack }) {
                         {fmtDay(d)}
                       </div>
                     ))}
+
                   </div>
 
                   {activeStaff.length === 0 ? (
@@ -1350,6 +1391,81 @@ export default function StaffManager({ goBack }) {
                 </div>
               </div>
             ) : null}
+<div style={{ marginTop: 30 }}>
+  <h3 style={{ marginBottom: 12 }}>Holiday Requests</h3>
+
+  {holidayRequests.length === 0 ? (
+    <div style={{ color: "#6b7280" }}>
+      No holiday requests.
+    </div>
+  ) : (
+    holidayRequests.map((r) => (
+      <div
+        key={r.id}
+        style={{
+          border: "1px solid #e5e7eb",
+          borderRadius: 12,
+          padding: 14,
+          marginBottom: 10,
+          background: "#fff",
+        }}
+      >
+        <div style={{ fontWeight: 800 }}>
+          {r.staffName}
+        </div>
+
+        <div style={{ marginTop: 6 }}>
+{r.startDate?.toDate ? fmtDateLong(r.startDate.toDate()) : ""} →{" "}
+{r.endDate?.toDate ? fmtDateLong(r.endDate.toDate()) : ""}
+        </div>
+
+        <div style={{ marginTop: 6 }}>
+          Status: <strong>{r.status || "Pending"}</strong>
+        </div>
+
+        {r.reason && (
+          <div style={{ marginTop: 6 }}>
+            {r.reason}
+          </div>
+        )}
+
+        {(r.status === "Pending" || !r.status) && (
+          <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
+            <button
+              onClick={() => updateHolidayRequest(r.id, "Approved")}
+              style={{
+                padding: "8px 14px",
+                borderRadius: 10,
+                border: "none",
+                background: "#16a34a",
+                color: "#fff",
+                fontWeight: 700,
+                cursor: "pointer",
+              }}
+            >
+              Approve
+            </button>
+
+            <button
+              onClick={() => updateHolidayRequest(r.id, "Rejected")}
+              style={{
+                padding: "8px 14px",
+                borderRadius: 10,
+                border: "none",
+                background: "#dc2626",
+                color: "#fff",
+                fontWeight: 700,
+                cursor: "pointer",
+              }}
+            >
+              Reject
+            </button>
+          </div>
+        )}
+      </div>
+    ))
+  )}
+</div>
           </div>
 
           {showAddShift ? (

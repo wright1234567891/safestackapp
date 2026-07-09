@@ -1,9 +1,18 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { collection, onSnapshot, query, where, orderBy, Timestamp } from "firebase/firestore";
+import {
+  addDoc,
+  collection,
+  onSnapshot,
+  query,
+  where,
+  orderBy,
+  Timestamp,
+} from "firebase/firestore";
 import { db } from "../firebase";
 import { FaChevronLeft } from "react-icons/fa";
 
 const SHIFTS_COLLECTION = "Shifts";
+const HOLIDAY_COLLECTION = "HolidayRequests";
 
 const chip = (bg, fg) => ({
   display: "inline-flex",
@@ -16,6 +25,15 @@ const chip = (bg, fg) => ({
   background: bg,
   color: fg,
 });
+
+const inputStyle = {
+  padding: 12,
+  borderRadius: 12,
+  border: "1px solid #e5e7eb",
+  fontSize: 14,
+  outline: "none",
+  width: "100%",
+};
 
 const startOfWeekMonday = (d) => {
   const x = new Date(d);
@@ -30,6 +48,23 @@ const addDays = (d, days) => {
   const x = new Date(d);
   x.setDate(x.getDate() + days);
   return x;
+};
+
+const toDateInput = (d) => {
+  const x = new Date(d);
+  const yyyy = x.getFullYear();
+  const mm = String(x.getMonth() + 1).padStart(2, "0");
+  const dd = String(x.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+};
+
+const dateInputToTimestamp = (dateStr, endOfDay = false) => {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const dt = endOfDay
+    ? new Date(y, m - 1, d, 23, 59, 59, 999)
+    : new Date(y, m - 1, d, 0, 0, 0, 0);
+
+  return Timestamp.fromDate(dt);
 };
 
 const fmtDay = (d) =>
@@ -61,6 +96,12 @@ export default function MyRota({ user, goBack }) {
   const [loading, setLoading] = useState(true);
   const [onlyPublished, setOnlyPublished] = useState(true);
 
+  const [showHolidayModal, setShowHolidayModal] = useState(false);
+  const [holidayStart, setHolidayStart] = useState(() => toDateInput(new Date()));
+  const [holidayEnd, setHolidayEnd] = useState(() => toDateInput(new Date()));
+  const [holidayReason, setHolidayReason] = useState("");
+  const [holidayBusy, setHolidayBusy] = useState(false);
+
   const weekEnd = useMemo(() => addDays(weekStart, 7), [weekStart]);
 
   const days = useMemo(
@@ -83,8 +124,6 @@ export default function MyRota({ user, goBack }) {
 
     setLoading(true);
 
-    // Safer query: get all shifts for the week, then match the selected user in React.
-    // This avoids Firestore composite index issues and catches ID/email/name mismatches.
     const qRef = query(
       collection(db, SHIFTS_COLLECTION),
       where("startAt", ">=", Timestamp.fromDate(weekStart)),
@@ -109,10 +148,6 @@ export default function MyRota({ user, goBack }) {
           );
         });
 
-        console.log("MyRota user:", user);
-        console.log("Week shifts:", rows);
-        console.log("Matched shifts:", myShifts);
-
         setShifts(myShifts);
         setLoading(false);
       },
@@ -124,7 +159,7 @@ export default function MyRota({ user, goBack }) {
     );
 
     return () => unsub();
-  }, [hasIdentity, staffId, staffEmail, staffName, weekStart, weekEnd, user]);
+  }, [hasIdentity, staffId, staffEmail, staffName, weekStart, weekEnd]);
 
   const visibleShifts = useMemo(() => {
     if (!onlyPublished) return shifts;
@@ -147,6 +182,45 @@ export default function MyRota({ user, goBack }) {
 
     return map;
   }, [days, visibleShifts]);
+
+  const canSubmitHoliday = useMemo(() => {
+    if (holidayBusy) return false;
+    if (!hasIdentity) return false;
+    if (!holidayStart || !holidayEnd) return false;
+
+    const start = new Date(holidayStart);
+    const end = new Date(holidayEnd);
+
+    return end >= start;
+  }, [holidayBusy, hasIdentity, holidayStart, holidayEnd]);
+
+  const submitHolidayRequest = async () => {
+    if (!canSubmitHoliday) return;
+
+    setHolidayBusy(true);
+
+    try {
+      await addDoc(collection(db, HOLIDAY_COLLECTION), {
+        staffId,
+        staffName: user?.name || "",
+        staffEmail,
+        startDate: dateInputToTimestamp(holidayStart, false),
+        endDate: dateInputToTimestamp(holidayEnd, true),
+        reason: holidayReason.trim(),
+        status: "pending",
+        createdAt: Timestamp.now(),
+      });
+
+      setShowHolidayModal(false);
+      setHolidayReason("");
+      alert("Holiday request sent.");
+    } catch (e) {
+      console.error("Holiday request failed:", e);
+      alert("Couldn’t send holiday request. Check Firestore permissions.");
+    } finally {
+      setHolidayBusy(false);
+    }
+  };
 
   const headerName = user?.name || "Your";
 
@@ -243,6 +317,22 @@ export default function MyRota({ user, goBack }) {
           }}
         >
           Next →
+        </button>
+
+        <button
+          onClick={() => setShowHolidayModal(true)}
+          disabled={!hasIdentity}
+          style={{
+            padding: "10px 12px",
+            borderRadius: 12,
+            border: "1px solid #16a34a",
+            background: hasIdentity ? "#16a34a" : "#86efac",
+            color: "#fff",
+            cursor: hasIdentity ? "pointer" : "not-allowed",
+            fontWeight: 900,
+          }}
+        >
+          Request holiday
         </button>
 
         <div
@@ -393,6 +483,133 @@ export default function MyRota({ user, goBack }) {
           }}
         >
           No user selected. Go back and select your name to view rota.
+        </div>
+      ) : null}
+
+      {showHolidayModal ? (
+        <div
+          onClick={() => !holidayBusy && setShowHolidayModal(false)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.35)",
+            display: "grid",
+            placeItems: "center",
+            padding: 16,
+            zIndex: 100,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: "min(520px, 100%)",
+              background: "#fff",
+              borderRadius: 16,
+              padding: 18,
+              boxShadow: "0 12px 30px rgba(0,0,0,0.25)",
+            }}
+          >
+            <div style={{ fontWeight: 900, fontSize: 18, color: "#111" }}>
+              Request holiday
+            </div>
+
+            <div style={{ marginTop: 6, fontSize: 13, color: "#6b7280" }}>
+              This will send a pending request for Chris/admin to approve.
+            </div>
+
+            <div style={{ marginTop: 16, display: "grid", gap: 12 }}>
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 900, color: "#374151" }}>
+                  Start date
+                </label>
+                <input
+                  type="date"
+                  value={holidayStart}
+                  onChange={(e) => {
+                    setHolidayStart(e.target.value);
+                    if (holidayEnd < e.target.value) setHolidayEnd(e.target.value);
+                  }}
+                  style={{ ...inputStyle, marginTop: 6 }}
+                />
+              </div>
+
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 900, color: "#374151" }}>
+                  End date
+                </label>
+                <input
+                  type="date"
+                  value={holidayEnd}
+                  onChange={(e) => setHolidayEnd(e.target.value)}
+                  style={{ ...inputStyle, marginTop: 6 }}
+                />
+              </div>
+
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 900, color: "#374151" }}>
+                  Reason / note optional
+                </label>
+                <textarea
+                  value={holidayReason}
+                  onChange={(e) => setHolidayReason(e.target.value)}
+                  placeholder="Optional note..."
+                  rows={4}
+                  style={{
+                    ...inputStyle,
+                    marginTop: 6,
+                    resize: "vertical",
+                    fontFamily: "'Inter', sans-serif",
+                  }}
+                />
+              </div>
+            </div>
+
+            <div
+              style={{
+                marginTop: 16,
+                display: "flex",
+                justifyContent: "flex-end",
+                gap: 10,
+                flexWrap: "wrap",
+              }}
+            >
+              <button
+                onClick={() => !holidayBusy && setShowHolidayModal(false)}
+                style={{
+                  padding: "10px 12px",
+                  borderRadius: 12,
+                  border: "1px solid #e5e7eb",
+                  background: "#fff",
+                  cursor: holidayBusy ? "not-allowed" : "pointer",
+                  fontWeight: 900,
+                }}
+              >
+                Cancel
+              </button>
+
+              <button
+                onClick={submitHolidayRequest}
+                disabled={!canSubmitHoliday}
+                style={{
+                  padding: "10px 12px",
+                  borderRadius: 12,
+                  border: "none",
+                  background: canSubmitHoliday ? "#16a34a" : "#86efac",
+                  color: "#fff",
+                  cursor: canSubmitHoliday ? "pointer" : "not-allowed",
+                  fontWeight: 900,
+                }}
+              >
+                {holidayBusy ? "Sending..." : "Send request"}
+              </button>
+            </div>
+
+            {!canSubmitHoliday ? (
+              <div style={{ marginTop: 10, fontSize: 12, color: "#6b7280" }}>
+                End date must be the same as or after start date.
+              </div>
+            ) : null}
+          </div>
         </div>
       ) : null}
     </div>
