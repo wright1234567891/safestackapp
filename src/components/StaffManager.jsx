@@ -30,6 +30,8 @@ import {
 const STAFF_COLLECTION = "stafflogin";
 const SHIFTS_COLLECTION = "Shifts";
 const HOLIDAY_COLLECTION = "HolidayRequests";
+const SICK_COLLECTION = "SickRecords";
+const AUTHORISED_ABSENCE_COLLECTION = "AuthorisedAbsences";
 
 const chip = (bg, fg) => ({
   display: "inline-flex",
@@ -148,6 +150,17 @@ export default function StaffManager({ goBack }) {
   const [weekStart, setWeekStart] = useState(() => startOfWeekMonday(new Date()));
   const [shifts, setShifts] = useState([]);
   const [holidayRequests, setHolidayRequests] = useState([]);
+  const [sickRecords, setSickRecords] = useState([]);
+
+const [authorisedAbsences, setAuthorisedAbsences] = useState([]);
+
+const [absenceStaffId, setAbsenceStaffId] = useState("");
+
+const [absenceStart, setAbsenceStart] = useState(() => isoDate(new Date()));
+
+const [absenceEnd, setAbsenceEnd] = useState(() => isoDate(new Date()));
+
+const [absenceReason, setAbsenceReason] = useState("");
 
   const [rotaView, setRotaView] = useState("list");
 
@@ -314,6 +327,41 @@ export default function StaffManager({ goBack }) {
 
   return () => unsub();
 }, []);
+
+useEffect(() => {
+  const unsub = onSnapshot(query(collection(db, SICK_COLLECTION), orderBy("createdAt", "desc")), (snap) => {
+    setSickRecords(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+  });
+
+  return () => unsub();
+}, []);
+
+useEffect(() => {
+  const unsub = onSnapshot(query(collection(db, AUTHORISED_ABSENCE_COLLECTION), orderBy("createdAt", "desc")), (snap) => {
+    setAuthorisedAbsences(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+  });
+
+  return () => unsub();
+}, []);
+
+useEffect(() => {
+  const unsub = onSnapshot(
+    query(collection(db, SICK_COLLECTION), orderBy("createdAt", "desc")),
+    (snap) => setSickRecords(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
+  );
+
+  return () => unsub();
+}, []);
+
+useEffect(() => {
+  const unsub = onSnapshot(
+    query(collection(db, AUTHORISED_ABSENCE_COLLECTION), orderBy("createdAt", "desc")),
+    (snap) => setAuthorisedAbsences(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
+  );
+
+  return () => unsub();
+}, []);
+
 
   const shiftsByDay = useMemo(() => {
     const map = new Map();
@@ -716,6 +764,54 @@ const deleteHolidayRequest = async (requestId) => {
     fontWeight: 800,
     cursor: "pointer",
   });
+
+  const addAbsenceRecord = async (type) => {
+  if (!absenceStaffId) {
+    alert("Choose a staff member.");
+    return;
+  }
+
+  const st = staffById.get(absenceStaffId);
+  const collectionName = type === "sick" ? SICK_COLLECTION : AUTHORISED_ABSENCE_COLLECTION;
+
+  setBusy(true);
+
+  try {
+    await addDoc(collection(db, collectionName), {
+      staffId: absenceStaffId,
+      staffName: st?.name || "",
+      startDate: combineDateTimeToTimestamp(absenceStart, "00:00"),
+      endDate: combineDateTimeToTimestamp(absenceEnd, "23:59"),
+      reason: absenceReason.trim() || "",
+      createdAt: Timestamp.now(),
+    });
+
+    setAbsenceReason("");
+  } catch (e) {
+    console.error("Add absence failed:", e);
+    alert("Couldn’t add absence.");
+  } finally {
+    setBusy(false);
+  }
+};
+
+const deleteAbsenceRecord = async (type, id) => {
+  if (!id) return;
+  if (!confirm("Delete this absence record?")) return;
+
+  const collectionName = type === "sick" ? SICK_COLLECTION : AUTHORISED_ABSENCE_COLLECTION;
+
+  setBusy(true);
+
+  try {
+    await deleteDoc(doc(db, collectionName, id));
+  } catch (e) {
+    console.error("Delete absence failed:", e);
+    alert("Couldn’t delete absence.");
+  } finally {
+    setBusy(false);
+  }
+};
 
   const tabBtn = (active) => ({
     padding: "10px 12px",
@@ -1518,6 +1614,65 @@ const approvedHoliday = getApprovedHolidayForStaffDay(st.id, d);
     </div>
   ))
 )}
+</div>
+
+<div
+  style={{
+    marginTop: 18,
+    border: "1px solid #e5e7eb",
+    borderRadius: 14,
+    padding: 18,
+    color: "#111827",
+    background: "#fff",
+  }}
+>
+  <h3 style={{ margin: "0 0 12px 0", color: "#111827" }}>Sick / Authorised Absence</h3>
+
+  <div style={{ display: "grid", gridTemplateColumns: "1fr 160px 160px", gap: 10 }}>
+    <select value={absenceStaffId} onChange={(e) => setAbsenceStaffId(e.target.value)} style={inputStyle}>
+      <option value="">Choose staff</option>
+      {activeStaff.map((s) => (
+        <option key={s.id} value={s.id}>{s.name}</option>
+      ))}
+    </select>
+
+    <input type="date" value={absenceStart} onChange={(e) => setAbsenceStart(e.target.value)} style={inputStyle} />
+    <input type="date" value={absenceEnd} onChange={(e) => setAbsenceEnd(e.target.value)} style={inputStyle} />
+  </div>
+
+  <input
+    value={absenceReason}
+    onChange={(e) => setAbsenceReason(e.target.value)}
+    placeholder="Reason / notes"
+    style={{ ...inputStyle, marginTop: 10 }}
+  />
+
+  <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
+    <button onClick={() => addAbsenceRecord("sick")} disabled={busy}>Add Sick</button>
+    <button onClick={() => addAbsenceRecord("authorised")} disabled={busy}>Add Authorised Absence</button>
+  </div>
+
+  <h4>Sick Records</h4>
+  {sickRecords.map((r) => (
+    <div key={r.id} style={{ border: "1px solid #e5e7eb", borderRadius: 12, padding: 12, marginBottom: 8 }}>
+      <strong>{r.staffName}</strong><br />
+      {r.startDate?.toDate ? fmtDateLong(r.startDate.toDate()) : ""} →{" "}
+      {r.endDate?.toDate ? fmtDateLong(r.endDate.toDate()) : ""}
+      {r.reason ? <div>{r.reason}</div> : null}
+      <button onClick={() => deleteAbsenceRecord("sick", r.id)} disabled={busy}>Delete</button>
+    </div>
+  ))}
+
+  <h4>Authorised Absences</h4>
+  {authorisedAbsences.map((r) => (
+    <div key={r.id} style={{ border: "1px solid #e5e7eb", borderRadius: 12, padding: 12, marginBottom: 8 }}>
+      <strong>{r.staffName}</strong><br />
+      {r.startDate?.toDate ? fmtDateLong(r.startDate.toDate()) : ""} →{" "}
+      {r.endDate?.toDate ? fmtDateLong(r.endDate.toDate()) : ""}
+      {r.reason ? <div>{r.reason}</div> : null}
+      <button onClick={() => deleteAbsenceRecord("authorised", r.id)} disabled={busy}>Delete</button>
+    </div>
+  ))}
 </div>
           </div>
 
