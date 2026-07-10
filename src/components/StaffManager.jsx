@@ -344,25 +344,6 @@ useEffect(() => {
   return () => unsub();
 }, []);
 
-useEffect(() => {
-  const unsub = onSnapshot(
-    query(collection(db, SICK_COLLECTION), orderBy("createdAt", "desc")),
-    (snap) => setSickRecords(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
-  );
-
-  return () => unsub();
-}, []);
-
-useEffect(() => {
-  const unsub = onSnapshot(
-    query(collection(db, AUTHORISED_ABSENCE_COLLECTION), orderBy("createdAt", "desc")),
-    (snap) => setAuthorisedAbsences(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
-  );
-
-  return () => unsub();
-}, []);
-
-
   const shiftsByDay = useMemo(() => {
     const map = new Map();
     for (const d of days) map.set(isoDate(d), []);
@@ -419,6 +400,34 @@ useEffect(() => {
   });
 };
 
+const getAbsenceForStaffDay = (staffId, d) => {
+  const day = new Date(d);
+  day.setHours(12, 0, 0, 0);
+
+  const findAbsence = (list, label) => {
+    const match = list.find((a) => {
+      if (String(a.staffId || "") !== String(staffId || "")) return false;
+
+      const start = a.startDate?.toDate ? a.startDate.toDate() : null;
+      const end = a.endDate?.toDate ? a.endDate.toDate() : null;
+      if (!start || !end) return false;
+
+      start.setHours(0, 0, 0, 0);
+      end.setHours(23, 59, 59, 999);
+
+      return day >= start && day <= end;
+    });
+
+    return match ? label : null;
+  };
+
+  return (
+    findAbsence(sickRecords, "Sick") ||
+    findAbsence(authorisedAbsences, "Authorised absence") ||
+    null
+  );
+};
+
   const openAddShift = (d) => {
     setShiftDate(isoDate(d));
     const firstActive = staff.find((s) => s.active !== false);
@@ -435,9 +444,10 @@ useEffect(() => {
 
 const openAddShiftForStaffDay = (staffId, d) => {
   const holiday = getApprovedHolidayForStaffDay(staffId, d);
+  const absence = getAbsenceForStaffDay(staffId, d);
 
-  if (holiday) {
-    alert("This staff member has approved holiday on this date.");
+  if (holiday || absence) {
+    alert(`This staff member is unavailable: ${holiday ? "Holiday" : absence}.`);
     return;
   }
 
@@ -1447,31 +1457,29 @@ const dayKey = isoDate(d);
 const cellShifts = inner?.get(dayKey) || [];
 
 const approvedHoliday = getApprovedHolidayForStaffDay(st.id, d);
+const absenceLabel = getAbsenceForStaffDay(st.id, d);
+const unavailableLabel = approvedHoliday ? "Holiday" : absenceLabel;
                             return (
                               <div key={dayKey} style={{ padding: 10, borderLeft: "1px solid #e5e7eb", minHeight: 64 }}>
 <button
-  disabled={!!approvedHoliday}
+  disabled={!!unavailableLabel}
   onClick={() => openAddShiftForStaffDay(st.id, d)}
   style={{
     padding: "6px 8px",
     borderRadius: 10,
     border: "1px solid #e5e7eb",
-    background: approvedHoliday ? "#dcfce7" : "#fff",
-    color: approvedHoliday ? "#166534" : "#111",
-    cursor: approvedHoliday ? "not-allowed" : "pointer",
+    background: unavailableLabel ? "#dcfce7" : "#fff",
+    color: unavailableLabel ? "#166534" : "#111",
+    cursor: unavailableLabel ? "not-allowed" : "pointer",
     fontWeight: 900,
     fontSize: 12,
   }}
-  title={
-    approvedHoliday
-      ? "Approved holiday - cannot add shift"
-      : "Add shift for this person on this day"
-  }
+  title={unavailableLabel ? `${unavailableLabel} - cannot add shift` : "Add shift for this person on this day"}
 >
-  {approvedHoliday ? "Holiday" : "+ Add"}
+  {unavailableLabel || "+ Add"}
 </button>
 
-{approvedHoliday ? (
+{unavailableLabel ? (
   <div
     style={{
       marginTop: 8,
@@ -1484,7 +1492,7 @@ const approvedHoliday = getApprovedHolidayForStaffDay(st.id, d);
       fontSize: 12,
     }}
   >
-    Approved holiday
+    {unavailableLabel}
   </div>
 ) : null}
 
