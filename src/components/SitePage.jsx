@@ -1434,6 +1434,23 @@ const mergedConfig = {
         </button>
 
         <button
+          onClick={() => setActiveSection("myRota")}
+          style={{
+            width: "100%",
+            marginTop: 10,
+            padding: "12px 16px",
+            borderRadius: 12,
+            border: "1px solid #e5e7eb",
+            background: "#fff",
+            color: "#0f172a",
+            fontWeight: 800,
+            cursor: "pointer",
+          }}
+        >
+          View my rota
+        </button>
+
+        <button
 
           onClick={resetSite}
 
