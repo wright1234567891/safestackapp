@@ -10,6 +10,7 @@ import {
   onSnapshot,
   increment,
   serverTimestamp,
+  runTransaction,
   query,
   where,
 } from "firebase/firestore";
@@ -63,6 +64,7 @@ const [wasteReasons, setWasteReasons] = useState([]);
   const [editBuffer, setEditBuffer] = useState({});
   const [stockSearch, setStockSearch] = useState("");
   const [expandedBatches, setExpandedBatches] = useState({});
+  const [batchEditBuffer, setBatchEditBuffer] = useState({});
 
   const [ocrLoading, setOcrLoading] = useState(false);
   const [ocrError, setOcrError] = useState("");
@@ -390,6 +392,146 @@ const [wasteReasons, setWasteReasons] = useState([]);
     } catch (error) {
       console.error("Error updating batch use-by date:", error);
       alert("Failed to update batch use-by date.");
+    }
+  };
+
+  const handleBatchEdit = (batchId, field, value) => {
+    setBatchEditBuffer((prev) => ({
+      ...prev,
+      [batchId]: {
+        ...prev[batchId],
+        [field]: value,
+      },
+    }));
+  };
+
+  const saveBatchChanges = async (item, batch) => {
+    const edits = batchEditBuffer[batch.id] || {};
+    const nextQuantity = Number(
+      edits.quantityRemaining ?? batch.quantityRemaining
+    );
+    const nextQuantityReceived = Number(
+      edits.quantityReceived ?? batch.quantityReceived ?? nextQuantity
+    );
+    const nextMeasurement = (
+      edits.measurement ??
+      batch.measurement ??
+      item.measurement ??
+      "unit"
+    )
+      .toString()
+      .trim();
+
+    if (!Number.isFinite(nextQuantity) || nextQuantity < 0) {
+      alert("Please enter a valid remaining batch quantity.");
+      return;
+    }
+
+    if (!Number.isFinite(nextQuantityReceived) || nextQuantityReceived < 0) {
+      alert("Please enter a valid received batch quantity.");
+      return;
+    }
+
+    if (nextQuantity > nextQuantityReceived) {
+      alert("The remaining quantity cannot be greater than the quantity received.");
+      return;
+    }
+
+    if (!nextMeasurement) {
+      alert("Please select a measurement for this batch.");
+      return;
+    }
+
+    try {
+      const linkedBatches = stockBatches.filter(
+        (linkedBatch) => linkedBatch.stockItemId === item.id
+      );
+      const linkedBatchIds = Array.from(
+        new Set([...linkedBatches.map((linkedBatch) => linkedBatch.id), batch.id])
+      );
+
+      let hasMixedMeasurements = false;
+
+      await runTransaction(db, async (transaction) => {
+        const batchRefs = linkedBatchIds.map((batchId) =>
+          doc(db, "stockBatches", batchId)
+        );
+        const batchSnapshots = await Promise.all(
+          batchRefs.map((batchRef) => transaction.get(batchRef))
+        );
+
+        const nextActiveBatches = batchSnapshots
+          .filter((batchSnapshot) => batchSnapshot.exists())
+          .map((batchSnapshot) => {
+            const batchData = batchSnapshot.data();
+
+            if (batchSnapshot.id === batch.id) {
+              return {
+                ...batchData,
+                id: batchSnapshot.id,
+                quantityReceived: nextQuantityReceived,
+                quantityRemaining: nextQuantity,
+                measurement: nextMeasurement,
+                status: nextQuantity <= 0 ? "closed" : "active",
+              };
+            }
+
+            return { id: batchSnapshot.id, ...batchData };
+          })
+          .filter(
+            (activeBatch) =>
+              Number(activeBatch.quantityRemaining || 0) > 0 &&
+              activeBatch.status !== "closed"
+          );
+
+        const measurementsInUse = new Set(
+          nextActiveBatches.map(
+            (activeBatch) =>
+              activeBatch.measurement || item.measurement || "unit"
+          )
+        );
+
+        hasMixedMeasurements = measurementsInUse.size > 1;
+
+        transaction.update(doc(db, "stockBatches", batch.id), {
+          quantityReceived: nextQuantityReceived,
+          quantityRemaining: nextQuantity,
+          measurement: nextMeasurement,
+          status: nextQuantity <= 0 ? "closed" : "active",
+          updatedAt: serverTimestamp(),
+        });
+
+        if (!hasMixedMeasurements) {
+          const recalculatedQuantity = nextActiveBatches.reduce(
+            (total, activeBatch) =>
+              total + Number(activeBatch.quantityRemaining || 0),
+            0
+          );
+          const commonMeasurement =
+            [...measurementsInUse][0] || nextMeasurement;
+
+          transaction.update(doc(db, "stockItems", item.id), {
+            quantity: recalculatedQuantity,
+            measurement: commonMeasurement,
+            updatedAt: serverTimestamp(),
+          });
+        }
+      });
+
+      setBatchEditBuffer((prev) => {
+        const next = { ...prev };
+        delete next[batch.id];
+        return next;
+      });
+
+      if (hasMixedMeasurements) {
+        alert(
+          "Batch saved. Update the other active batches to the same measurement, then the main stock total will recalculate automatically."
+        );
+      }
+    } catch (error) {
+      console.error("Error updating stock batch:", error);
+      alert("Failed to update this stock batch.");
     }
   };
 
@@ -1701,11 +1843,102 @@ const [wasteReasons, setWasteReasons] = useState([]);
                         <div>
                           <strong>Remaining</strong>
                           <br />
-                          {batch.quantityRemaining} {batch.measurement}
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.001"
+                            value={
+                              batchEditBuffer[batch.id]?.quantityRemaining ??
+                              batch.quantityRemaining
+                            }
+                            onChange={(e) =>
+                              handleBatchEdit(
+                                batch.id,
+                                "quantityRemaining",
+                                e.target.value
+                              )
+                            }
+                            style={{
+                              ...smallInput,
+                              minWidth: 110,
+                              marginTop: 4,
+                            }}
+                          />
                         </div>
 
                         <div>
-                          <strong>Received</strong>
+                          <strong>Quantity received</strong>
+                          <br />
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.001"
+                            value={
+                              batchEditBuffer[batch.id]?.quantityReceived ??
+                              batch.quantityReceived ??
+                              batch.quantityRemaining
+                            }
+                            onChange={(e) =>
+                              handleBatchEdit(
+                                batch.id,
+                                "quantityReceived",
+                                e.target.value
+                              )
+                            }
+                            style={{
+                              ...smallInput,
+                              minWidth: 110,
+                              marginTop: 4,
+                            }}
+                          />
+                        </div>
+
+                        <div>
+                          <strong>Measurement</strong>
+                          <br />
+                          <select
+                            value={
+                              batchEditBuffer[batch.id]?.measurement ??
+                              batch.measurement ??
+                              item.measurement ??
+                              "unit"
+                            }
+                            onChange={(e) =>
+                              handleBatchEdit(
+                                batch.id,
+                                "measurement",
+                                e.target.value
+                              )
+                            }
+                            style={{
+                              ...smallSelect,
+                              minWidth: 130,
+                              marginTop: 4,
+                            }}
+                          >
+                            {measurements.length === 0 ? (
+                              <>
+                                <option value="unit">Units</option>
+                                <option value="slice">Slices</option>
+                                <option value="portion">Portions</option>
+                                <option value="kg">Kilograms</option>
+                                <option value="ml">Milliliter</option>
+                              </>
+                            ) : (
+                              measurements.map((measurement) => (
+                                <option
+                                  key={measurement.id}
+                                  value={measurement.value}
+                                >
+                                  {measurement.value}
+                                </option>
+                              ))
+                            )}
+                          </select>
+                        </div>
+
+                        <div>
+                          <strong>Date received</strong>
                           <br />
                           {batch.dateReceived || "—"}
                         </div>
@@ -1753,6 +1986,25 @@ const [wasteReasons, setWasteReasons] = useState([]);
                             <br />£{Number(batch.price).toFixed(2)}
                           </div>
                         )}
+
+                        <div>
+                          <strong>Changes</strong>
+                          <br />
+                          <button
+                            onClick={() => saveBatchChanges(item, batch)}
+                            disabled={!batchEditBuffer[batch.id]}
+                            style={{
+                              ...primaryBtn,
+                              marginTop: 4,
+                              opacity: batchEditBuffer[batch.id] ? 1 : 0.55,
+                              cursor: batchEditBuffer[batch.id]
+                                ? "pointer"
+                                : "not-allowed",
+                            }}
+                          >
+                            Save batch
+                          </button>
+                        </div>
                       </div>
                     ))}
                   </div>
