@@ -455,6 +455,7 @@ const SitePage = ({ user, onLogout }) => {
 
   const [selectedSite, setSelectedSite] = useState(null);
   const [activeSection, setActiveSection] = useState(null);
+  const [goodsInContext, setGoodsInContext] = useState(null);
 
   const [templates, setTemplates] = useState([]);
   const [siteTemplates, setSiteTemplates] = useState([]);
@@ -477,6 +478,11 @@ const SitePage = ({ user, onLogout }) => {
   const [openingComplete, setOpeningComplete] = useState(false);
 
 const [openingBypassed, setOpeningBypassed] = useState(false);
+
+  const openingLocked = Boolean(
+    selectedSite && !openingComplete && !openingBypassed
+  );
+  const allowedBeforeOpening = ["checklists", "myRota", "goodsIn"];
 
   const isMobile = useIsMobile();
 
@@ -1003,6 +1009,7 @@ const failedTempAlerts = useMemo(() => {
   const resetSite = () => {
     setSelectedSite(null);
     setActiveSection(null);
+    setGoodsInContext(null);
     setEditDashboard(false);
     setDashboardConfig(null);
     setChecklists([]);
@@ -1013,6 +1020,8 @@ const failedTempAlerts = useMemo(() => {
     setEquipment([]);
     setCleanLogs([]);
     setStockBatches([]);
+    setOpeningComplete(false);
+    setOpeningBypassed(false);
   };
 
   const sections = useMemo(() => [
@@ -1176,6 +1185,12 @@ helper: `${report.period || "Custom"} · ${(report.metrics || []).length} metric
   };
 
   const openSection = (sectionKey) => {
+    if (openingLocked && !allowedBeforeOpening.includes(sectionKey)) {
+      setActiveSection(null);
+      return;
+    }
+
+    if (sectionKey === "goodsIn") setGoodsInContext(null);
     if (sectionKey === "dashboard") return setActiveSection(null);
     setActiveSection(sectionKey);
   };
@@ -1387,11 +1402,9 @@ const mergedConfig = {
 });
 
   if (
-  selectedSite &&
-  !openingComplete &&
-  !openingBypassed &&
-  activeSection === null
-) {
+    openingLocked &&
+    !allowedBeforeOpening.includes(activeSection)
+  ) {
   return (
     <div style={{ minHeight: "100vh", background: "#f8fafc", padding: 24, fontFamily: "'Inter', sans-serif" }}>
       <div className="safestack-card" style={{ maxWidth: 560, margin: "60px auto", padding: 28 }}>
@@ -1575,7 +1588,10 @@ const mergedConfig = {
           </div>
 
           <div className="nav-list" style={{ display: "grid", gap: 7 }}>
-            {sections.map((sec) => {
+            {(openingLocked
+              ? sections.filter((sec) => allowedBeforeOpening.includes(sec.key))
+              : sections
+            ).map((sec) => {
               const active = sec.key === "dashboard" && !activeSection;
               return (
                 <button
@@ -1660,9 +1676,31 @@ const mergedConfig = {
 
   user={user}
 
+  preOpeningMode={openingLocked}
+
+  onOpenGoodsIn={({ supplier, deliveryDate }) => {
+
+    setGoodsInContext({
+
+      fromOpening: true,
+
+      returnTo: "checklists",
+
+      supplier: supplier || "",
+
+      deliveryDate: deliveryDate || "",
+
+    });
+
+    setActiveSection("goodsIn");
+
+  }}
+
   onOpeningComplete={() => {
 
     setOpeningComplete(true);
+
+    setGoodsInContext(null);
 
     setActiveSection(null);
 
@@ -1685,7 +1723,37 @@ const mergedConfig = {
             <CookingSection goBack={() => setActiveSection(null)} cookingEquipment={tempChecks.filter((e) => selectedSiteKeys.includes(e.site) && e.type === "Cooking")} setTempChecks={setTempChecks} site={selectedSite} user={user} />
 ) : activeSection === "goodsIn" ? (
 
-  <GoodsInSection goBack={() => setActiveSection(null)} site={selectedSite} user={user} />
+  <GoodsInSection
+
+    goBack={() => {
+
+      const returnTo = goodsInContext?.returnTo;
+
+      setGoodsInContext(null);
+
+      setActiveSection(returnTo === "checklists" ? "checklists" : null);
+
+    }}
+
+    site={selectedSite}
+
+    user={user}
+
+    initialDeliveryDate={goodsInContext?.deliveryDate || ""}
+
+    initialSupplier={goodsInContext?.supplier || ""}
+
+    openingMode={goodsInContext?.fromOpening === true}
+
+    onDeliverySaved={() => {
+
+      setGoodsInContext(null);
+
+      setActiveSection("checklists");
+
+    }}
+
+  />
 
 ) : activeSection === "preOrders" ? (
 

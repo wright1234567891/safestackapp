@@ -22,8 +22,33 @@ import {
   FaCheckCircle,
 } from "react-icons/fa";
 
-const GoodsInSection = ({ site, goBack, user }) => {
-  const today = new Date().toISOString().split("T")[0];
+const DELIVERY_DAYS = [
+  { value: 1, label: "Mon" },
+  { value: 2, label: "Tue" },
+  { value: 3, label: "Wed" },
+  { value: 4, label: "Thu" },
+  { value: 5, label: "Fri" },
+  { value: 6, label: "Sat" },
+  { value: 0, label: "Sun" },
+];
+
+const toLocalDateInput = (date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+const GoodsInSection = ({
+  site,
+  goBack,
+  user,
+  initialDeliveryDate = "",
+  initialSupplier = "",
+  openingMode = false,
+  onDeliverySaved,
+}) => {
+  const today = toLocalDateInput(new Date());
 
   const [stockItems, setStockItems] = useState([]);
   const [equipment, setEquipment] = useState([]);
@@ -36,11 +61,17 @@ const [locations, setLocations] = useState([]);
 const [deliveryStatuses, setDeliveryStatuses] = useState([]);
 const [goodsInFilter, setGoodsInFilter] = useState("30");
 
-  const [supplier, setSupplier] = useState("");
+  const [supplier, setSupplier] = useState(initialSupplier || "");
   const [deliveryRef, setDeliveryRef] = useState("");
-  const [deliveryDate, setDeliveryDate] = useState(today);
+  const [deliveryDate, setDeliveryDate] = useState(initialDeliveryDate || today);
   const [notes, setNotes] = useState("");
   const [newSupplierName, setNewSupplierName] = useState("");
+  const [newSupplierDeliveryDays, setNewSupplierDeliveryDays] = useState([]);
+
+  const isManager =
+    ["manager", "admin"].includes((user?.role || "").toLowerCase()) ||
+    ["chris", "chloe"].includes((user?.name || user?.displayName || "").toLowerCase()) ||
+    ["christopher.wright@oaknsmkbbq.com"].includes((user?.email || "").toLowerCase());
 
   const [lines, setLines] = useState([
     {
@@ -142,6 +173,14 @@ const [goodsInFilter, setGoodsInFilter] = useState("30");
   const grayBtn = button();
 
   const subtle = { fontSize: 13, color: "#6b7280" };
+
+  useEffect(() => {
+    if (initialDeliveryDate) setDeliveryDate(initialDeliveryDate);
+  }, [initialDeliveryDate]);
+
+  useEffect(() => {
+    if (initialSupplier) setSupplier(initialSupplier);
+  }, [initialSupplier]);
 
   useEffect(() => {
     if (!site) return;
@@ -377,6 +416,34 @@ const filteredGoodsInRecords = goodsInRecords.filter((record) => {
     });
   };
 
+  const toggleNewSupplierDeliveryDay = (day) => {
+    setNewSupplierDeliveryDays((prev) =>
+      prev.includes(day)
+        ? prev.filter((value) => value !== day)
+        : [...prev, day].sort((a, b) => a - b)
+    );
+  };
+
+  const toggleSupplierDeliveryDay = async (supplierRow, day) => {
+    const currentDays = Array.isArray(supplierRow.deliveryDays)
+      ? supplierRow.deliveryDays.map(Number)
+      : [];
+    const nextDays = currentDays.includes(day)
+      ? currentDays.filter((value) => value !== day)
+      : [...currentDays, day].sort((a, b) => a - b);
+
+    try {
+      await updateDoc(doc(db, "suppliers", supplierRow.id), {
+        deliveryDays: nextDays,
+        updatedAt: serverTimestamp(),
+        updatedBy: user?.uid || user?.id || null,
+      });
+    } catch (error) {
+      console.error("Error updating supplier delivery schedule:", error);
+      alert("Failed to update this supplier's delivery schedule.");
+    }
+  };
+
   const addSupplier = async () => {
 
   const cleanName = newSupplierName.trim();
@@ -415,6 +482,8 @@ const filteredGoodsInRecords = goodsInRecords.filter((record) => {
 
       site,
 
+      deliveryDays: newSupplierDeliveryDays,
+
       createdAt: serverTimestamp(),
 
       createdBy: user?.uid || null,
@@ -424,6 +493,8 @@ const filteredGoodsInRecords = goodsInRecords.filter((record) => {
     setSupplier(cleanName);
 
     setNewSupplierName("");
+
+    setNewSupplierDeliveryDays([]);
 
   } catch (error) {
 
@@ -550,7 +621,17 @@ const filteredGoodsInRecords = goodsInRecords.filter((record) => {
         });
       }
 
-      alert("Goods in saved and stock updated.");
+      const savedDelivery = {
+        id: deliveryDoc.id,
+        supplier,
+        deliveryDate,
+      };
+
+      alert(
+        openingMode
+          ? "Goods in saved and stock updated. Returning to the opening checklist."
+          : "Goods in saved and stock updated."
+      );
 
       setSupplier("");
       setDeliveryRef("");
@@ -569,6 +650,14 @@ const filteredGoodsInRecords = goodsInRecords.filter((record) => {
           price: "",
         },
       ]);
+
+      if (openingMode) {
+        if (onDeliverySaved) {
+          onDeliverySaved(savedDelivery);
+        } else {
+          goBack?.();
+        }
+      }
     } catch (error) {
       console.error("Error saving goods in:", error);
       alert("Failed to save goods in.");
@@ -580,6 +669,25 @@ const filteredGoodsInRecords = goodsInRecords.filter((record) => {
       <h2 style={title}>
         Goods In — <span style={{ color: "#2563eb" }}>{site}</span>
       </h2>
+
+      {openingMode && (
+        <div
+          style={{
+            ...card,
+            background: "#eff6ff",
+            border: "1px solid #bfdbfe",
+            color: "#1e3a8a",
+          }}
+        >
+          <div style={{ fontWeight: 800, marginBottom: 4 }}>
+            Opening checklist delivery reconciliation
+          </div>
+          <div style={{ fontSize: 13 }}>
+            Record the missed delivery for {deliveryDate}. After saving, you will
+            return to the opening checklist automatically.
+          </div>
+        </div>
+      )}
 
       <div style={card}>
         <div style={sectionHeader}>
@@ -610,7 +718,12 @@ const filteredGoodsInRecords = goodsInRecords.filter((record) => {
               type="date"
               value={deliveryDate}
               onChange={(e) => setDeliveryDate(e.target.value)}
-              style={input}
+              disabled={openingMode && !!initialDeliveryDate}
+              style={{
+                ...input,
+                background:
+                  openingMode && initialDeliveryDate ? "#f1f5f9" : "#fff",
+              }}
             />
           </div>
 
@@ -673,7 +786,87 @@ const filteredGoodsInRecords = goodsInRecords.filter((record) => {
 
   </div>
 
+  {isManager && (
+    <div style={{ marginTop: 12 }}>
+      <div style={{ ...label, marginBottom: 7 }}>
+        Expected delivery days optional
+      </div>
+      <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
+        {DELIVERY_DAYS.map((day) => {
+          const selected = newSupplierDeliveryDays.includes(day.value);
+          return (
+            <button
+              key={day.value}
+              type="button"
+              onClick={() => toggleNewSupplierDeliveryDay(day.value)}
+              style={selected ? blueBtn : grayBtn}
+            >
+              {day.label}
+            </button>
+          );
+        })}
+      </div>
+      <div style={{ ...subtle, marginTop: 7 }}>
+        These days are used by the next opening checklist to identify missing
+        deliveries.
+      </div>
+    </div>
+  )}
+
 </div>
+
+      {isManager && suppliers.length > 0 && (
+        <div style={card}>
+          <div style={sectionHeader}>
+            <FaIndustry color="#7c3aed" />
+            Supplier delivery schedules
+          </div>
+          <div style={{ ...subtle, marginBottom: 12 }}>
+            Select the days each supplier is normally expected. Leave all days
+            blank for ad-hoc suppliers.
+          </div>
+          <div style={{ display: "grid", gap: 10 }}>
+            {suppliers.map((supplierRow) => {
+              const selectedDays = Array.isArray(supplierRow.deliveryDays)
+                ? supplierRow.deliveryDays.map(Number)
+                : [];
+
+              return (
+                <div
+                  key={supplierRow.id}
+                  style={{
+                    border: "1px solid #e5e7eb",
+                    borderRadius: 12,
+                    padding: 12,
+                    background: "#f9fafb",
+                  }}
+                >
+                  <div style={{ fontWeight: 800, marginBottom: 8 }}>
+                    {supplierRow.name}
+                  </div>
+                  <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
+                    {DELIVERY_DAYS.map((day) => {
+                      const selected = selectedDays.includes(day.value);
+                      return (
+                        <button
+                          key={day.value}
+                          type="button"
+                          onClick={() =>
+                            toggleSupplierDeliveryDay(supplierRow, day.value)
+                          }
+                          style={selected ? blueBtn : grayBtn}
+                        >
+                          {day.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       <div style={card}>
         <div style={sectionHeader}>

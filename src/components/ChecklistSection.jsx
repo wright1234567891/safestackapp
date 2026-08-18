@@ -5,6 +5,7 @@ import {
   addDoc,
   getDocs,
   getDoc,
+  setDoc,
   updateDoc,
   deleteDoc,
   doc,
@@ -32,6 +33,36 @@ const makeId = () => {
     return `q_${Math.random().toString(16).slice(2)}_${Date.now()}`;
   }
 };
+
+const toLocalDateInput = (date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+const getPreviousDateDetails = () => {
+  const date = new Date();
+  date.setHours(12, 0, 0, 0);
+  date.setDate(date.getDate() - 1);
+
+  return {
+    value: toLocalDateInput(date),
+    dayOfWeek: date.getDay(),
+    label: date.toLocaleDateString(undefined, {
+      weekday: "long",
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    }),
+  };
+};
+
+const normaliseSupplierName = (name) =>
+  (name || "").toString().trim().toLowerCase().replace(/\s+/g, " ");
+
+const reconciliationDocumentId = (site, deliveryDate) =>
+  `${site || "site"}_${deliveryDate || "date"}`.replace(/\//g, "_");
 
 // Stable local IDs for objects that don't yet have an id (prevents input remount / focus loss)
 const __localIdMap = new WeakMap();
@@ -149,7 +180,14 @@ const needsCorrective = (rule, ans) => {
 };
 
 // ---------- Component ----------
-const ChecklistSection = ({ goBack, site, user, onOpeningComplete }) => {
+const ChecklistSection = ({
+  goBack,
+  site,
+  user,
+  onOpeningComplete,
+  onOpenGoodsIn,
+  preOpeningMode = false,
+}) => {
   const [checklists, setChecklists] = useState([]);
   const [templates, setTemplates] = useState([]);
   const [siteTemplates, setSiteTemplates] = useState([]);
@@ -188,6 +226,16 @@ const ChecklistSection = ({ goBack, site, user, onOpeningComplete }) => {
   const [selectedChecklist, setSelectedChecklist] = useState(null);
   const [viewingCompleted, setViewingCompleted] = useState(null);
   const [draftId, setDraftId] = useState(null);
+
+  const [deliverySuppliers, setDeliverySuppliers] = useState([]);
+  const [deliveryRecords, setDeliveryRecords] = useState([]);
+  const [deliveryExceptions, setDeliveryExceptions] = useState({});
+  const [deliveryExceptionDrafts, setDeliveryExceptionDrafts] = useState({});
+  const [otherDeliveriesConfirmed, setOtherDeliveriesConfirmed] = useState(false);
+  const [deliveryReviewLoading, setDeliveryReviewLoading] = useState(false);
+  const [deliveryReviewError, setDeliveryReviewError] = useState("");
+
+  const previousDateDetails = getPreviousDateDetails();
 
   const uid = user?.uid || null;
 
@@ -239,6 +287,185 @@ const ChecklistSection = ({ goBack, site, user, onOpeningComplete }) => {
   const siteTemplatesCollectionRef = collection(db, "siteTemplates");
   const completedCollectionRef = collection(db, "completed");
   const draftsCollectionRef = collection(db, "checklistDrafts");
+  const deliveryReconciliationRef = doc(
+    db,
+    "deliveryReconciliations",
+    reconciliationDocumentId(site, previousDateDetails.value)
+  );
+
+  const isOpeningChecklist = (selectedChecklist?.title || "")
+    .toLowerCase()
+    .includes("opening");
+
+  const loadDeliveryReview = async () => {
+    if (!site) return;
+
+    setDeliveryReviewLoading(true);
+    setDeliveryReviewError("");
+
+    try {
+      const [supplierSnapshot, goodsInSnapshot, reconciliationSnapshot] =
+        await Promise.all([
+          getDocs(query(collection(db, "suppliers"), where("site", "==", site))),
+          getDocs(query(collection(db, "goodsIn"), where("site", "==", site))),
+          getDoc(deliveryReconciliationRef),
+        ]);
+
+      const supplierRows = supplierSnapshot.docs.map((supplierDoc) => ({
+        id: supplierDoc.id,
+        ...supplierDoc.data(),
+      }));
+      const deliveryRows = goodsInSnapshot.docs
+        .map((deliveryDoc) => ({ id: deliveryDoc.id, ...deliveryDoc.data() }))
+        .filter(
+          (delivery) => delivery.deliveryDate === previousDateDetails.value
+        );
+      const reconciliation = reconciliationSnapshot.exists()
+        ? reconciliationSnapshot.data()
+        : {};
+      const savedExceptions = reconciliation.exceptions || {};
+
+      setDeliverySuppliers(supplierRows);
+      setDeliveryRecords(deliveryRows);
+      setDeliveryExceptions(savedExceptions);
+      setDeliveryExceptionDrafts(savedExceptions);
+      setOtherDeliveriesConfirmed(
+        reconciliation.otherDeliveriesConfirmed === true
+      );
+    } catch (error) {
+      console.error("Error loading delivery reconciliation:", error);
+      setDeliveryReviewError(
+        "The previous day's delivery records could not be checked."
+      );
+      setDeliverySuppliers([]);
+      setDeliveryRecords([]);
+      setDeliveryExceptions({});
+      setDeliveryExceptionDrafts({});
+      setOtherDeliveriesConfirmed(false);
+    } finally {
+      setDeliveryReviewLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!isOpeningChecklist) return;
+    loadDeliveryReview();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [site, selectedChecklist?.id, isOpeningChecklist]);
+
+  const updateDeliveryExceptionDraft = (supplierId, field, value) => {
+    setDeliveryExceptionDrafts((prev) => ({
+      ...prev,
+      [supplierId]: {
+        ...prev[supplierId],
+        [field]: value,
+      },
+    }));
+  };
+
+  const saveDeliveryException = async (supplierRow) => {
+    const draft = deliveryExceptionDrafts[supplierRow.id] || {};
+    const status = (draft.status || "").trim();
+    const reason = (draft.reason || "").trim();
+
+    if (!status || !reason) {
+      alert("Choose an outcome and enter a reason for this missing delivery.");
+      return;
+    }
+
+    const savedException = {
+      supplierId: supplierRow.id,
+      supplierName: supplierRow.name || "Unknown supplier",
+      status,
+      reason,
+      recordedBy: personName,
+      recordedByUid: uid,
+      recordedAt: Timestamp.now(),
+    };
+    const nextExceptions = {
+      ...deliveryExceptions,
+      [supplierRow.id]: savedException,
+    };
+
+    try {
+      await setDoc(
+        deliveryReconciliationRef,
+        {
+          site,
+          deliveryDate: previousDateDetails.value,
+          exceptions: nextExceptions,
+          status: "in-progress",
+          updatedAt: Timestamp.now(),
+        },
+        { merge: true }
+      );
+      setDeliveryExceptions(nextExceptions);
+      setDeliveryExceptionDrafts((prev) => ({
+        ...prev,
+        [supplierRow.id]: savedException,
+      }));
+    } catch (error) {
+      console.error("Error saving delivery exception:", error);
+      alert("Could not save this delivery exception.");
+    }
+  };
+
+  const confirmNoOtherDeliveries = async () => {
+    try {
+      await setDoc(
+        deliveryReconciliationRef,
+        {
+          site,
+          deliveryDate: previousDateDetails.value,
+          otherDeliveriesConfirmed: true,
+          otherDeliveriesConfirmedBy: personName,
+          otherDeliveriesConfirmedByUid: uid,
+          otherDeliveriesConfirmedAt: Timestamp.now(),
+          status: "in-progress",
+          updatedAt: Timestamp.now(),
+        },
+        { merge: true }
+      );
+      setOtherDeliveriesConfirmed(true);
+    } catch (error) {
+      console.error("Error confirming other deliveries:", error);
+      alert("Could not save the delivery confirmation.");
+    }
+  };
+
+  const openGoodsInForDelivery = async (supplierName = "", isAdditional = false) => {
+    if (!onOpenGoodsIn) {
+      alert("Goods In could not be opened from this checklist.");
+      return;
+    }
+
+    if (isAdditional && otherDeliveriesConfirmed) {
+      try {
+        await setDoc(
+          deliveryReconciliationRef,
+          {
+            otherDeliveriesConfirmed: false,
+            status: "in-progress",
+            updatedAt: Timestamp.now(),
+          },
+          { merge: true }
+        );
+        setOtherDeliveriesConfirmed(false);
+      } catch (error) {
+        console.error("Error reopening delivery reconciliation:", error);
+        alert("Could not reopen the delivery confirmation.");
+        return;
+      }
+    }
+
+    const draftSaved = await saveDraft(false);
+    if (!draftSaved) return;
+
+    onOpenGoodsIn({
+      supplier: supplierName,
+      deliveryDate: previousDateDetails.value,
+    });
+  };
 
   // ---------- Build effective checklists from templates ----------
   const buildChecklistsFromTemplates = (siteTemplateRows, templatesRows) => {
@@ -395,8 +622,49 @@ const ChecklistSection = ({ goBack, site, user, onOpeningComplete }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [site]);
 
-  const siteChecklists = checklists;
+  const siteChecklists = preOpeningMode
+    ? checklists.filter((checklist) =>
+        (checklist.title || "").toLowerCase().includes("opening")
+      )
+    : checklists;
   const siteCompleted = completed;
+
+  const expectedDeliverySuppliers = deliverySuppliers.filter((supplierRow) =>
+    (Array.isArray(supplierRow.deliveryDays)
+      ? supplierRow.deliveryDays.map(Number)
+      : []
+    ).includes(previousDateDetails.dayOfWeek)
+  );
+
+  const recordedSupplierNames = new Set(
+    deliveryRecords.map((delivery) =>
+      normaliseSupplierName(delivery.supplier)
+    )
+  );
+
+  const isSupplierDeliveryRecorded = (supplierRow) =>
+    recordedSupplierNames.has(normaliseSupplierName(supplierRow.name));
+
+  const unresolvedExpectedSuppliers = expectedDeliverySuppliers.filter(
+    (supplierRow) => {
+      if (isSupplierDeliveryRecorded(supplierRow)) return false;
+      const exception = deliveryExceptions[supplierRow.id];
+      const draft = deliveryExceptionDrafts[supplierRow.id] || {};
+      return (
+        !exception?.status ||
+        !exception?.reason ||
+        (draft.status || "") !== (exception.status || "") ||
+        (draft.reason || "").trim() !== (exception.reason || "").trim()
+      );
+    }
+  );
+
+  const deliveryReconciliationComplete =
+    isOpeningChecklist &&
+    !deliveryReviewLoading &&
+    !deliveryReviewError &&
+    unresolvedExpectedSuppliers.length === 0 &&
+    otherDeliveriesConfirmed;
 
   // ---------- Focus helpers ----------
   useEffect(() => {
@@ -675,8 +943,8 @@ const ChecklistSection = ({ goBack, site, user, onOpeningComplete }) => {
     }
   };
 
-  const saveDraft = async () => {
-    if (!selectedChecklist) return;
+  const saveDraft = async (showConfirmation = true) => {
+    if (!selectedChecklist) return false;
 
     const base = {
       site,
@@ -703,10 +971,12 @@ const ChecklistSection = ({ goBack, site, user, onOpeningComplete }) => {
         setDraftId(ref.id);
       }
       await refreshDraftsForPerson();
-      alert("Draft saved.");
+      if (showConfirmation) alert("Draft saved.");
+      return true;
     } catch (e) {
       console.error("Error saving draft:", e);
       alert("Could not save draft.");
+      return false;
     }
   };
 
@@ -748,6 +1018,17 @@ const ChecklistSection = ({ goBack, site, user, onOpeningComplete }) => {
 
     await loadLatestDraft(cl);
   };
+
+  useEffect(() => {
+    if (!preOpeningMode || selectedChecklist) return;
+
+    const openingChecklist = checklists.find((checklist) =>
+      (checklist.title || "").toLowerCase().includes("opening")
+    );
+
+    if (openingChecklist) openChecklist(openingChecklist);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [preOpeningMode, checklists, selectedChecklist]);
 
   const resumeDraft = async (draft) => {
     const cl = siteChecklists.find((c) => c.id === draft.checklistId);
@@ -823,6 +1104,14 @@ const ChecklistSection = ({ goBack, site, user, onOpeningComplete }) => {
   const saveAnswers = async () => {
     if (!selectedChecklist) return;
 
+    if (isOpeningChecklist && !deliveryReconciliationComplete) {
+      alert(
+        deliveryReviewError ||
+          "Complete yesterday's delivery reconciliation before submitting the opening checklist."
+      );
+      return;
+    }
+
     try {
       const now = Timestamp.now();
 
@@ -847,17 +1136,48 @@ const ChecklistSection = ({ goBack, site, user, onOpeningComplete }) => {
         source: selectedChecklist._source === "template" ? "template" : "checklist",
         templateId: selectedChecklist._source === "template" ? selectedChecklist.id : null,
         checklistId: selectedChecklist._source === "template" ? null : selectedChecklist.id,
+        ...(isOpeningChecklist
+          ? {
+              deliveryReconciliationDate: previousDateDetails.value,
+              deliveryReconciliationId: reconciliationDocumentId(
+                site,
+                previousDateDetails.value
+              ),
+            }
+          : {}),
       };
 
       const docRef = await addDoc(completedCollectionRef, completedEntry);
       setCompleted((prev) => [{ id: docRef.id, ...completedEntry }, ...prev]);
       const titleLower = (selectedChecklist.title || "").toLowerCase();
 
-if (titleLower.includes("opening")) {
+      if (titleLower.includes("opening")) {
+        await setDoc(
+          deliveryReconciliationRef,
+          {
+            site,
+            deliveryDate: previousDateDetails.value,
+            expectedSupplierIds: expectedDeliverySuppliers.map(
+              (supplierRow) => supplierRow.id
+            ),
+            expectedSupplierNames: expectedDeliverySuppliers.map(
+              (supplierRow) => supplierRow.name || "Unknown supplier"
+            ),
+            recordedDeliveryIds: deliveryRecords.map((delivery) => delivery.id),
+            exceptions: deliveryExceptions,
+            otherDeliveriesConfirmed: true,
+            status: "complete",
+            completedChecklistId: docRef.id,
+            completedBy: personName,
+            completedByUid: uid,
+            completedAt: now,
+            updatedAt: now,
+          },
+          { merge: true }
+        );
 
-  onOpeningComplete?.();
-
-}
+        onOpeningComplete?.();
+      }
 
       if (draftId) {
         await deleteDoc(doc(db, "checklistDrafts", draftId));
@@ -1238,6 +1558,262 @@ if (titleLower.includes("opening")) {
         </Card>
       );
     });
+
+  const renderDeliveryReconciliation = () => {
+    if (!isOpeningChecklist) return null;
+
+    return (
+      <div
+        style={{
+          margin: "12px 0 18px",
+          padding: 16,
+          borderRadius: 16,
+          border: "1px solid #bfdbfe",
+          background: "#eff6ff",
+        }}
+      >
+        <div style={{ fontSize: 18, fontWeight: 900, color: "#1e3a8a" }}>
+          Previous day's deliveries
+        </div>
+        <div style={{ ...mutedText, color: "#1e40af", marginTop: 5 }}>
+          Reconcile deliveries for {previousDateDetails.label}. Expected deliveries
+          must be recorded or given a reason before the opening checklist can be
+          submitted.
+        </div>
+
+        {deliveryReviewLoading && (
+          <div style={{ marginTop: 14, color: "#1e40af", fontWeight: 700 }}>
+            Checking Goods In records…
+          </div>
+        )}
+
+        {deliveryReviewError && (
+          <div
+            style={{
+              marginTop: 14,
+              padding: 12,
+              borderRadius: 12,
+              background: "#fef2f2",
+              color: "#991b1b",
+              fontWeight: 700,
+            }}
+          >
+            {deliveryReviewError}
+            <div style={{ marginTop: 9 }}>
+              <Button kind="danger" onClick={loadDeliveryReview}>
+                Try again
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {!deliveryReviewLoading && !deliveryReviewError && (
+          <>
+            <div style={{ marginTop: 16, fontWeight: 800, color: "#0f172a" }}>
+              Goods In records found
+            </div>
+
+            {deliveryRecords.length === 0 ? (
+              <div style={{ ...mutedText, marginTop: 6 }}>
+                No deliveries have been recorded for this date.
+              </div>
+            ) : (
+              <div style={{ display: "grid", gap: 7, marginTop: 8 }}>
+                {deliveryRecords.map((delivery) => (
+                  <div
+                    key={delivery.id}
+                    style={{
+                      padding: "9px 11px",
+                      borderRadius: 10,
+                      background: "#ecfdf5",
+                      border: "1px solid #a7f3d0",
+                      color: "#166534",
+                      fontWeight: 700,
+                    }}
+                  >
+                    ✓ {delivery.supplier || "Unknown supplier"} · {delivery.lineCount || 0}{" "}
+                    line{delivery.lineCount === 1 ? "" : "s"}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div style={{ marginTop: 18, fontWeight: 800, color: "#0f172a" }}>
+              Expected suppliers
+            </div>
+
+            {expectedDeliverySuppliers.length === 0 ? (
+              <div style={{ ...mutedText, marginTop: 6 }}>
+                No suppliers are scheduled for this day. Managers can configure
+                delivery days in Goods In.
+              </div>
+            ) : (
+              <div style={{ display: "grid", gap: 10, marginTop: 8 }}>
+                {expectedDeliverySuppliers.map((supplierRow) => {
+                  const recorded = isSupplierDeliveryRecorded(supplierRow);
+                  const savedException = deliveryExceptions[supplierRow.id];
+                  const draft = deliveryExceptionDrafts[supplierRow.id] || {};
+
+                  return (
+                    <div
+                      key={supplierRow.id}
+                      style={{
+                        padding: 12,
+                        borderRadius: 12,
+                        background: recorded ? "#ecfdf5" : "#fff",
+                        border: recorded
+                          ? "1px solid #a7f3d0"
+                          : "1px solid #f59e0b",
+                      }}
+                    >
+                      <div style={{ fontWeight: 900, color: "#0f172a" }}>
+                        {supplierRow.name || "Unknown supplier"}
+                      </div>
+
+                      {recorded ? (
+                        <div style={{ marginTop: 5, color: "#166534", fontWeight: 700 }}>
+                          ✓ Recorded in Goods In
+                        </div>
+                      ) : (
+                        <>
+                          <div style={{ marginTop: 5, color: "#92400e", fontWeight: 700 }}>
+                            Expected but not recorded
+                          </div>
+                          <div
+                            style={{
+                              display: "flex",
+                              gap: 8,
+                              flexWrap: "wrap",
+                              alignItems: "center",
+                              marginTop: 10,
+                            }}
+                          >
+                            <Button
+                              kind="primary"
+                              onClick={() =>
+                                openGoodsInForDelivery(supplierRow.name || "")
+                              }
+                            >
+                              Record delivery now
+                            </Button>
+                            <select
+                              value={draft.status || ""}
+                              onChange={(event) =>
+                                updateDeliveryExceptionDraft(
+                                  supplierRow.id,
+                                  "status",
+                                  event.target.value
+                                )
+                              }
+                              style={{ ...inputStyle, padding: "9px 11px" }}
+                            >
+                              <option value="">Choose non-delivery outcome</option>
+                              <option value="not-delivered">Supplier did not deliver</option>
+                              <option value="cancelled">Delivery was cancelled</option>
+                              <option value="delayed">Delivery was delayed</option>
+                            </select>
+                            <input
+                              type="text"
+                              value={draft.reason || ""}
+                              onChange={(event) =>
+                                updateDeliveryExceptionDraft(
+                                  supplierRow.id,
+                                  "reason",
+                                  event.target.value
+                                )
+                              }
+                              placeholder="Reason required"
+                              style={{ ...inputStyle, flex: 1, minWidth: 220 }}
+                            />
+                            <Button
+                              kind="warn"
+                              onClick={() => saveDeliveryException(supplierRow)}
+                            >
+                              Save exception
+                            </Button>
+                          </div>
+
+                          {savedException?.status && savedException?.reason && (
+                            <div style={{ marginTop: 8, color: "#92400e", fontSize: 13 }}>
+                              Saved: {savedException.status.replace(/-/g, " ")} —{" "}
+                              {savedException.reason}
+                            </div>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            <div
+              style={{
+                marginTop: 18,
+                padding: 12,
+                borderRadius: 12,
+                background: "#fff",
+                border: "1px solid #cbd5e1",
+              }}
+            >
+              <div style={{ fontWeight: 800, color: "#0f172a" }}>
+                Were there any other unscheduled deliveries?
+              </div>
+              <div style={{ ...mutedText, marginTop: 4 }}>
+                Record each additional delivery, then confirm when there are no
+                others outstanding. Your name and time are saved.
+              </div>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
+                <Button
+                  kind="primary"
+                  onClick={() => openGoodsInForDelivery("", true)}
+                >
+                  Record another delivery
+                </Button>
+                <Button
+                  kind={otherDeliveriesConfirmed ? "success" : "subtle"}
+                  onClick={confirmNoOtherDeliveries}
+                >
+                  {otherDeliveriesConfirmed
+                    ? "✓ No other deliveries confirmed"
+                    : "Confirm no other deliveries"}
+                </Button>
+              </div>
+            </div>
+
+            {deliveryReconciliationComplete ? (
+              <div
+                style={{
+                  marginTop: 14,
+                  padding: 11,
+                  borderRadius: 11,
+                  background: "#dcfce7",
+                  color: "#166534",
+                  fontWeight: 800,
+                }}
+              >
+                ✓ Delivery reconciliation complete
+              </div>
+            ) : (
+              <div
+                style={{
+                  marginTop: 14,
+                  padding: 11,
+                  borderRadius: 11,
+                  background: "#fef3c7",
+                  color: "#92400e",
+                  fontWeight: 800,
+                }}
+              >
+                Complete every delivery item above before submitting the opening
+                checklist.
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    );
+  };
 
   const renderAuthoringItems = (list, onUpdate, onRemove) =>
     list.map((item, index) => {
@@ -1935,6 +2511,7 @@ if (titleLower.includes("opening")) {
                 {selectedChecklist.frequency || "Ad hoc"}
               </span>
             </SectionTitle>
+            {renderDeliveryReconciliation()}
             {renderChecklistItemsRun(true)}
             <div style={{ display: "flex", gap: 10, marginTop: 16, flexWrap: "wrap" }}>
               <Button kind="success" onClick={saveAnswers}>
@@ -1948,7 +2525,7 @@ if (titleLower.includes("opening")) {
                   Discard Draft
                 </Button>
               )}
-              <Button onClick={resetView}>Back</Button>
+              <Button onClick={preOpeningMode ? goBack : resetView}>Back</Button>
             </div>
           </Card>
         )}
