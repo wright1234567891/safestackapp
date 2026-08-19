@@ -67,6 +67,10 @@ const [goodsInFilter, setGoodsInFilter] = useState("30");
   const [notes, setNotes] = useState("");
   const [newSupplierName, setNewSupplierName] = useState("");
   const [newSupplierDeliveryDays, setNewSupplierDeliveryDays] = useState([]);
+  const [scheduleExpanded, setScheduleExpanded] = useState(false);
+  const [scheduleSearch, setScheduleSearch] = useState("");
+  const [scheduleFilter, setScheduleFilter] = useState("all");
+  const [scheduleSaving, setScheduleSaving] = useState("");
 
   const isManager =
     ["manager", "admin"].includes((user?.role || "").toLowerCase()) ||
@@ -284,6 +288,33 @@ const filteredGoodsInRecords = goodsInRecords.filter((record) => {
   return recordDate >= from;
 });
 
+  const scheduledSupplierCount = suppliers.filter(
+    (supplierRow) =>
+      Array.isArray(supplierRow.deliveryDays) &&
+      supplierRow.deliveryDays.length > 0
+  ).length;
+  const adHocSupplierCount = suppliers.length - scheduledSupplierCount;
+
+  const filteredScheduleSuppliers = useMemo(() => {
+    const search = scheduleSearch.trim().toLowerCase();
+
+    return suppliers
+      .filter((supplierRow) => {
+        const deliveryDays = Array.isArray(supplierRow.deliveryDays)
+          ? supplierRow.deliveryDays
+          : [];
+        const matchesSearch =
+          !search || (supplierRow.name || "").toLowerCase().includes(search);
+        const matchesFilter =
+          scheduleFilter === "all" ||
+          (scheduleFilter === "scheduled" && deliveryDays.length > 0) ||
+          (scheduleFilter === "ad-hoc" && deliveryDays.length === 0);
+
+        return matchesSearch && matchesFilter;
+      })
+      .sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+  }, [suppliers, scheduleSearch, scheduleFilter]);
+
   const stockMap = useMemo(
     () => Object.fromEntries(stockItems.map((item) => [item.id, item])),
     [stockItems]
@@ -431,6 +462,14 @@ const filteredGoodsInRecords = goodsInRecords.filter((record) => {
     const nextDays = currentDays.includes(day)
       ? currentDays.filter((value) => value !== day)
       : [...currentDays, day].sort((a, b) => a - b);
+    const savingKey = `${supplierRow.id}_${day}`;
+
+    setScheduleSaving(savingKey);
+    setSuppliers((prev) =>
+      prev.map((row) =>
+        row.id === supplierRow.id ? { ...row, deliveryDays: nextDays } : row
+      )
+    );
 
     try {
       await updateDoc(doc(db, "suppliers", supplierRow.id), {
@@ -440,7 +479,16 @@ const filteredGoodsInRecords = goodsInRecords.filter((record) => {
       });
     } catch (error) {
       console.error("Error updating supplier delivery schedule:", error);
+      setSuppliers((prev) =>
+        prev.map((row) =>
+          row.id === supplierRow.id
+            ? { ...row, deliveryDays: currentDays }
+            : row
+        )
+      );
       alert("Failed to update this supplier's delivery schedule.");
+    } finally {
+      setScheduleSaving("");
     }
   };
 
@@ -817,54 +865,229 @@ const filteredGoodsInRecords = goodsInRecords.filter((record) => {
 
       {isManager && suppliers.length > 0 && (
         <div style={card}>
-          <div style={sectionHeader}>
-            <FaIndustry color="#7c3aed" />
-            Supplier delivery schedules
-          </div>
-          <div style={{ ...subtle, marginBottom: 12 }}>
-            Select the days each supplier is normally expected. Leave all days
-            blank for ad-hoc suppliers.
-          </div>
-          <div style={{ display: "grid", gap: 10 }}>
-            {suppliers.map((supplierRow) => {
-              const selectedDays = Array.isArray(supplierRow.deliveryDays)
-                ? supplierRow.deliveryDays.map(Number)
-                : [];
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              gap: 12,
+              flexWrap: "wrap",
+            }}
+          >
+            <div>
+              <div style={{ ...sectionHeader, marginBottom: 4 }}>
+                <FaIndustry color="#7c3aed" />
+                Supplier delivery schedules
+              </div>
+              <div style={subtle}>
+                {scheduledSupplierCount} scheduled · {adHocSupplierCount} ad-hoc
+              </div>
+            </div>
 
-              return (
-                <div
-                  key={supplierRow.id}
-                  style={{
-                    border: "1px solid #e5e7eb",
-                    borderRadius: 12,
-                    padding: 12,
-                    background: "#f9fafb",
-                  }}
-                >
-                  <div style={{ fontWeight: 800, marginBottom: 8 }}>
-                    {supplierRow.name}
-                  </div>
-                  <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
-                    {DELIVERY_DAYS.map((day) => {
-                      const selected = selectedDays.includes(day.value);
-                      return (
-                        <button
-                          key={day.value}
-                          type="button"
-                          onClick={() =>
-                            toggleSupplierDeliveryDay(supplierRow, day.value)
-                          }
-                          style={selected ? blueBtn : grayBtn}
-                        >
-                          {day.label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              );
-            })}
+            <button
+              type="button"
+              onClick={() => setScheduleExpanded((current) => !current)}
+              style={scheduleExpanded ? blueBtn : grayBtn}
+            >
+              {scheduleExpanded ? "Hide schedules ▴" : "Manage schedules ▾"}
+            </button>
           </div>
+
+          {scheduleExpanded && (
+            <div style={{ marginTop: 16 }}>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  gap: 10,
+                  flexWrap: "wrap",
+                  marginBottom: 12,
+                }}
+              >
+                <input
+                  type="search"
+                  value={scheduleSearch}
+                  onChange={(event) => setScheduleSearch(event.target.value)}
+                  placeholder="Search suppliers"
+                  style={{ ...input, minWidth: 260, flex: "1 1 280px" }}
+                />
+
+                <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
+                  {[
+                    { value: "all", label: `All (${suppliers.length})` },
+                    {
+                      value: "scheduled",
+                      label: `Scheduled (${scheduledSupplierCount})`,
+                    },
+                    { value: "ad-hoc", label: `Ad-hoc (${adHocSupplierCount})` },
+                  ].map((filterOption) => (
+                    <button
+                      key={filterOption.value}
+                      type="button"
+                      onClick={() => setScheduleFilter(filterOption.value)}
+                      style={
+                        scheduleFilter === filterOption.value ? blueBtn : grayBtn
+                      }
+                    >
+                      {filterOption.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div style={{ ...subtle, marginBottom: 10 }}>
+                Click a day to turn it on or off. Blank rows are treated as ad-hoc
+                suppliers.
+              </div>
+
+              <div
+                style={{
+                  border: "1px solid #e5e7eb",
+                  borderRadius: 12,
+                  overflow: "auto",
+                  maxHeight: 430,
+                  background: "#fff",
+                }}
+              >
+                <div style={{ minWidth: 720 }}>
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "minmax(230px, 1fr) repeat(7, 58px)",
+                      alignItems: "center",
+                      minHeight: 44,
+                      padding: "0 10px",
+                      background: "#f8fafc",
+                      borderBottom: "1px solid #e5e7eb",
+                      position: "sticky",
+                      top: 0,
+                      zIndex: 2,
+                    }}
+                  >
+                    <div style={{ fontSize: 12, fontWeight: 900, color: "#475569" }}>
+                      Supplier
+                    </div>
+                    {DELIVERY_DAYS.map((day) => (
+                      <div
+                        key={day.value}
+                        style={{
+                          textAlign: "center",
+                          fontSize: 12,
+                          fontWeight: 900,
+                          color: "#475569",
+                        }}
+                      >
+                        {day.label}
+                      </div>
+                    ))}
+                  </div>
+
+                  {filteredScheduleSuppliers.length === 0 ? (
+                    <div style={{ padding: 18, textAlign: "center", ...subtle }}>
+                      No suppliers match this search or filter.
+                    </div>
+                  ) : (
+                    filteredScheduleSuppliers.map((supplierRow, index) => {
+                      const selectedDays = Array.isArray(supplierRow.deliveryDays)
+                        ? supplierRow.deliveryDays.map(Number)
+                        : [];
+
+                      return (
+                        <div
+                          key={supplierRow.id}
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns:
+                              "minmax(230px, 1fr) repeat(7, 58px)",
+                            alignItems: "center",
+                            minHeight: 52,
+                            padding: "0 10px",
+                            background: index % 2 === 0 ? "#fff" : "#f8fafc",
+                            borderBottom:
+                              index === filteredScheduleSuppliers.length - 1
+                                ? "none"
+                                : "1px solid #eef2f7",
+                          }}
+                        >
+                          <div style={{ minWidth: 0, paddingRight: 10 }}>
+                            <div
+                              style={{
+                                fontWeight: 800,
+                                whiteSpace: "nowrap",
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                              }}
+                              title={supplierRow.name}
+                            >
+                              {supplierRow.name}
+                            </div>
+                            <div
+                              style={{
+                                fontSize: 11,
+                                marginTop: 2,
+                                color: selectedDays.length ? "#166534" : "#64748b",
+                              }}
+                            >
+                              {selectedDays.length
+                                ? `${selectedDays.length} day${
+                                    selectedDays.length === 1 ? "" : "s"
+                                  } scheduled`
+                                : "Ad-hoc"}
+                            </div>
+                          </div>
+
+                          {DELIVERY_DAYS.map((day) => {
+                            const selected = selectedDays.includes(day.value);
+                            const savingKey = `${supplierRow.id}_${day.value}`;
+                            const saving = scheduleSaving === savingKey;
+
+                            return (
+                              <div key={day.value} style={{ textAlign: "center" }}>
+                                <button
+                                  type="button"
+                                  aria-label={`${selected ? "Remove" : "Add"} ${
+                                    day.label
+                                  } delivery for ${supplierRow.name}`}
+                                  aria-pressed={selected}
+                                  disabled={saving}
+                                  onClick={() =>
+                                    toggleSupplierDeliveryDay(
+                                      supplierRow,
+                                      day.value
+                                    )
+                                  }
+                                  style={{
+                                    width: 36,
+                                    height: 34,
+                                    borderRadius: 9,
+                                    border: selected
+                                      ? "1px solid #7c3aed"
+                                      : "1px solid #e2e8f0",
+                                    background: selected ? "#7c3aed" : "#fff",
+                                    color: selected ? "#fff" : "#94a3b8",
+                                    fontWeight: 900,
+                                    fontSize: 15,
+                                    cursor: saving ? "wait" : "pointer",
+                                    opacity: saving ? 0.6 : 1,
+                                  }}
+                                  title={`${day.label}: ${
+                                    selected ? "scheduled" : "not scheduled"
+                                  }`}
+                                >
+                                  {selected ? "✓" : "·"}
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
