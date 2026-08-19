@@ -58,6 +58,22 @@ const getPreviousDateDetails = () => {
   };
 };
 
+const formatDeliveryDate = (value) => {
+  if (!value) return "";
+  const [year, month, day] = value.split("-").map(Number);
+  if (!year || !month || !day) return value;
+
+  return new Date(year, month - 1, day, 12, 0, 0).toLocaleDateString(
+    undefined,
+    {
+      weekday: "long",
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    }
+  );
+};
+
 const normaliseSupplierName = (name) =>
   (name || "").toString().trim().toLowerCase().replace(/\s+/g, " ");
 
@@ -225,6 +241,10 @@ const ChecklistSection = ({
 
   const [selectedChecklist, setSelectedChecklist] = useState(null);
   const [viewingCompleted, setViewingCompleted] = useState(null);
+  const [viewingReconciliationLoading, setViewingReconciliationLoading] =
+    useState(false);
+  const [viewingReconciliationError, setViewingReconciliationError] =
+    useState("");
   const [draftId, setDraftId] = useState(null);
 
   const [deliverySuppliers, setDeliverySuppliers] = useState([]);
@@ -665,6 +685,37 @@ const ChecklistSection = ({
     !deliveryReviewError &&
     unresolvedExpectedSuppliers.length === 0 &&
     otherDeliveriesConfirmed;
+
+  const buildDeliveryReconciliationSnapshot = (completedAt) => ({
+    deliveryDate: previousDateDetails.value,
+    deliveryDateLabel: previousDateDetails.label,
+    status: "complete",
+    recordedDeliveries: deliveryRecords.map((delivery) => ({
+      id: delivery.id || "",
+      supplier: delivery.supplier || "Unknown supplier",
+      lineCount: Number(delivery.lineCount) || 0,
+    })),
+    expectedSuppliers: expectedDeliverySuppliers.map((supplierRow) => {
+      const recorded = isSupplierDeliveryRecorded(supplierRow);
+      const exception = deliveryExceptions[supplierRow.id] || {};
+
+      return {
+        id: supplierRow.id || "",
+        name: supplierRow.name || "Unknown supplier",
+        outcome: recorded ? "recorded" : exception.status || "not-recorded",
+        reason: recorded ? "" : exception.reason || "",
+        recordedBy: recorded ? "" : exception.recordedBy || "",
+        recordedAt: recorded ? null : exception.recordedAt || null,
+      };
+    }),
+    otherDeliveriesConfirmed: true,
+    otherDeliveriesConfirmedBy: personName,
+    otherDeliveriesConfirmedByUid: uid,
+    otherDeliveriesConfirmedAt: completedAt,
+    completedBy: personName,
+    completedByUid: uid,
+    completedAt,
+  });
 
   // ---------- Focus helpers ----------
   useEffect(() => {
@@ -1114,6 +1165,9 @@ const ChecklistSection = ({
 
     try {
       const now = Timestamp.now();
+      const deliveryReconciliationSnapshot = isOpeningChecklist
+        ? buildDeliveryReconciliationSnapshot(now)
+        : null;
 
       if (!selectedChecklist._source || selectedChecklist._source !== "template") {
         try {
@@ -1143,6 +1197,7 @@ const ChecklistSection = ({
                 site,
                 previousDateDetails.value
               ),
+              deliveryReconciliation: deliveryReconciliationSnapshot,
             }
           : {}),
       };
@@ -1224,11 +1279,132 @@ const ChecklistSection = ({
     }
   };
 
-  const viewCompleted = (c) => {
+  const viewCompleted = async (c) => {
     setViewingCompleted(c);
-    setViewQuestions(c.questions.map(withQuestionDefaults));
+    setViewQuestions((c.questions || []).map(withQuestionDefaults));
     setSelectedChecklist(null);
     setDraftId(null);
+    setViewingReconciliationError("");
+
+    if (c.deliveryReconciliation || !c.deliveryReconciliationDate) {
+      setViewingReconciliationLoading(false);
+      return;
+    }
+
+    setViewingReconciliationLoading(true);
+
+    try {
+      const reconciliationId =
+        c.deliveryReconciliationId ||
+        reconciliationDocumentId(site, c.deliveryReconciliationDate);
+      const [reconciliationSnapshot, goodsInSnapshot] = await Promise.all([
+        getDoc(doc(db, "deliveryReconciliations", reconciliationId)),
+        getDocs(query(collection(db, "goodsIn"), where("site", "==", site))),
+      ]);
+      const reconciliation = reconciliationSnapshot.exists()
+        ? reconciliationSnapshot.data()
+        : {};
+      const recordedDeliveryIds = new Set(
+        Array.isArray(reconciliation.recordedDeliveryIds)
+          ? reconciliation.recordedDeliveryIds
+          : []
+      );
+      const recordedDeliveries = goodsInSnapshot.docs
+        .map((goodsInDoc) => ({ id: goodsInDoc.id, ...goodsInDoc.data() }))
+        .filter(
+          (delivery) =>
+            delivery.deliveryDate === c.deliveryReconciliationDate ||
+            recordedDeliveryIds.has(delivery.id)
+        )
+        .map((delivery) => ({
+          id: delivery.id,
+          supplier: delivery.supplier || "Unknown supplier",
+          lineCount: Number(delivery.lineCount) || 0,
+        }));
+      const recordedNames = new Set(
+        recordedDeliveries.map((delivery) =>
+          normaliseSupplierName(delivery.supplier)
+        )
+      );
+      const expectedSupplierNames = Array.isArray(
+        reconciliation.expectedSupplierNames
+      )
+        ? reconciliation.expectedSupplierNames
+        : [];
+      const expectedSupplierIds = Array.isArray(
+        reconciliation.expectedSupplierIds
+      )
+        ? reconciliation.expectedSupplierIds
+        : [];
+      const savedExceptions = reconciliation.exceptions || {};
+
+      const expectedSuppliers = expectedSupplierNames.map((name, index) => {
+        const supplierId = expectedSupplierIds[index] || "";
+        const exception =
+          savedExceptions[supplierId] ||
+          Object.values(savedExceptions).find(
+            (item) =>
+              normaliseSupplierName(item?.supplierName) ===
+              normaliseSupplierName(name)
+          ) ||
+          {};
+        const recorded = recordedNames.has(normaliseSupplierName(name));
+
+        return {
+          id: supplierId,
+          name: name || "Unknown supplier",
+          outcome: recorded ? "recorded" : exception.status || "not-recorded",
+          reason: recorded ? "" : exception.reason || "",
+          recordedBy: recorded ? "" : exception.recordedBy || "",
+          recordedAt: recorded ? null : exception.recordedAt || null,
+        };
+      });
+
+      const deliveryReconciliation = {
+        deliveryDate: c.deliveryReconciliationDate,
+        deliveryDateLabel: formatDeliveryDate(c.deliveryReconciliationDate),
+        status: reconciliation.status || "complete",
+        recordedDeliveries,
+        expectedSuppliers,
+        otherDeliveriesConfirmed:
+          reconciliation.otherDeliveriesConfirmed === true,
+        otherDeliveriesConfirmedBy:
+          reconciliation.otherDeliveriesConfirmedBy ||
+          reconciliation.completedBy ||
+          c.person ||
+          "",
+        otherDeliveriesConfirmedByUid:
+          reconciliation.otherDeliveriesConfirmedByUid ||
+          reconciliation.completedByUid ||
+          null,
+        otherDeliveriesConfirmedAt:
+          reconciliation.otherDeliveriesConfirmedAt ||
+          reconciliation.completedAt ||
+          c.createdAt ||
+          null,
+        completedBy: reconciliation.completedBy || c.person || "",
+        completedByUid: reconciliation.completedByUid || null,
+        completedAt: reconciliation.completedAt || c.createdAt || null,
+      };
+
+      setViewingCompleted((current) =>
+        current?.id === c.id
+          ? { ...current, deliveryReconciliation }
+          : current
+      );
+      setCompleted((current) =>
+        current.map((entry) =>
+          entry.id === c.id ? { ...entry, deliveryReconciliation } : entry
+        )
+      );
+    } catch (error) {
+      console.error("Error loading completed delivery reconciliation:", error);
+      setViewingReconciliationError(
+        "The saved delivery reconciliation could not be loaded."
+      );
+    } finally {
+      setViewingReconciliationLoading(false);
+    }
   };
 
   const resetView = () => {
@@ -1242,6 +1418,8 @@ const ChecklistSection = ({
     setNewItem("");
     setSelectedChecklist(null);
     setViewingCompleted(null);
+    setViewingReconciliationLoading(false);
+    setViewingReconciliationError("");
     setDraftId(null);
     setEditingId(null);
     setEditTitle("");
@@ -1287,11 +1465,85 @@ const ChecklistSection = ({
     }
   };
 
+  const writeDeliveryReconciliationBlock = (container, reconciliation) => {
+    if (!reconciliation) return;
+
+    const heading = document.createElement("h3");
+    heading.innerText = "Delivery reconciliation";
+    heading.style.margin = "16px 0 6px 0";
+    container.appendChild(heading);
+
+    const dateLine = document.createElement("p");
+    dateLine.style.margin = "0 0 8px 0";
+    dateLine.innerText = `Delivery date: ${
+      reconciliation.deliveryDateLabel ||
+      formatDeliveryDate(reconciliation.deliveryDate) ||
+      "Not recorded"
+    }`;
+    container.appendChild(dateLine);
+
+    const recordedDeliveries = Array.isArray(reconciliation.recordedDeliveries)
+      ? reconciliation.recordedDeliveries
+      : [];
+    const recordedHeading = document.createElement("p");
+    recordedHeading.style.margin = "0 0 4px 0";
+    recordedHeading.style.fontWeight = "700";
+    recordedHeading.innerText = "Goods In records:";
+    container.appendChild(recordedHeading);
+
+    if (recordedDeliveries.length === 0) {
+      const emptyLine = document.createElement("p");
+      emptyLine.style.margin = "0 0 6px 16px";
+      emptyLine.innerText = "No deliveries recorded.";
+      container.appendChild(emptyLine);
+    } else {
+      recordedDeliveries.forEach((delivery) => {
+        const line = document.createElement("p");
+        line.style.margin = "0 0 4px 16px";
+        line.innerText = `• ${delivery.supplier || "Unknown supplier"} — ${
+          Number(delivery.lineCount) || 0
+        } line${Number(delivery.lineCount) === 1 ? "" : "s"}`;
+        container.appendChild(line);
+      });
+    }
+
+    const expectedSuppliers = Array.isArray(reconciliation.expectedSuppliers)
+      ? reconciliation.expectedSuppliers
+      : [];
+    if (expectedSuppliers.length > 0) {
+      const expectedHeading = document.createElement("p");
+      expectedHeading.style.margin = "8px 0 4px 0";
+      expectedHeading.style.fontWeight = "700";
+      expectedHeading.innerText = "Expected suppliers:";
+      container.appendChild(expectedHeading);
+
+      expectedSuppliers.forEach((supplier) => {
+        const line = document.createElement("p");
+        line.style.margin = "0 0 4px 16px";
+        const outcome = (supplier.outcome || "not-recorded").replace(/-/g, " ");
+        line.innerText = `• ${supplier.name || "Unknown supplier"} — ${outcome}${
+          supplier.reason ? ` (${supplier.reason})` : ""
+        }`;
+        container.appendChild(line);
+      });
+    }
+
+    const confirmation = document.createElement("p");
+    confirmation.style.margin = "8px 0 16px 0";
+    confirmation.innerText = reconciliation.otherDeliveriesConfirmed
+      ? `No other deliveries confirmed by ${
+          reconciliation.otherDeliveriesConfirmedBy || "Unknown"
+        } — ${formatTimestamp(reconciliation.otherDeliveriesConfirmedAt)}`
+      : "No-other-deliveries confirmation was not recorded.";
+    container.appendChild(confirmation);
+  };
+
   const exportChecklistToPDF = async (
     title,
     questions,
     completedBy = personName,
-    ts = Timestamp.now()
+    ts = Timestamp.now(),
+    deliveryReconciliation = null
   ) => {
     const element = document.createElement("div");
     element.style.padding = "24px";
@@ -1309,6 +1561,8 @@ const ChecklistSection = ({
     subTitleEl.innerText = `Completed by: ${completedBy} — ${formatTimestamp(ts)}`;
     subTitleEl.style.margin = "0 0 16px 0";
     element.appendChild(subTitleEl);
+
+    writeDeliveryReconciliationBlock(element, deliveryReconciliation);
 
     questions.forEach((q, idx) => {
       writeQuestionBlock(element, withQuestionDefaults(q), idx);
@@ -1351,6 +1605,8 @@ const ChecklistSection = ({
       subTitle.innerText = `${cIdx + 1}. ${c.title} (Completed by ${c.person} at ${formatTimestamp(c.createdAt)})`;
       subTitle.style.margin = "16px 0 8px 0";
       element.appendChild(subTitle);
+
+      writeDeliveryReconciliationBlock(element, c.deliveryReconciliation);
 
       (c.questions || []).forEach((q, idx) => {
         writeQuestionBlock(element, withQuestionDefaults(q), idx);
@@ -1811,6 +2067,208 @@ const ChecklistSection = ({
             )}
           </>
         )}
+      </div>
+    );
+  };
+
+  const renderCompletedDeliveryReconciliation = (reconciliation) => {
+    if (!reconciliation) return null;
+
+    const recordedDeliveries = Array.isArray(reconciliation.recordedDeliveries)
+      ? reconciliation.recordedDeliveries
+      : [];
+    const expectedSuppliers = Array.isArray(reconciliation.expectedSuppliers)
+      ? reconciliation.expectedSuppliers
+      : [];
+    const groupedDeliveries = Array.from(
+      recordedDeliveries.reduce((groups, delivery) => {
+        const supplier = delivery.supplier || "Unknown supplier";
+        const key = normaliseSupplierName(supplier) || "unknown";
+        const current = groups.get(key) || {
+          supplier,
+          records: 0,
+          lineCount: 0,
+        };
+        current.records += 1;
+        current.lineCount += Number(delivery.lineCount) || 0;
+        groups.set(key, current);
+        return groups;
+      }, new Map()).values()
+    );
+
+    const outcomeLabel = (outcome) => {
+      switch (outcome) {
+        case "recorded":
+          return "Recorded in Goods In";
+        case "not-delivered":
+          return "Supplier did not deliver";
+        case "cancelled":
+          return "Delivery was cancelled";
+        case "delayed":
+          return "Delivery was delayed";
+        default:
+          return (outcome || "Not recorded").replace(/-/g, " ");
+      }
+    };
+
+    return (
+      <div
+        style={{
+          margin: "12px 0 20px",
+          padding: 16,
+          borderRadius: 16,
+          border: "1px solid #bfdbfe",
+          background: "#eff6ff",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "flex-start",
+            gap: 12,
+            flexWrap: "wrap",
+          }}
+        >
+          <div>
+            <div style={{ fontSize: 18, fontWeight: 900, color: "#1e3a8a" }}>
+              Delivery reconciliation
+            </div>
+            <div style={{ ...mutedText, color: "#1e40af", marginTop: 4 }}>
+              Deliveries for {reconciliation.deliveryDateLabel ||
+                formatDeliveryDate(reconciliation.deliveryDate) ||
+                "the previous day"}
+            </div>
+          </div>
+          <span
+            style={{
+              padding: "5px 10px",
+              borderRadius: 999,
+              background: "#dcfce7",
+              color: "#166534",
+              fontSize: 12,
+              fontWeight: 900,
+            }}
+          >
+            ✓ Complete
+          </span>
+        </div>
+
+        <div style={{ marginTop: 16, fontWeight: 800, color: "#0f172a" }}>
+          Goods In records
+        </div>
+        {groupedDeliveries.length === 0 ? (
+          <div style={{ ...mutedText, marginTop: 6 }}>
+            No deliveries were recorded for this date.
+          </div>
+        ) : (
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+              gap: 8,
+              marginTop: 8,
+            }}
+          >
+            {groupedDeliveries.map((delivery) => (
+              <div
+                key={normaliseSupplierName(delivery.supplier)}
+                style={{
+                  padding: "10px 12px",
+                  borderRadius: 11,
+                  background: "#ecfdf5",
+                  border: "1px solid #a7f3d0",
+                  color: "#166534",
+                }}
+              >
+                <div style={{ fontWeight: 800 }}>✓ {delivery.supplier}</div>
+                <div style={{ fontSize: 12, marginTop: 3 }}>
+                  {delivery.records} record{delivery.records === 1 ? "" : "s"} ·{" "}
+                  {delivery.lineCount} line{delivery.lineCount === 1 ? "" : "s"}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div style={{ marginTop: 16, fontWeight: 800, color: "#0f172a" }}>
+          Expected suppliers
+        </div>
+        {expectedSuppliers.length === 0 ? (
+          <div style={{ ...mutedText, marginTop: 6 }}>
+            No suppliers were scheduled for this date.
+          </div>
+        ) : (
+          <div style={{ display: "grid", gap: 8, marginTop: 8 }}>
+            {expectedSuppliers.map((supplier, index) => {
+              const recorded = supplier.outcome === "recorded";
+              return (
+                <div
+                  key={supplier.id || `${supplier.name}-${index}`}
+                  style={{
+                    padding: "10px 12px",
+                    borderRadius: 11,
+                    background: recorded ? "#ecfdf5" : "#fffbeb",
+                    border: recorded
+                      ? "1px solid #a7f3d0"
+                      : "1px solid #fde68a",
+                  }}
+                >
+                  <div style={{ fontWeight: 800, color: "#0f172a" }}>
+                    {supplier.name || "Unknown supplier"}
+                  </div>
+                  <div
+                    style={{
+                      marginTop: 3,
+                      color: recorded ? "#166534" : "#92400e",
+                      fontSize: 13,
+                      fontWeight: 700,
+                    }}
+                  >
+                    {recorded ? "✓ " : ""}
+                    {outcomeLabel(supplier.outcome)}
+                    {supplier.reason ? ` — ${supplier.reason}` : ""}
+                  </div>
+                  {!recorded && supplier.recordedBy && (
+                    <div style={{ ...mutedText, marginTop: 3 }}>
+                      Recorded by {supplier.recordedBy}
+                      {supplier.recordedAt
+                        ? ` · ${formatTimestamp(supplier.recordedAt)}`
+                        : ""}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        <div
+          style={{
+            marginTop: 14,
+            padding: 11,
+            borderRadius: 11,
+            background: reconciliation.otherDeliveriesConfirmed
+              ? "#dcfce7"
+              : "#fef3c7",
+            color: reconciliation.otherDeliveriesConfirmed
+              ? "#166534"
+              : "#92400e",
+            fontWeight: 800,
+          }}
+        >
+          {reconciliation.otherDeliveriesConfirmed
+            ? `✓ No other deliveries confirmed by ${
+                reconciliation.otherDeliveriesConfirmedBy || "Unknown"
+              }${
+                reconciliation.otherDeliveriesConfirmedAt
+                  ? ` · ${formatTimestamp(
+                      reconciliation.otherDeliveriesConfirmedAt
+                    )}`
+                  : ""
+              }`
+            : "No-other-deliveries confirmation was not recorded."}
+        </div>
       </div>
     );
   };
@@ -2543,6 +3001,44 @@ const ChecklistSection = ({
               </span>
             </SectionTitle>
 
+            {viewingReconciliationLoading && (
+              <div
+                style={{
+                  margin: "12px 0 18px",
+                  padding: 14,
+                  borderRadius: 14,
+                  background: "#eff6ff",
+                  border: "1px solid #bfdbfe",
+                  color: "#1e40af",
+                  fontWeight: 700,
+                }}
+              >
+                Loading the saved delivery reconciliation…
+              </div>
+            )}
+
+            {viewingReconciliationError && (
+              <div
+                style={{
+                  margin: "12px 0 18px",
+                  padding: 14,
+                  borderRadius: 14,
+                  background: "#fef2f2",
+                  border: "1px solid #fecaca",
+                  color: "#991b1b",
+                  fontWeight: 700,
+                }}
+              >
+                {viewingReconciliationError}
+              </div>
+            )}
+
+            {!viewingReconciliationLoading &&
+              !viewingReconciliationError &&
+              renderCompletedDeliveryReconciliation(
+                viewingCompleted.deliveryReconciliation
+              )}
+
             {viewQuestions.map((itemRaw, index) => {
               const item = withQuestionDefaults(itemRaw);
               const ans = item.answer;
@@ -2582,7 +3078,8 @@ const ChecklistSection = ({
                     viewingCompleted.title,
                     viewingCompleted.questions,
                     viewingCompleted.person,
-                    viewingCompleted.createdAt
+                    viewingCompleted.createdAt,
+                    viewingCompleted.deliveryReconciliation
                   )
                 }
               >
