@@ -6,11 +6,13 @@ import {
   addDoc,
   updateDoc,
   doc,
+  getDocs,
   onSnapshot,
   increment,
   serverTimestamp,
   query,
   where,
+  writeBatch,
 } from "firebase/firestore";
 import {
   FaPlus,
@@ -60,6 +62,9 @@ const [locations, setLocations] = useState([]);
 
 const [deliveryStatuses, setDeliveryStatuses] = useState([]);
 const [goodsInFilter, setGoodsInFilter] = useState("30");
+const [editingGoodsInId, setEditingGoodsInId] = useState("");
+const [editedDeliveryDate, setEditedDeliveryDate] = useState("");
+const [dateUpdateSaving, setDateUpdateSaving] = useState(false);
 
   const [supplier, setSupplier] = useState(initialSupplier || "");
   const [deliveryRef, setDeliveryRef] = useState("");
@@ -229,6 +234,11 @@ useEffect(() => {
     const rows = snapshot.docs
       .map((d) => ({ id: d.id, ...d.data() }))
       .sort((a, b) => {
+        const dateCompare = (b.deliveryDate || "").localeCompare(
+          a.deliveryDate || ""
+        );
+        if (dateCompare !== 0) return dateCompare;
+
         const aTime = a.createdAt?.toMillis?.() || 0;
         const bTime = b.createdAt?.toMillis?.() || 0;
         return bTime - aTime;
@@ -615,6 +625,7 @@ const filteredGoodsInRecords = goodsInRecords.filter((record) => {
             measurement: measurementToUse,
             location: locationToUse,
             supplier,
+            lastReceivedDate: deliveryDate,
             haccpPoints: [],
             site,
             source: "goods-in",
@@ -709,6 +720,175 @@ const filteredGoodsInRecords = goodsInRecords.filter((record) => {
     } catch (error) {
       console.error("Error saving goods in:", error);
       alert("Failed to save goods in.");
+    }
+  };
+
+  const startEditingDeliveryDate = (record) => {
+    setEditingGoodsInId(record.id);
+    setEditedDeliveryDate(record.deliveryDate || today);
+  };
+
+  const cancelEditingDeliveryDate = () => {
+    setEditingGoodsInId("");
+    setEditedDeliveryDate("");
+  };
+
+  const saveCorrectedDeliveryDate = async (record) => {
+    if (!isManager) {
+      alert("Only a manager can change a posted goods-in date.");
+      return;
+    }
+
+    const correctedDate = editedDeliveryDate;
+
+    if (!correctedDate) {
+      alert("Choose the correct received date.");
+      return;
+    }
+
+    if (correctedDate > today) {
+      alert("The received date cannot be in the future.");
+      return;
+    }
+
+    if (correctedDate === record.deliveryDate) {
+      cancelEditingDeliveryDate();
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Change ${record.supplier || "this delivery"} from ${record.deliveryDate || "no date"} to ${correctedDate}? This updates the linked stock history but does not change quantities.`
+    );
+
+    if (!confirmed) return;
+
+    setDateUpdateSaving(true);
+
+    try {
+      const relatedCollections = [
+        { name: "goodsInLines", dateField: "deliveryDate" },
+        { name: "stockBatches", dateField: "dateReceived" },
+        { name: "stockMovements", dateField: "dateReceived" },
+      ];
+
+      const relatedSnapshots = await Promise.all(
+        relatedCollections.map(({ name }) =>
+          getDocs(
+            query(
+              collection(db, name),
+              where("deliveryId", "==", record.id)
+            )
+          )
+        )
+      );
+
+      const affectedStockItemIds = [
+        ...new Set(
+          relatedSnapshots.flatMap((snapshot) =>
+            snapshot.docs
+              .map((entry) => entry.data().stockItemId)
+              .filter(Boolean)
+          )
+        ),
+      ].filter((stockItemId) => stockMap[stockItemId]);
+
+      const latestReceivedDates = await Promise.all(
+        affectedStockItemIds.map(async (stockItemId) => {
+          const lineSnapshot = await getDocs(
+            query(
+              collection(db, "goodsInLines"),
+              where("stockItemId", "==", stockItemId)
+            )
+          );
+
+          const receivedDates = lineSnapshot.docs
+            .map((entry) => {
+              const line = entry.data();
+              if (line.site && line.site !== site) return null;
+
+              return line.deliveryId === record.id
+                ? correctedDate
+                : line.deliveryDate;
+            })
+            .filter(Boolean)
+            .sort((a, b) => a.localeCompare(b));
+
+          return {
+            stockItemId,
+            lastReceivedDate:
+              receivedDates[receivedDates.length - 1] || correctedDate,
+          };
+        })
+      );
+
+      const relatedWriteCount = relatedSnapshots.reduce(
+        (total, snapshot) => total + snapshot.size,
+        0
+      );
+      const totalWriteCount =
+        2 + relatedWriteCount + latestReceivedDates.length;
+
+      if (totalWriteCount > 500) {
+        throw new Error(
+          "This delivery has too many linked records to update safely in one batch."
+        );
+      }
+
+      const batch = writeBatch(db);
+      const correctedBy =
+        user?.name || user?.displayName || user?.email || "Unknown";
+      const correctedByUid = user?.uid || user?.id || null;
+
+      batch.update(doc(db, "goodsIn", record.id), {
+        deliveryDate: correctedDate,
+        dateLastCorrectedFrom: record.deliveryDate || null,
+        dateCorrectedAt: serverTimestamp(),
+        dateCorrectedBy: correctedBy,
+        dateCorrectedByUid: correctedByUid,
+      });
+
+      relatedCollections.forEach((config, index) => {
+        relatedSnapshots[index].docs.forEach((entry) => {
+          batch.update(entry.ref, {
+            [config.dateField]: correctedDate,
+          });
+        });
+      });
+
+      latestReceivedDates.forEach(
+        ({ stockItemId, lastReceivedDate }) => {
+          batch.update(doc(db, "stockItems", stockItemId), {
+            lastReceivedDate,
+            updatedAt: serverTimestamp(),
+          });
+        }
+      );
+
+      const auditRef = doc(collection(db, "goodsInDateChanges"));
+      batch.set(auditRef, {
+        site,
+        deliveryId: record.id,
+        supplier: record.supplier || null,
+        fromDate: record.deliveryDate || null,
+        toDate: correctedDate,
+        changedAt: serverTimestamp(),
+        changedBy: correctedBy,
+        changedByUid: correctedByUid,
+      });
+
+      await batch.commit();
+
+      cancelEditingDeliveryDate();
+      alert(
+        "Received date updated everywhere. Stock quantities were not changed."
+      );
+    } catch (error) {
+      console.error("Error correcting goods-in date:", error);
+      alert(
+        "Failed to update the received date. Check your Firestore permissions and try again."
+      );
+    } finally {
+      setDateUpdateSaving(false);
     }
   };
 
@@ -1377,17 +1557,114 @@ const filteredGoodsInRecords = goodsInRecords.filter((record) => {
 
               >
 
-                <div style={{ fontWeight: 800 }}>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: 10,
+                  }}
+                >
 
-                  {record.supplier || "Unknown supplier"}
+                  <div style={{ fontWeight: 800 }}>
+
+                    {record.supplier || "Unknown supplier"}
+
+                  </div>
+
+                  {isManager && editingGoodsInId !== record.id && (
+
+                    <button
+                      type="button"
+                      onClick={() => startEditingDeliveryDate(record)}
+                      disabled={!!editingGoodsInId || dateUpdateSaving}
+                      style={{
+                        ...grayBtn,
+                        padding: "7px 10px",
+                        fontSize: 12,
+                        opacity:
+                          editingGoodsInId || dateUpdateSaving ? 0.55 : 1,
+                        cursor:
+                          editingGoodsInId || dateUpdateSaving
+                            ? "not-allowed"
+                            : "pointer",
+                      }}
+                    >
+                      Change date
+                    </button>
+
+                  )}
 
                 </div>
 
-                <div style={subtle}>
+                {editingGoodsInId === record.id ? (
 
-                  Date: {record.deliveryDate || "—"} · Lines: {record.lineCount || 0}
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "end",
+                      gap: 8,
+                      flexWrap: "wrap",
+                      padding: 10,
+                      margin: "4px 0",
+                      borderRadius: 10,
+                      border: "1px solid #bfdbfe",
+                      background: "#eff6ff",
+                    }}
+                  >
 
-                </div>
+                    <div style={fieldWrap}>
+                      <label style={label}>Correct received date</label>
+                      <input
+                        type="date"
+                        value={editedDeliveryDate}
+                        max={today}
+                        onChange={(event) =>
+                          setEditedDeliveryDate(event.target.value)
+                        }
+                        disabled={dateUpdateSaving}
+                        style={{ ...smallInput, minWidth: 160 }}
+                      />
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => saveCorrectedDeliveryDate(record)}
+                      disabled={dateUpdateSaving}
+                      style={{
+                        ...blueBtn,
+                        padding: "8px 11px",
+                        opacity: dateUpdateSaving ? 0.65 : 1,
+                      }}
+                    >
+                      {dateUpdateSaving ? "Saving..." : "Save date"}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={cancelEditingDeliveryDate}
+                      disabled={dateUpdateSaving}
+                      style={{ ...grayBtn, padding: "8px 11px" }}
+                    >
+                      Cancel
+                    </button>
+
+                    <div style={{ ...subtle, flexBasis: "100%" }}>
+                      This updates the linked goods-in lines, batches, and stock
+                      movements. Quantities stay the same.
+                    </div>
+
+                  </div>
+
+                ) : (
+
+                  <div style={subtle}>
+
+                    Date: {record.deliveryDate || "—"} · Lines: {record.lineCount || 0}
+
+                  </div>
+
+                )}
 
                 <div style={subtle}>
 
@@ -1400,6 +1677,16 @@ const filteredGoodsInRecords = goodsInRecords.filter((record) => {
                   Added by: {record.createdBy || "Unknown"}
 
                 </div>
+
+                {record.dateCorrectedAt && (
+
+                  <div style={{ ...subtle, color: "#1d4ed8" }}>
+
+                    Date last corrected by: {record.dateCorrectedBy || "Unknown"}
+
+                  </div>
+
+                )}
 
                 {record.notes && (
 
