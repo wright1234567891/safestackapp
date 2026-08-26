@@ -500,9 +500,10 @@ useEffect(() => {
             marginTop: 18,
             padding: 18,
             borderRadius: 16,
-            border: "1px solid #bfdbfe",
-            background: "linear-gradient(135deg, #eff6ff 0%, #ecfeff 100%)",
-            boxShadow: "0 2px 6px rgba(0,0,0,0.06)",
+            border: "1px solid #bbf7d0",
+            borderLeft: "5px solid #16a34a",
+            background: "#ffffff",
+            boxShadow: "0 2px 8px rgba(15, 23, 42, 0.08)",
           }}
         >
           <div
@@ -544,13 +545,27 @@ useEffect(() => {
           >
             <div>
               <div style={{ fontSize: 12, color: "#64748b" }}>Entitlement</div>
-              <div style={{ marginTop: 3, fontSize: 22, fontWeight: 900 }}>
+              <div
+                style={{
+                  marginTop: 3,
+                  fontSize: 22,
+                  fontWeight: 900,
+                  color: "#0f172a",
+                }}
+              >
                 {formatHours(holidayBalance.entitlement)}h
               </div>
             </div>
             <div>
               <div style={{ fontSize: 12, color: "#64748b" }}>Used</div>
-              <div style={{ marginTop: 3, fontSize: 22, fontWeight: 900 }}>
+              <div
+                style={{
+                  marginTop: 3,
+                  fontSize: 22,
+                  fontWeight: 900,
+                  color: "#334155",
+                }}
+              >
                 {formatHours(holidayBalance.used)}h
               </div>
             </div>
@@ -576,7 +591,7 @@ useEffect(() => {
               marginTop: 14,
               overflow: "hidden",
               borderRadius: 999,
-              background: "#dbeafe",
+              background: "#dcfce7",
             }}
           >
             <div
@@ -595,7 +610,7 @@ useEffect(() => {
                 )}%`,
                 borderRadius: 999,
                 background:
-                  holidayBalance.remaining >= 0 ? "#2563eb" : "#dc2626",
+                  holidayBalance.remaining >= 0 ? "#16a34a" : "#dc2626",
               }}
             />
           </div>
