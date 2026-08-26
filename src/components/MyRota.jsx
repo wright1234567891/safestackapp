@@ -5,6 +5,8 @@ import {
 
   collection,
 
+  doc,
+
   onSnapshot,
 
   query,
@@ -21,6 +23,11 @@ import { FaChevronLeft } from "react-icons/fa";
 
 const SHIFTS_COLLECTION = "Shifts";
 const HOLIDAY_COLLECTION = "HolidayRequests";
+const STAFF_COLLECTION = "stafflogin";
+
+const CURRENT_HOLIDAY_YEAR = new Date().getFullYear();
+const DEFAULT_HOLIDAY_YEAR_START = `${CURRENT_HOLIDAY_YEAR}-01-01`;
+const DEFAULT_HOLIDAY_YEAR_END = `${CURRENT_HOLIDAY_YEAR}-12-31`;
 
 const chip = (bg, fg) => ({
   display: "inline-flex",
@@ -75,6 +82,52 @@ const dateInputToTimestamp = (dateStr, endOfDay = false) => {
   return Timestamp.fromDate(dt);
 };
 
+const parseDateValue = (value, endOfDay = false) => {
+  if (!value) return null;
+
+  let parsed;
+
+  if (value?.toDate) {
+    parsed = value.toDate();
+  } else if (
+    typeof value === "string" &&
+    /^\d{4}-\d{2}-\d{2}$/.test(value)
+  ) {
+    const [year, month, day] = value.split("-").map(Number);
+    parsed = new Date(year, month - 1, day);
+  } else {
+    parsed = new Date(value);
+  }
+
+  if (Number.isNaN(parsed.getTime())) return null;
+
+  parsed.setHours(
+    endOfDay ? 23 : 0,
+    endOfDay ? 59 : 0,
+    endOfDay ? 59 : 0,
+    endOfDay ? 999 : 0
+  );
+
+  return parsed;
+};
+
+const inclusiveCalendarDays = (start, end) => {
+  const startUtc = Date.UTC(
+    start.getFullYear(),
+    start.getMonth(),
+    start.getDate()
+  );
+  const endUtc = Date.UTC(end.getFullYear(), end.getMonth(), end.getDate());
+
+  return Math.floor((endUtc - startUtc) / 86400000) + 1;
+};
+
+const formatHours = (hours) =>
+  Number(hours || 0).toLocaleString("en-GB", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  });
+
 const fmtDay = (d) =>
   new Date(d).toLocaleDateString("en-GB", {
     weekday: "short",
@@ -108,8 +161,10 @@ export default function MyRota({ user, goBack }) {
   const [holidayStart, setHolidayStart] = useState(() => toDateInput(new Date()));
   const [holidayEnd, setHolidayEnd] = useState(() => toDateInput(new Date()));
   const [holidayReason, setHolidayReason] = useState("");
+  const [holidayHours, setHolidayHours] = useState("8");
   const [holidayBusy, setHolidayBusy] = useState(false);
   const [holidayRequests, setHolidayRequests] = useState([]);
+  const [holidayProfile, setHolidayProfile] = useState(() => user || null);
 
   const weekEnd = useMemo(() => addDays(weekStart, 7), [weekStart]);
 
@@ -123,6 +178,31 @@ export default function MyRota({ user, goBack }) {
   const staffName = String(user?.name || "").trim().toLowerCase();
 
   const hasIdentity = !!staffId || !!staffEmail || !!staffName;
+
+  useEffect(() => {
+    if (!hasIdentity) {
+      setHolidayProfile(null);
+      return;
+    }
+
+    // The login object normally contains the holiday settings already. When
+    // its document ID is available, subscribe only to that person's record so
+    // a manager's toggle appears live without exposing other staff records.
+    if (!staffId) return;
+
+    const unsub = onSnapshot(
+      doc(db, STAFF_COLLECTION, staffId),
+      (snapshot) => {
+        if (!snapshot.exists()) return;
+        setHolidayProfile({ id: snapshot.id, ...snapshot.data() });
+      },
+      (error) => {
+        console.error("Holiday profile subscribe error:", error);
+      }
+    );
+
+    return () => unsub();
+  }, [hasIdentity, staffId]);
 
   useEffect(() => {
     if (!hasIdentity) {
@@ -184,19 +264,14 @@ useEffect(() => {
       const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 
       const mine = rows.filter((r) => {
-        const status = String(r.status || "").toLowerCase();
-
         const requestStaffId = String(r.staffId || "").trim();
         const requestEmail = String(r.staffEmail || "").trim().toLowerCase();
         const requestName = String(r.staffName || "").trim().toLowerCase();
 
         return (
-          status === "approved" &&
-          (
-            (staffId && requestStaffId === staffId) ||
-            (staffEmail && requestEmail === staffEmail) ||
-            (staffName && requestName === staffName)
-          )
+          (staffId && requestStaffId === staffId) ||
+          (staffEmail && requestEmail === staffEmail) ||
+          (staffName && requestName === staffName)
         );
       });
 
@@ -210,6 +285,94 @@ useEffect(() => {
 
   return () => unsub();
 }, [hasIdentity, staffId, staffEmail, staffName]);
+
+  const approvedHolidayRequests = useMemo(
+    () =>
+      holidayRequests.filter(
+        (request) =>
+          String(request.status || "").toLowerCase() === "approved"
+      ),
+    [holidayRequests]
+  );
+
+  const holidayBalance = useMemo(() => {
+    const yearStart = parseDateValue(
+      holidayProfile?.holidayYearStart || DEFAULT_HOLIDAY_YEAR_START
+    );
+    const yearEnd = parseDateValue(
+      holidayProfile?.holidayYearEnd || DEFAULT_HOLIDAY_YEAR_END,
+      true
+    );
+    const entitlement = Math.max(
+      0,
+      Number(holidayProfile?.holidayEntitlementHours || 0)
+    );
+    const previouslyUsed = Math.max(
+      0,
+      Number(holidayProfile?.holidayHoursUsedBeforeTracking || 0)
+    );
+
+    const approvedHours = approvedHolidayRequests.reduce(
+      (total, request) => {
+        if (!yearStart || !yearEnd) return total;
+
+        const requestStart = parseDateValue(request.startDate);
+        const requestEnd = parseDateValue(request.endDate, true);
+        const requestHours = Number(
+          request.approvedHours ?? request.hoursRequested ?? 0
+        );
+
+        if (
+          !requestStart ||
+          !requestEnd ||
+          !Number.isFinite(requestHours) ||
+          requestHours <= 0 ||
+          requestEnd < yearStart ||
+          requestStart > yearEnd
+        ) {
+          return total;
+        }
+
+        const overlapStart = new Date(
+          Math.max(requestStart.getTime(), yearStart.getTime())
+        );
+        const overlapEnd = new Date(
+          Math.min(requestEnd.getTime(), yearEnd.getTime())
+        );
+        const totalDays = inclusiveCalendarDays(requestStart, requestEnd);
+        const overlapDays = inclusiveCalendarDays(overlapStart, overlapEnd);
+
+        if (totalDays <= 0 || overlapDays <= 0) return total;
+
+        return total + requestHours * (overlapDays / totalDays);
+      },
+      0
+    );
+
+    const pendingHours = holidayRequests
+      .filter(
+        (request) =>
+          String(request.status || "").toLowerCase() === "pending"
+      )
+      .reduce((total, request) => {
+        const hours = Number(request.hoursRequested || 0);
+        return total + (Number.isFinite(hours) && hours > 0 ? hours : 0);
+      }, 0);
+
+    const used = previouslyUsed + approvedHours;
+
+    return {
+      entitlement,
+      previouslyUsed,
+      approvedHours,
+      pendingHours,
+      used,
+      remaining: entitlement - used,
+      yearStart:
+        holidayProfile?.holidayYearStart || DEFAULT_HOLIDAY_YEAR_START,
+      yearEnd: holidayProfile?.holidayYearEnd || DEFAULT_HOLIDAY_YEAR_END,
+    };
+  }, [holidayProfile, approvedHolidayRequests, holidayRequests]);
 
   const visibleShifts = useMemo(() => {
     if (!onlyPublished) return shifts;
@@ -240,9 +403,20 @@ useEffect(() => {
 
     const start = new Date(holidayStart);
     const end = new Date(holidayEnd);
+    const requestedHours = Number(holidayHours);
 
-    return end >= start;
-  }, [holidayBusy, hasIdentity, holidayStart, holidayEnd]);
+    return (
+      end >= start &&
+      Number.isFinite(requestedHours) &&
+      requestedHours > 0
+    );
+  }, [
+    holidayBusy,
+    hasIdentity,
+    holidayStart,
+    holidayEnd,
+    holidayHours,
+  ]);
 
   const submitHolidayRequest = async () => {
     if (!canSubmitHoliday) return;
@@ -256,6 +430,7 @@ useEffect(() => {
         staffEmail,
         startDate: dateInputToTimestamp(holidayStart, false),
         endDate: dateInputToTimestamp(holidayEnd, true),
+        hoursRequested: Number(holidayHours),
         reason: holidayReason.trim(),
         status: "pending",
         createdAt: Timestamp.now(),
@@ -263,6 +438,7 @@ useEffect(() => {
 
       setShowHolidayModal(false);
       setHolidayReason("");
+      setHolidayHours("8");
       alert("Holiday request sent.");
     } catch (e) {
       console.error("Holiday request failed:", e);
@@ -317,6 +493,121 @@ useEffect(() => {
           Week: {fmtDay(weekStart)} → {fmtDay(addDays(weekStart, 6))}
         </span>
       </div>
+
+      {holidayProfile?.holidayBalanceEnabled === true ? (
+        <div
+          style={{
+            marginTop: 18,
+            padding: 18,
+            borderRadius: 16,
+            border: "1px solid #bfdbfe",
+            background: "linear-gradient(135deg, #eff6ff 0%, #ecfeff 100%)",
+            boxShadow: "0 2px 6px rgba(0,0,0,0.06)",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "start",
+              gap: 12,
+              flexWrap: "wrap",
+            }}
+          >
+            <div>
+              <div style={{ fontSize: 17, fontWeight: 900, color: "#0f172a" }}>
+                Holiday hours
+              </div>
+              <div style={{ marginTop: 4, fontSize: 12, color: "#475569" }}>
+                {holidayBalance.yearStart} to {holidayBalance.yearEnd} ·
+                approved holiday only
+              </div>
+            </div>
+
+            <span
+              style={chip(
+                holidayBalance.remaining >= 0 ? "#dcfce7" : "#fee2e2",
+                holidayBalance.remaining >= 0 ? "#166534" : "#991b1b"
+              )}
+            >
+              {formatHours(holidayBalance.remaining)}h remaining
+            </span>
+          </div>
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+              gap: 10,
+              marginTop: 14,
+            }}
+          >
+            <div>
+              <div style={{ fontSize: 12, color: "#64748b" }}>Entitlement</div>
+              <div style={{ marginTop: 3, fontSize: 22, fontWeight: 900 }}>
+                {formatHours(holidayBalance.entitlement)}h
+              </div>
+            </div>
+            <div>
+              <div style={{ fontSize: 12, color: "#64748b" }}>Used</div>
+              <div style={{ marginTop: 3, fontSize: 22, fontWeight: 900 }}>
+                {formatHours(holidayBalance.used)}h
+              </div>
+            </div>
+            <div>
+              <div style={{ fontSize: 12, color: "#64748b" }}>Left</div>
+              <div
+                style={{
+                  marginTop: 3,
+                  fontSize: 22,
+                  fontWeight: 900,
+                  color:
+                    holidayBalance.remaining >= 0 ? "#166534" : "#991b1b",
+                }}
+              >
+                {formatHours(holidayBalance.remaining)}h
+              </div>
+            </div>
+          </div>
+
+          <div
+            style={{
+              height: 9,
+              marginTop: 14,
+              overflow: "hidden",
+              borderRadius: 999,
+              background: "#dbeafe",
+            }}
+          >
+            <div
+              style={{
+                height: "100%",
+                width: `${Math.min(
+                  100,
+                  Math.max(
+                    0,
+                    holidayBalance.entitlement > 0
+                      ? (holidayBalance.used /
+                          holidayBalance.entitlement) *
+                          100
+                      : 0
+                  )
+                )}%`,
+                borderRadius: 999,
+                background:
+                  holidayBalance.remaining >= 0 ? "#2563eb" : "#dc2626",
+              }}
+            />
+          </div>
+
+          {holidayBalance.pendingHours > 0 ? (
+            <div style={{ marginTop: 10, fontSize: 12, color: "#475569" }}>
+              {formatHours(holidayBalance.pendingHours)}h are currently pending
+              approval and have not been deducted yet.
+            </div>
+          ) : null}
+        </div>
+      ) : null}
 
       <div
         style={{
@@ -427,7 +718,7 @@ useEffect(() => {
           const dayDate = new Date(d);
 dayDate.setHours(12, 0, 0, 0);
 
-const dayHolidays = holidayRequests.filter((h) => {
+const dayHolidays = approvedHolidayRequests.filter((h) => {
   const start = h.startDate?.toDate();
   const end = h.endDate?.toDate();
 
@@ -633,6 +924,24 @@ const dayHolidays = holidayRequests.filter((h) => {
 
               <div>
                 <label style={{ fontSize: 12, fontWeight: 900, color: "#374151" }}>
+                  Total holiday hours requested
+                </label>
+                <input
+                  type="number"
+                  min="0.25"
+                  step="0.25"
+                  value={holidayHours}
+                  onChange={(e) => setHolidayHours(e.target.value)}
+                  placeholder="e.g. 8"
+                  style={{ ...inputStyle, marginTop: 6 }}
+                />
+                <div style={{ marginTop: 5, fontSize: 11, color: "#64748b" }}>
+                  Enter the total paid holiday hours for the full date range.
+                </div>
+              </div>
+
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 900, color: "#374151" }}>
                   Reason / note optional
                 </label>
                 <textarea
@@ -692,7 +1001,8 @@ const dayHolidays = holidayRequests.filter((h) => {
 
             {!canSubmitHoliday ? (
               <div style={{ marginTop: 10, fontSize: 12, color: "#6b7280" }}>
-                End date must be the same as or after start date.
+                End date must be the same as or after start date, and holiday
+                hours must be greater than zero.
               </div>
             ) : null}
           </div>

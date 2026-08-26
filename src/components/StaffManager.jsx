@@ -33,6 +33,10 @@ const HOLIDAY_COLLECTION = "HolidayRequests";
 const SICK_COLLECTION = "SickRecords";
 const AUTHORISED_ABSENCE_COLLECTION = "AuthorisedAbsences";
 
+const CURRENT_HOLIDAY_YEAR = new Date().getFullYear();
+const DEFAULT_HOLIDAY_YEAR_START = `${CURRENT_HOLIDAY_YEAR}-01-01`;
+const DEFAULT_HOLIDAY_YEAR_END = `${CURRENT_HOLIDAY_YEAR}-12-31`;
+
 const chip = (bg, fg) => ({
   display: "inline-flex",
   alignItems: "center",
@@ -144,12 +148,27 @@ export default function StaffManager({ goBack }) {
   const [editStaffEmail, setEditStaffEmail] = useState("");
   const [editStaffPin, setEditStaffPin] = useState("");
   const [editStaffRole, setEditStaffRole] = useState("Staff");
+  const [editHolidayBalanceEnabled, setEditHolidayBalanceEnabled] =
+    useState(false);
+  const [editHolidayEntitlementHours, setEditHolidayEntitlementHours] =
+    useState("");
+  const [
+    editHolidayHoursUsedBeforeTracking,
+    setEditHolidayHoursUsedBeforeTracking,
+  ] = useState("0");
+  const [editHolidayYearStart, setEditHolidayYearStart] = useState(
+    DEFAULT_HOLIDAY_YEAR_START
+  );
+  const [editHolidayYearEnd, setEditHolidayYearEnd] = useState(
+    DEFAULT_HOLIDAY_YEAR_END
+  );
 
   const [tab, setTab] = useState("staff");
 
   const [weekStart, setWeekStart] = useState(() => startOfWeekMonday(new Date()));
   const [shifts, setShifts] = useState([]);
   const [holidayRequests, setHolidayRequests] = useState([]);
+  const [holidayHoursDrafts, setHolidayHoursDrafts] = useState({});
   const [sickRecords, setSickRecords] = useState([]);
 
 const [authorisedAbsences, setAuthorisedAbsences] = useState([]);
@@ -224,6 +243,11 @@ const [absenceReason, setAbsenceReason] = useState("");
         pin: pin.trim() || "",
         role,
         active: true,
+        holidayBalanceEnabled: false,
+        holidayEntitlementHours: 0,
+        holidayHoursUsedBeforeTracking: 0,
+        holidayYearStart: DEFAULT_HOLIDAY_YEAR_START,
+        holidayYearEnd: DEFAULT_HOLIDAY_YEAR_END,
         createdAt: new Date(),
       });
 
@@ -259,13 +283,51 @@ const [absenceReason, setAbsenceReason] = useState("");
     setEditStaffEmail(s.email || "");
     setEditStaffPin(s.pin || "");
     setEditStaffRole(s.role || "Staff");
+    setEditHolidayBalanceEnabled(s.holidayBalanceEnabled === true);
+    setEditHolidayEntitlementHours(
+      String(s.holidayEntitlementHours ?? "")
+    );
+    setEditHolidayHoursUsedBeforeTracking(
+      String(s.holidayHoursUsedBeforeTracking ?? 0)
+    );
+    setEditHolidayYearStart(
+      s.holidayYearStart || DEFAULT_HOLIDAY_YEAR_START
+    );
+    setEditHolidayYearEnd(
+      s.holidayYearEnd || DEFAULT_HOLIDAY_YEAR_END
+    );
   };
+
+  const holidaySettingsValid = useMemo(() => {
+    if (!editHolidayBalanceEnabled) return true;
+
+    const entitlement = Number(editHolidayEntitlementHours);
+    const previouslyUsed = Number(editHolidayHoursUsedBeforeTracking);
+
+    return (
+      editHolidayEntitlementHours !== "" &&
+      Number.isFinite(entitlement) &&
+      entitlement > 0 &&
+      editHolidayHoursUsedBeforeTracking !== "" &&
+      Number.isFinite(previouslyUsed) &&
+      previouslyUsed >= 0 &&
+      !!editHolidayYearStart &&
+      !!editHolidayYearEnd &&
+      editHolidayYearEnd >= editHolidayYearStart
+    );
+  }, [
+    editHolidayBalanceEnabled,
+    editHolidayEntitlementHours,
+    editHolidayHoursUsedBeforeTracking,
+    editHolidayYearStart,
+    editHolidayYearEnd,
+  ]);
 
   const canSaveEditStaff = useMemo(() => {
     if (!editStaff?.id) return false;
     if (busy) return false;
-    return editStaffName.trim().length > 0;
-  }, [editStaff, busy, editStaffName]);
+    return editStaffName.trim().length > 0 && holidaySettingsValid;
+  }, [editStaff, busy, editStaffName, holidaySettingsValid]);
 
   const saveEditStaff = async () => {
     if (!canSaveEditStaff) return;
@@ -276,6 +338,16 @@ const [absenceReason, setAbsenceReason] = useState("");
         email: editStaffEmail.trim() || "",
         pin: editStaffPin.trim() || "",
         role: editStaffRole || "Staff",
+        holidayBalanceEnabled: editHolidayBalanceEnabled,
+        holidayEntitlementHours: editHolidayBalanceEnabled
+          ? Number(editHolidayEntitlementHours)
+          : 0,
+        holidayHoursUsedBeforeTracking: editHolidayBalanceEnabled
+          ? Number(editHolidayHoursUsedBeforeTracking)
+          : 0,
+        holidayYearStart:
+          editHolidayYearStart || DEFAULT_HOLIDAY_YEAR_START,
+        holidayYearEnd: editHolidayYearEnd || DEFAULT_HOLIDAY_YEAR_END,
       });
       setEditStaff(null);
     } catch (e) {
@@ -317,7 +389,21 @@ const [absenceReason, setAbsenceReason] = useState("");
   const unsub = onSnapshot(
     qy,
     (snap) => {
-      setHolidayRequests(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+      const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      setHolidayRequests(rows);
+      setHolidayHoursDrafts((previous) => {
+        const next = { ...previous };
+
+        rows.forEach((request) => {
+          if (next[request.id] === undefined) {
+            next[request.id] = String(
+              request.approvedHours ?? request.hoursRequested ?? ""
+            );
+          }
+        });
+
+        return next;
+      });
     },
     (err) => {
       console.error("Holiday requests subscribe error:", err);
@@ -734,16 +820,52 @@ const openAddShiftForStaffDay = (staffId, d) => {
   const updateHolidayRequest = async (requestId, status) => {
   if (!requestId) return;
 
+  const hours = Number(holidayHoursDrafts[requestId]);
+
+  if (
+    status === "approved" &&
+    (!Number.isFinite(hours) || hours <= 0)
+  ) {
+    alert("Enter the holiday hours to deduct before approving.");
+    return;
+  }
+
   setBusy(true);
 
   try {
     await updateDoc(doc(db, HOLIDAY_COLLECTION, requestId), {
       status,
       reviewedAt: Timestamp.now(),
+      ...(status === "approved" ? { approvedHours: hours } : {}),
     });
   } catch (e) {
     console.error("Holiday update failed:", e);
     alert("Couldn't update holiday request.");
+  } finally {
+    setBusy(false);
+  }
+};
+
+const saveHolidayHours = async (requestId) => {
+  if (!requestId) return;
+
+  const hours = Number(holidayHoursDrafts[requestId]);
+
+  if (!Number.isFinite(hours) || hours <= 0) {
+    alert("Enter holiday hours greater than zero.");
+    return;
+  }
+
+  setBusy(true);
+
+  try {
+    await updateDoc(doc(db, HOLIDAY_COLLECTION, requestId), {
+      approvedHours: hours,
+      hoursUpdatedAt: Timestamp.now(),
+    });
+  } catch (e) {
+    console.error("Holiday hours update failed:", e);
+    alert("Couldn't update the holiday hours.");
   } finally {
     setBusy(false);
   }
@@ -1022,6 +1144,12 @@ const deleteAbsenceRecord = async (type, id) => {
                         ) : (
                           <span style={chip("#fff7ed", "#9a3412")}>No PIN</span>
                         )}
+                        {s.holidayBalanceEnabled === true ? (
+                          <span style={chip("#ecfeff", "#0e7490")}>
+                            Holiday balance visible ·{" "}
+                            {Number(s.holidayEntitlementHours || 0)}h
+                          </span>
+                        ) : null}
                       </div>
                     </div>
 
@@ -1079,7 +1207,7 @@ const deleteAbsenceRecord = async (type, id) => {
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
                   <div>
                     <div style={{ fontWeight: 900, color: "#111", fontSize: 16 }}>Edit staff</div>
-                    <div style={{ fontSize: 12, color: "#6b7280", marginTop: 4 }}>Update staff login details and shift email</div>
+                    <div style={{ fontSize: 12, color: "#6b7280", marginTop: 4 }}>Update login details, shift email, and holiday balance visibility</div>
                   </div>
                   <button style={toggleBtn(false)} onClick={() => !busy && setEditStaff(null)}>
                     Close
@@ -1109,6 +1237,161 @@ const deleteAbsenceRecord = async (type, id) => {
                   </select>
                 </div>
 
+                <div
+                  style={{
+                    marginTop: 14,
+                    padding: 14,
+                    border: "1px solid #dbeafe",
+                    borderRadius: 14,
+                    background: "#eff6ff",
+                  }}
+                >
+                  <label
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: 12,
+                      cursor: "pointer",
+                    }}
+                  >
+                    <div>
+                      <div style={{ fontWeight: 900, color: "#1e3a8a" }}>
+                        Show holiday hours to this staff member
+                      </div>
+                      <div
+                        style={{
+                          marginTop: 4,
+                          fontSize: 12,
+                          color: "#475569",
+                        }}
+                      >
+                        Leave this off for everyone except the people who should
+                        see a holiday balance.
+                      </div>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={editHolidayBalanceEnabled}
+                      onChange={(event) =>
+                        setEditHolidayBalanceEnabled(event.target.checked)
+                      }
+                      style={{ width: 22, height: 22, cursor: "pointer" }}
+                    />
+                  </label>
+
+                  {editHolidayBalanceEnabled ? (
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns:
+                          "repeat(auto-fit, minmax(180px, 1fr))",
+                        gap: 12,
+                        marginTop: 14,
+                      }}
+                    >
+                      <div>
+                        <label
+                          style={{
+                            fontSize: 12,
+                            fontWeight: 900,
+                            color: "#374151",
+                          }}
+                        >
+                          Annual entitlement (hours)
+                        </label>
+                        <input
+                          type="number"
+                          min="0.25"
+                          step="0.25"
+                          value={editHolidayEntitlementHours}
+                          onChange={(event) =>
+                            setEditHolidayEntitlementHours(event.target.value)
+                          }
+                          placeholder="e.g. 224"
+                          style={{ ...inputStyle, marginTop: 6 }}
+                        />
+                      </div>
+
+                      <div>
+                        <label
+                          style={{
+                            fontSize: 12,
+                            fontWeight: 900,
+                            color: "#374151",
+                          }}
+                        >
+                          Previously used hours
+                        </label>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.25"
+                          value={editHolidayHoursUsedBeforeTracking}
+                          onChange={(event) =>
+                            setEditHolidayHoursUsedBeforeTracking(
+                              event.target.value
+                            )
+                          }
+                          placeholder="e.g. 48"
+                          style={{ ...inputStyle, marginTop: 6 }}
+                        />
+                        <div
+                          style={{
+                            marginTop: 5,
+                            fontSize: 11,
+                            color: "#64748b",
+                          }}
+                        >
+                          Only include hours not already recorded in an
+                          approved request below.
+                        </div>
+                      </div>
+
+                      <div>
+                        <label
+                          style={{
+                            fontSize: 12,
+                            fontWeight: 900,
+                            color: "#374151",
+                          }}
+                        >
+                          Holiday year starts
+                        </label>
+                        <input
+                          type="date"
+                          value={editHolidayYearStart}
+                          onChange={(event) =>
+                            setEditHolidayYearStart(event.target.value)
+                          }
+                          style={{ ...inputStyle, marginTop: 6 }}
+                        />
+                      </div>
+
+                      <div>
+                        <label
+                          style={{
+                            fontSize: 12,
+                            fontWeight: 900,
+                            color: "#374151",
+                          }}
+                        >
+                          Holiday year ends
+                        </label>
+                        <input
+                          type="date"
+                          value={editHolidayYearEnd}
+                          min={editHolidayYearStart}
+                          onChange={(event) =>
+                            setEditHolidayYearEnd(event.target.value)
+                          }
+                          style={{ ...inputStyle, marginTop: 6 }}
+                        />
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+
                 <div style={{ display: "flex", gap: 10, marginTop: 14, justifyContent: "flex-end", flexWrap: "wrap" }}>
                   <button style={toggleBtn(false)} onClick={() => !busy && setEditStaff(null)}>
                     Cancel
@@ -1133,7 +1416,11 @@ const deleteAbsenceRecord = async (type, id) => {
                 </div>
 
                 {!canSaveEditStaff ? (
-                  <div style={{ marginTop: 10, fontSize: 12, color: "#6b7280" }}>Name is required.</div>
+                  <div style={{ marginTop: 10, fontSize: 12, color: "#6b7280" }}>
+                    Enter a name and valid holiday settings. Entitlement must
+                    be greater than zero, previously used hours cannot be
+                    negative, and the holiday-year end must follow its start.
+                  </div>
                 ) : null}
               </div>
             </div>
@@ -1582,45 +1869,139 @@ const unavailableLabel = approvedHoliday ? "Holiday" : absenceLabel;
   }}
 
 >
-<h3 style={{ margin: "0 0 12px 0", color: "#111827" }}>Holiday Requests</h3>
+<h3 style={{ margin: "0 0 6px 0", color: "#111827" }}>Holiday Requests</h3>
+
+<div style={{ color: "#6b7280", fontSize: 13, marginBottom: 12 }}>
+  Approved hours are deducted from a staff member’s visible balance. For older
+  holidays, enter the actual paid holiday hours and save them here.
+</div>
 
 {holidayRequests.length === 0 ? (
   <div style={{ color: "#6b7280", fontSize: 14 }}>No holiday requests.</div>
 ) : (
-  holidayRequests.map((r) => (
-    <div key={r.id} style={{ border: "1px solid #e5e7eb", borderRadius: 12, padding: 14, marginBottom: 10 }}>
-      <div style={{ fontWeight: 800 }}>{r.staffName || "Unknown staff"}</div>
+  holidayRequests.map((r) => {
+    const requestStatus = String(r.status || "pending").toLowerCase();
+    const hoursValue = holidayHoursDrafts[r.id] ?? "";
+    const hasApprovedHours =
+      Number.isFinite(Number(r.approvedHours)) &&
+      Number(r.approvedHours) > 0;
 
-      <div style={{ marginTop: 6 }}>
-        {r.startDate?.toDate ? fmtDateLong(r.startDate.toDate()) : ""} →{" "}
-        {r.endDate?.toDate ? fmtDateLong(r.endDate.toDate()) : ""}
-      </div>
+    return (
+      <div
+        key={r.id}
+        style={{
+          border: "1px solid #e5e7eb",
+          borderRadius: 12,
+          padding: 14,
+          marginBottom: 10,
+        }}
+      >
+        <div style={{ fontWeight: 800 }}>
+          {r.staffName || "Unknown staff"}
+        </div>
 
-      <div style={{ marginTop: 6 }}>
-        Status: <strong>{r.status || "pending"}</strong>
-      </div>
+        <div style={{ marginTop: 6 }}>
+          {r.startDate?.toDate ? fmtDateLong(r.startDate.toDate()) : ""} →{" "}
+          {r.endDate?.toDate ? fmtDateLong(r.endDate.toDate()) : ""}
+        </div>
 
-      {r.reason ? <div style={{ marginTop: 6 }}>{r.reason}</div> : null}
+        <div style={{ marginTop: 6 }}>
+          Status: <strong>{r.status || "pending"}</strong>
+        </div>
 
-      <div style={{ display: "flex", gap: 10, marginTop: 12, flexWrap: "wrap" }}>
-        {String(r.status || "pending").toLowerCase() === "pending" ? (
-          <>
-            <button onClick={() => updateHolidayRequest(r.id, "approved")} disabled={busy}>
-              Approve
+        {r.reason ? <div style={{ marginTop: 6 }}>{r.reason}</div> : null}
+
+        <div
+          style={{
+            display: "flex",
+            alignItems: "end",
+            gap: 10,
+            marginTop: 12,
+            flexWrap: "wrap",
+          }}
+        >
+          <div style={{ width: 190 }}>
+            <label
+              style={{
+                display: "block",
+                marginBottom: 5,
+                fontSize: 12,
+                fontWeight: 800,
+                color: "#374151",
+              }}
+            >
+              Holiday hours to deduct
+            </label>
+            <input
+              type="number"
+              min="0.25"
+              step="0.25"
+              value={hoursValue}
+              onChange={(event) =>
+                setHolidayHoursDrafts((previous) => ({
+                  ...previous,
+                  [r.id]: event.target.value,
+                }))
+              }
+              placeholder="e.g. 8"
+              style={{ ...inputStyle, padding: 9 }}
+            />
+          </div>
+
+          {requestStatus === "pending" ? (
+            <>
+              <button
+                onClick={() => updateHolidayRequest(r.id, "approved")}
+                disabled={busy}
+              >
+                Approve and deduct hours
+              </button>
+
+              <button
+                onClick={() => updateHolidayRequest(r.id, "rejected")}
+                disabled={busy}
+              >
+                Reject
+              </button>
+            </>
+          ) : null}
+
+          {requestStatus === "approved" ? (
+            <button
+              onClick={() => saveHolidayHours(r.id)}
+              disabled={busy}
+            >
+              Save hours
             </button>
+          ) : null}
 
-            <button onClick={() => updateHolidayRequest(r.id, "rejected")} disabled={busy}>
-              Reject
-            </button>
-          </>
+          <button
+            onClick={() => deleteHolidayRequest(r.id)}
+            disabled={busy}
+          >
+            Delete
+          </button>
+        </div>
+
+        {requestStatus === "approved" && !hasApprovedHours ? (
+          <div
+            style={{
+              marginTop: 9,
+              padding: 9,
+              borderRadius: 9,
+              background: "#fff7ed",
+              color: "#9a3412",
+              fontSize: 12,
+              fontWeight: 700,
+            }}
+          >
+            This older approved holiday has no hours recorded yet, so it is not
+            currently being deducted from the balance.
+          </div>
         ) : null}
-
-        <button onClick={() => deleteHolidayRequest(r.id)} disabled={busy}>
-          Delete
-        </button>
       </div>
-    </div>
-  ))
+    );
+  })
 )}
 </div>
 
