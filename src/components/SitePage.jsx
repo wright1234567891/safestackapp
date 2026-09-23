@@ -85,6 +85,7 @@ const sites = [
   { id: "newsholme", label: "Newsholme Site" },
   { id: "popups", label: "Pop up Locations" },
   { id: "micklegate", label: "50 Micklegate" },
+  {id: "newgate", label: "12 Newgate" },
 ];
 
 const siteLabelForId = (id) => sites.find((s) => s.id === id)?.label ?? id;
