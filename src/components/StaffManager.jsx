@@ -134,6 +134,930 @@ const modalStyle = {
   padding: 16,
 };
 
+const holidayInputStyle = {
+  width: "100%",
+  padding: "10px 12px",
+  border: "1px solid #dbe2ea",
+  borderRadius: 10,
+  background: "#fff",
+  color: "#111827",
+  fontSize: 14,
+  outline: "none",
+  boxSizing: "border-box",
+};
+
+const primaryButton = {
+  padding: "10px 13px",
+  border: 0,
+  borderRadius: 10,
+  background: "#2563eb",
+  color: "#fff",
+  fontWeight: 800,
+  cursor: "pointer",
+};
+
+const secondaryButton = {
+  padding: "10px 13px",
+  border: "1px solid #dbe2ea",
+  borderRadius: 10,
+  background: "#fff",
+  color: "#374151",
+  fontWeight: 800,
+  cursor: "pointer",
+};
+
+const dangerButton = {
+  ...secondaryButton,
+  color: "#b91c1c",
+};
+
+const toDate = (value) => {
+  if (!value) return null;
+  const date = value?.toDate ? value.toDate() : new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+};
+
+const parseLocalDate = (value) => {
+  if (!value) return null;
+  const [year, month, day] = String(value).split("-").map(Number);
+  if (!year || !month || !day) return null;
+  return new Date(year, month - 1, day, 0, 0, 0, 0);
+};
+
+const formatDate = (value) => {
+  const date = toDate(value);
+  if (!date) return "Date not recorded";
+  return date.toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+};
+
+const formatShortDate = (value) => {
+  const date = parseLocalDate(value);
+  if (!date) return "Not set";
+  return date.toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+};
+
+const formatHours = (value) =>
+  new Intl.NumberFormat("en-GB", {
+    minimumFractionDigits: Number(value) % 1 === 0 ? 0 : 1,
+    maximumFractionDigits: 2,
+  }).format(Number(value) || 0);
+
+const normaliseStatus = (request) =>
+  String(request?.status || "pending").toLowerCase();
+
+const requestBelongsToStaff = (request, member) => {
+  if (request?.staffId && member?.id) {
+    return String(request.staffId) === String(member.id);
+  }
+
+  return (
+    String(request?.staffName || "").trim().toLowerCase() ===
+    String(member?.name || "").trim().toLowerCase()
+  );
+};
+
+const requestOverlapsHolidayYear = (request, member) => {
+  const yearStart = parseLocalDate(member?.holidayYearStart);
+  const yearEnd = parseLocalDate(member?.holidayYearEnd);
+  const requestStart = toDate(request?.startDate);
+  const requestEnd = toDate(request?.endDate) || requestStart;
+
+  if (!yearStart || !yearEnd || !requestStart || !requestEnd) return false;
+
+  yearEnd.setHours(23, 59, 59, 999);
+  return requestEnd >= yearStart && requestStart <= yearEnd;
+};
+
+const statusColours = {
+  approved: { background: "#dcfce7", color: "#166534" },
+  rejected: { background: "#fee2e2", color: "#991b1b" },
+  pending: { background: "#fef3c7", color: "#92400e" },
+};
+
+const StatusPill = ({ status }) => {
+  const normalised = String(status || "pending").toLowerCase();
+  const colours = statusColours[normalised] || statusColours.pending;
+
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        padding: "5px 9px",
+        borderRadius: 999,
+        fontSize: 11,
+        fontWeight: 900,
+        textTransform: "capitalize",
+        ...colours,
+      }}
+    >
+      {normalised}
+    </span>
+  );
+};
+
+function HolidayRequestsSection({
+  staff = [],
+  holidayRequests = [],
+  holidayHoursDrafts = {},
+  setHolidayHoursDrafts,
+  busy = false,
+  updateHolidayRequest,
+  saveHolidayHours,
+  deleteHolidayRequest,
+  onEditStaff,
+}) {
+  const [showHistory, setShowHistory] = useState(false);
+  const [historyStaffId, setHistoryStaffId] = useState("all");
+  const [historyStatus, setHistoryStatus] = useState("all");
+  const [historyLimit, setHistoryLimit] = useState(10);
+
+  const trackedStaff = useMemo(
+    () => staff.filter((member) => member.holidayBalanceEnabled === true),
+    [staff]
+  );
+
+  const pendingRequests = useMemo(
+    () =>
+      holidayRequests.filter(
+        (request) => normaliseStatus(request) === "pending"
+      ),
+    [holidayRequests]
+  );
+
+  const balanceSummaries = useMemo(
+    () =>
+      trackedStaff.map((member) => {
+        const entitlement = Number(member.holidayEntitlementHours) || 0;
+        const usedBeforeTracking =
+          Number(member.holidayHoursUsedBeforeTracking) || 0;
+        const approvedInYear = holidayRequests.filter(
+          (request) =>
+            normaliseStatus(request) === "approved" &&
+            requestBelongsToStaff(request, member) &&
+            requestOverlapsHolidayYear(request, member)
+        );
+        const approvedHours = approvedInYear.reduce((total, request) => {
+          const hours = Number(request.approvedHours);
+          return total + (Number.isFinite(hours) && hours > 0 ? hours : 0);
+        }, 0);
+        const missingHoursCount = approvedInYear.filter((request) => {
+          const hours = Number(request.approvedHours);
+          return !Number.isFinite(hours) || hours <= 0;
+        }).length;
+        const usedHours = usedBeforeTracking + approvedHours;
+        const remainingHours = entitlement - usedHours;
+        const usedPercentage = entitlement
+          ? Math.min(100, Math.max(0, (usedHours / entitlement) * 100))
+          : 0;
+        const pendingCount = pendingRequests.filter((request) =>
+          requestBelongsToStaff(request, member)
+        ).length;
+
+        return {
+          member,
+          entitlement,
+          usedBeforeTracking,
+          approvedHours,
+          usedHours,
+          remainingHours,
+          usedPercentage,
+          missingHoursCount,
+          pendingCount,
+        };
+      }),
+    [holidayRequests, pendingRequests, trackedStaff]
+  );
+
+  const balanceByStaffId = useMemo(() => {
+    const map = new Map();
+    balanceSummaries.forEach((summary) => {
+      map.set(String(summary.member.id), summary);
+    });
+    return map;
+  }, [balanceSummaries]);
+
+  const historyRequests = useMemo(() => {
+    return holidayRequests.filter((request) => {
+      const status = normaliseStatus(request);
+      if (status === "pending") return false;
+      if (historyStatus !== "all" && status !== historyStatus) return false;
+      if (
+        historyStaffId !== "all" &&
+        String(request.staffId || "") !== String(historyStaffId)
+      ) {
+        const selectedMember = staff.find(
+          (member) => String(member.id) === String(historyStaffId)
+        );
+        if (!selectedMember || !requestBelongsToStaff(request, selectedMember)) {
+          return false;
+        }
+      }
+      return true;
+    });
+  }, [holidayRequests, historyStaffId, historyStatus, staff]);
+
+  const openMemberHistory = (memberId) => {
+    setHistoryStaffId(String(memberId));
+    setHistoryStatus("all");
+    setHistoryLimit(10);
+    setShowHistory(true);
+  };
+
+  const setDraftHours = (requestId, value) => {
+    setHolidayHoursDrafts((previous) => ({
+      ...previous,
+      [requestId]: value,
+    }));
+  };
+
+  return (
+    <section
+      style={{
+        marginTop: 30,
+        border: "1px solid #dfe5ec",
+        borderRadius: 18,
+        padding: 18,
+        color: "#111827",
+        background: "#f8fafc",
+        boxShadow: "0 2px 8px rgba(15, 23, 42, 0.05)",
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          alignItems: "flex-start",
+          justifyContent: "space-between",
+          gap: 14,
+          flexWrap: "wrap",
+        }}
+      >
+        <div>
+          <h3 style={{ margin: 0, color: "#0f172a", fontSize: 20 }}>
+            Holiday overview
+          </h3>
+          <div style={{ color: "#64748b", fontSize: 13, marginTop: 5 }}>
+            See each tracked balance first, then deal with requests that need
+            attention.
+          </div>
+        </div>
+        <span
+          style={{
+            padding: "7px 11px",
+            borderRadius: 999,
+            background: pendingRequests.length ? "#fef3c7" : "#dcfce7",
+            color: pendingRequests.length ? "#92400e" : "#166534",
+            fontSize: 12,
+            fontWeight: 900,
+          }}
+        >
+          {pendingRequests.length
+            ? `${pendingRequests.length} awaiting review`
+            : "Nothing awaiting review"}
+        </span>
+      </div>
+
+      {balanceSummaries.length ? (
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(270px, 1fr))",
+            gap: 12,
+            marginTop: 18,
+          }}
+        >
+          {balanceSummaries.map((summary) => {
+            const isOverAllowance = summary.remainingHours < 0;
+
+            return (
+              <article
+                key={summary.member.id}
+                style={{
+                  border: "1px solid #dbeafe",
+                  borderRadius: 16,
+                  padding: 16,
+                  background: "#fff",
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    gap: 10,
+                    alignItems: "flex-start",
+                  }}
+                >
+                  <div>
+                    <div style={{ fontSize: 16, fontWeight: 900 }}>
+                      {summary.member.name || "Unnamed staff member"}
+                    </div>
+                    <div
+                      style={{
+                        marginTop: 3,
+                        color: "#64748b",
+                        fontSize: 11,
+                      }}
+                    >
+                      {formatShortDate(summary.member.holidayYearStart)} –{" "}
+                      {formatShortDate(summary.member.holidayYearEnd)}
+                    </div>
+                  </div>
+                  {summary.member.active === false ? (
+                    <span
+                      style={{
+                        padding: "4px 8px",
+                        borderRadius: 999,
+                        background: "#f1f5f9",
+                        color: "#64748b",
+                        fontSize: 10,
+                        fontWeight: 900,
+                      }}
+                    >
+                      Inactive
+                    </span>
+                  ) : null}
+                </div>
+
+                <div style={{ marginTop: 18 }}>
+                  <div
+                    style={{
+                      color: isOverAllowance ? "#b91c1c" : "#1d4ed8",
+                      fontSize: 30,
+                      lineHeight: 1,
+                      fontWeight: 950,
+                    }}
+                  >
+                    {formatHours(summary.remainingHours)}h
+                  </div>
+                  <div style={{ color: "#64748b", fontSize: 12, marginTop: 5 }}>
+                    {isOverAllowance ? "over allowance" : "remaining"}
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    height: 8,
+                    marginTop: 14,
+                    overflow: "hidden",
+                    borderRadius: 999,
+                    background: "#e2e8f0",
+                  }}
+                  aria-label={`${Math.round(summary.usedPercentage)}% of allowance used`}
+                >
+                  <div
+                    style={{
+                      width: `${summary.usedPercentage}%`,
+                      height: "100%",
+                      borderRadius: 999,
+                      background: isOverAllowance ? "#dc2626" : "#2563eb",
+                    }}
+                  />
+                </div>
+
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(3, 1fr)",
+                    gap: 8,
+                    marginTop: 14,
+                  }}
+                >
+                  {[
+                    ["Allowance", summary.entitlement],
+                    ["Approved", summary.approvedHours],
+                    ["Earlier use", summary.usedBeforeTracking],
+                  ].map(([label, value]) => (
+                    <div
+                      key={label}
+                      style={{
+                        padding: "9px 8px",
+                        borderRadius: 10,
+                        background: "#f8fafc",
+                      }}
+                    >
+                      <div style={{ fontWeight: 900, fontSize: 13 }}>
+                        {formatHours(value)}h
+                      </div>
+                      <div
+                        style={{ color: "#64748b", fontSize: 10, marginTop: 2 }}
+                      >
+                        {label}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {summary.pendingCount ? (
+                  <div
+                    style={{
+                      marginTop: 12,
+                      color: "#92400e",
+                      fontSize: 12,
+                      fontWeight: 800,
+                    }}
+                  >
+                    {summary.pendingCount} pending request
+                    {summary.pendingCount === 1 ? "" : "s"} not yet deducted
+                  </div>
+                ) : null}
+
+                {summary.missingHoursCount ? (
+                  <div
+                    style={{
+                      marginTop: 10,
+                      padding: 9,
+                      borderRadius: 9,
+                      background: "#fff7ed",
+                      color: "#9a3412",
+                      fontSize: 11,
+                      fontWeight: 800,
+                    }}
+                  >
+                    {summary.missingHoursCount} approved request
+                    {summary.missingHoursCount === 1 ? " needs" : "s need"}
+                    {" "}hours adding before this balance is complete.
+                  </div>
+                ) : null}
+
+                <div
+                  style={{
+                    display: "flex",
+                    gap: 8,
+                    marginTop: 14,
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => openMemberHistory(summary.member.id)}
+                    style={{ ...secondaryButton, padding: "8px 10px", fontSize: 12 }}
+                  >
+                    View history
+                  </button>
+                  {onEditStaff ? (
+                    <button
+                      type="button"
+                      onClick={() => onEditStaff(summary.member)}
+                      style={{ ...secondaryButton, padding: "8px 10px", fontSize: 12 }}
+                    >
+                      Edit allowance
+                    </button>
+                  ) : null}
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      ) : (
+        <div
+          style={{
+            marginTop: 16,
+            padding: 14,
+            border: "1px dashed #cbd5e1",
+            borderRadius: 12,
+            background: "#fff",
+            color: "#64748b",
+            fontSize: 13,
+          }}
+        >
+          No staff member has balance tracking switched on. Enable “Show
+          holiday hours” when editing the relevant staff member.
+        </div>
+      )}
+
+      <div
+        style={{
+          marginTop: 20,
+          paddingTop: 18,
+          borderTop: "1px solid #dfe5ec",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: 10,
+            flexWrap: "wrap",
+          }}
+        >
+          <div>
+            <div style={{ fontWeight: 900 }}>Needs a decision</div>
+            <div style={{ color: "#64748b", fontSize: 12, marginTop: 3 }}>
+              Enter the paid hours before approving a request.
+            </div>
+          </div>
+          <span style={{ color: "#64748b", fontSize: 12, fontWeight: 800 }}>
+            {pendingRequests.length} pending
+          </span>
+        </div>
+
+        {pendingRequests.length === 0 ? (
+          <div
+            style={{
+              marginTop: 12,
+              padding: 14,
+              borderRadius: 12,
+              background: "#fff",
+              color: "#64748b",
+              fontSize: 13,
+            }}
+          >
+            All caught up — there are no holiday requests waiting for review.
+          </div>
+        ) : (
+          <div style={{ display: "grid", gap: 10, marginTop: 12 }}>
+            {pendingRequests.map((request) => {
+              const hoursValue = holidayHoursDrafts[request.id] ?? "";
+              const summary = balanceByStaffId.get(String(request.staffId));
+              const hours = Number(hoursValue);
+              const projectedRemaining =
+                summary && Number.isFinite(hours) && hours > 0
+                  ? summary.remainingHours - hours
+                  : null;
+
+              return (
+                <article
+                  key={request.id}
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns:
+                      "repeat(auto-fit, minmax(min(220px, 100%), 1fr))",
+                    gap: 14,
+                    alignItems: "end",
+                    padding: 14,
+                    border: "1px solid #e2e8f0",
+                    borderRadius: 14,
+                    background: "#fff",
+                  }}
+                >
+                  <div style={{ alignSelf: "center", minWidth: 0 }}>
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: 8,
+                        alignItems: "center",
+                        flexWrap: "wrap",
+                      }}
+                    >
+                      <strong>{request.staffName || "Unknown staff"}</strong>
+                      <StatusPill status="pending" />
+                    </div>
+                    <div style={{ color: "#475569", fontSize: 13, marginTop: 6 }}>
+                      {formatDate(request.startDate)} – {formatDate(request.endDate)}
+                    </div>
+                    {request.reason ? (
+                      <div
+                        style={{ color: "#64748b", fontSize: 12, marginTop: 5 }}
+                      >
+                        {request.reason}
+                      </div>
+                    ) : null}
+                  </div>
+
+                  <div>
+                    <label
+                      style={{
+                        display: "block",
+                        marginBottom: 5,
+                        color: "#475569",
+                        fontSize: 11,
+                        fontWeight: 900,
+                      }}
+                    >
+                      Paid holiday hours
+                    </label>
+                    <input
+                      type="number"
+                      min="0.25"
+                      step="0.25"
+                      value={hoursValue}
+                      onChange={(event) =>
+                        setDraftHours(request.id, event.target.value)
+                      }
+                      placeholder="e.g. 8"
+                      style={holidayInputStyle}
+                    />
+                    {projectedRemaining !== null ? (
+                      <div
+                        style={{
+                          color: projectedRemaining < 0 ? "#b91c1c" : "#1d4ed8",
+                          fontSize: 11,
+                          fontWeight: 800,
+                          marginTop: 5,
+                        }}
+                      >
+                        Leaves {formatHours(projectedRemaining)}h remaining
+                      </div>
+                    ) : null}
+                  </div>
+
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: 8,
+                      flexWrap: "wrap",
+                      justifyContent: "flex-end",
+                    }}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => updateHolidayRequest(request.id, "approved")}
+                      disabled={busy}
+                      style={{
+                        ...primaryButton,
+                        opacity: busy ? 0.6 : 1,
+                        cursor: busy ? "not-allowed" : "pointer",
+                      }}
+                    >
+                      Approve
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => updateHolidayRequest(request.id, "rejected")}
+                      disabled={busy}
+                      style={{
+                        ...secondaryButton,
+                        opacity: busy ? 0.6 : 1,
+                        cursor: busy ? "not-allowed" : "pointer",
+                      }}
+                    >
+                      Reject
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => deleteHolidayRequest(request.id)}
+                      disabled={busy}
+                      style={{
+                        ...dangerButton,
+                        opacity: busy ? 0.6 : 1,
+                        cursor: busy ? "not-allowed" : "pointer",
+                      }}
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      <div
+        style={{
+          marginTop: 18,
+          paddingTop: 16,
+          borderTop: "1px solid #dfe5ec",
+        }}
+      >
+        <button
+          type="button"
+          onClick={() => setShowHistory((current) => !current)}
+          aria-expanded={showHistory}
+          style={{
+            ...secondaryButton,
+            width: "100%",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            textAlign: "left",
+          }}
+        >
+          <span>Past requests ({holidayRequests.length - pendingRequests.length})</span>
+          <span aria-hidden="true">{showHistory ? "−" : "+"}</span>
+        </button>
+
+        {showHistory ? (
+          <div style={{ marginTop: 12 }}>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns:
+                  "repeat(auto-fit, minmax(min(180px, 100%), 1fr))",
+                gap: 10,
+              }}
+            >
+              <select
+                value={historyStaffId}
+                onChange={(event) => {
+                  setHistoryStaffId(event.target.value);
+                  setHistoryLimit(10);
+                }}
+                style={holidayInputStyle}
+                aria-label="Filter holiday history by staff member"
+              >
+                <option value="all">All staff</option>
+                {staff.map((member) => (
+                  <option key={member.id} value={member.id}>
+                    {member.name || "Unnamed staff member"}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={historyStatus}
+                onChange={(event) => {
+                  setHistoryStatus(event.target.value);
+                  setHistoryLimit(10);
+                }}
+                style={holidayInputStyle}
+                aria-label="Filter holiday history by status"
+              >
+                <option value="all">Approved and rejected</option>
+                <option value="approved">Approved only</option>
+                <option value="rejected">Rejected only</option>
+              </select>
+            </div>
+
+            {historyRequests.length === 0 ? (
+              <div
+                style={{
+                  marginTop: 12,
+                  padding: 14,
+                  borderRadius: 12,
+                  background: "#fff",
+                  color: "#64748b",
+                  fontSize: 13,
+                }}
+              >
+                No past requests match these filters.
+              </div>
+            ) : (
+              <div style={{ display: "grid", gap: 8, marginTop: 12 }}>
+                {historyRequests.slice(0, historyLimit).map((request) => {
+                  const status = normaliseStatus(request);
+                  const hasApprovedHours =
+                    Number.isFinite(Number(request.approvedHours)) &&
+                    Number(request.approvedHours) > 0;
+                  const hoursValue = holidayHoursDrafts[request.id] ?? "";
+
+                  return (
+                    <article
+                      key={request.id}
+                      style={{
+                        padding: 13,
+                        border: "1px solid #e2e8f0",
+                        borderRadius: 12,
+                        background: "#fff",
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          gap: 12,
+                          flexWrap: "wrap",
+                        }}
+                      >
+                        <div>
+                          <div
+                            style={{
+                              display: "flex",
+                              gap: 8,
+                              alignItems: "center",
+                              flexWrap: "wrap",
+                            }}
+                          >
+                            <strong>{request.staffName || "Unknown staff"}</strong>
+                            <StatusPill status={status} />
+                            {status === "approved" && hasApprovedHours ? (
+                              <span
+                                style={{
+                                  color: "#475569",
+                                  fontSize: 12,
+                                  fontWeight: 800,
+                                }}
+                              >
+                                {formatHours(request.approvedHours)}h
+                              </span>
+                            ) : null}
+                          </div>
+                          <div
+                            style={{ color: "#64748b", fontSize: 12, marginTop: 5 }}
+                          >
+                            {formatDate(request.startDate)} – {formatDate(request.endDate)}
+                          </div>
+                          {request.reason ? (
+                            <div
+                              style={{ color: "#64748b", fontSize: 12, marginTop: 4 }}
+                            >
+                              {request.reason}
+                            </div>
+                          ) : null}
+                        </div>
+
+                        <div
+                          style={{
+                            display: "flex",
+                            gap: 8,
+                            alignItems: "end",
+                            flexWrap: "wrap",
+                            justifyContent: "flex-end",
+                          }}
+                        >
+                          {status === "approved" ? (
+                            <>
+                              <div style={{ width: 120 }}>
+                                <label
+                                  style={{
+                                    display: "block",
+                                    marginBottom: 4,
+                                    color: "#64748b",
+                                    fontSize: 10,
+                                    fontWeight: 900,
+                                  }}
+                                >
+                                  Hours
+                                </label>
+                                <input
+                                  type="number"
+                                  min="0.25"
+                                  step="0.25"
+                                  value={hoursValue}
+                                  onChange={(event) =>
+                                    setDraftHours(request.id, event.target.value)
+                                  }
+                                  style={{ ...holidayInputStyle, padding: "8px 9px" }}
+                                />
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => saveHolidayHours(request.id)}
+                                disabled={busy}
+                                style={{
+                                  ...secondaryButton,
+                                  padding: "8px 10px",
+                                  opacity: busy ? 0.6 : 1,
+                                  cursor: busy ? "not-allowed" : "pointer",
+                                }}
+                              >
+                                Save hours
+                              </button>
+                            </>
+                          ) : null}
+                          <button
+                            type="button"
+                            onClick={() => deleteHolidayRequest(request.id)}
+                            disabled={busy}
+                            style={{
+                              ...dangerButton,
+                              padding: "8px 10px",
+                              opacity: busy ? 0.6 : 1,
+                              cursor: busy ? "not-allowed" : "pointer",
+                            }}
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </div>
+
+                      {status === "approved" && !hasApprovedHours ? (
+                        <div
+                          style={{
+                            marginTop: 9,
+                            padding: 9,
+                            borderRadius: 9,
+                            background: "#fff7ed",
+                            color: "#9a3412",
+                            fontSize: 11,
+                            fontWeight: 800,
+                          }}
+                        >
+                          Add the paid hours so this request is included in the
+                          staff member’s balance.
+                        </div>
+                      ) : null}
+                    </article>
+                  );
+                })}
+              </div>
+            )}
+
+            {historyRequests.length > historyLimit ? (
+              <button
+                type="button"
+                onClick={() => setHistoryLimit((current) => current + 10)}
+                style={{ ...secondaryButton, marginTop: 10 }}
+              >
+                Show 10 more
+              </button>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
 export default function StaffManager({ goBack }) {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -1850,161 +2774,20 @@ const unavailableLabel = approvedHoliday ? "Holiday" : absenceLabel;
                 </div>
               </div>
             ) : null}
-<div
-
-  style={{
-
-    marginTop: 30,
-
-    border: "1px solid #e5e7eb",
-
-    borderRadius: 14,
-
-    padding: 18,
-
-    color: "#111827",
-
-    background: "#fff",
-
+<HolidayRequestsSection
+  staff={staff}
+  holidayRequests={holidayRequests}
+  holidayHoursDrafts={holidayHoursDrafts}
+  setHolidayHoursDrafts={setHolidayHoursDrafts}
+  busy={busy}
+  updateHolidayRequest={updateHolidayRequest}
+  saveHolidayHours={saveHolidayHours}
+  deleteHolidayRequest={deleteHolidayRequest}
+  onEditStaff={(member) => {
+    setTab("staff");
+    openEditStaff(member);
   }}
-
->
-<h3 style={{ margin: "0 0 6px 0", color: "#111827" }}>Holiday Requests</h3>
-
-<div style={{ color: "#6b7280", fontSize: 13, marginBottom: 12 }}>
-  Approved hours are deducted from a staff member’s visible balance. For older
-  holidays, enter the actual paid holiday hours and save them here.
-</div>
-
-{holidayRequests.length === 0 ? (
-  <div style={{ color: "#6b7280", fontSize: 14 }}>No holiday requests.</div>
-) : (
-  holidayRequests.map((r) => {
-    const requestStatus = String(r.status || "pending").toLowerCase();
-    const hoursValue = holidayHoursDrafts[r.id] ?? "";
-    const hasApprovedHours =
-      Number.isFinite(Number(r.approvedHours)) &&
-      Number(r.approvedHours) > 0;
-
-    return (
-      <div
-        key={r.id}
-        style={{
-          border: "1px solid #e5e7eb",
-          borderRadius: 12,
-          padding: 14,
-          marginBottom: 10,
-        }}
-      >
-        <div style={{ fontWeight: 800 }}>
-          {r.staffName || "Unknown staff"}
-        </div>
-
-        <div style={{ marginTop: 6 }}>
-          {r.startDate?.toDate ? fmtDateLong(r.startDate.toDate()) : ""} →{" "}
-          {r.endDate?.toDate ? fmtDateLong(r.endDate.toDate()) : ""}
-        </div>
-
-        <div style={{ marginTop: 6 }}>
-          Status: <strong>{r.status || "pending"}</strong>
-        </div>
-
-        {r.reason ? <div style={{ marginTop: 6 }}>{r.reason}</div> : null}
-
-        <div
-          style={{
-            display: "flex",
-            alignItems: "end",
-            gap: 10,
-            marginTop: 12,
-            flexWrap: "wrap",
-          }}
-        >
-          <div style={{ width: 190 }}>
-            <label
-              style={{
-                display: "block",
-                marginBottom: 5,
-                fontSize: 12,
-                fontWeight: 800,
-                color: "#374151",
-              }}
-            >
-              Holiday hours to deduct
-            </label>
-            <input
-              type="number"
-              min="0.25"
-              step="0.25"
-              value={hoursValue}
-              onChange={(event) =>
-                setHolidayHoursDrafts((previous) => ({
-                  ...previous,
-                  [r.id]: event.target.value,
-                }))
-              }
-              placeholder="e.g. 8"
-              style={{ ...inputStyle, padding: 9 }}
-            />
-          </div>
-
-          {requestStatus === "pending" ? (
-            <>
-              <button
-                onClick={() => updateHolidayRequest(r.id, "approved")}
-                disabled={busy}
-              >
-                Approve and deduct hours
-              </button>
-
-              <button
-                onClick={() => updateHolidayRequest(r.id, "rejected")}
-                disabled={busy}
-              >
-                Reject
-              </button>
-            </>
-          ) : null}
-
-          {requestStatus === "approved" ? (
-            <button
-              onClick={() => saveHolidayHours(r.id)}
-              disabled={busy}
-            >
-              Save hours
-            </button>
-          ) : null}
-
-          <button
-            onClick={() => deleteHolidayRequest(r.id)}
-            disabled={busy}
-          >
-            Delete
-          </button>
-        </div>
-
-        {requestStatus === "approved" && !hasApprovedHours ? (
-          <div
-            style={{
-              marginTop: 9,
-              padding: 9,
-              borderRadius: 9,
-              background: "#fff7ed",
-              color: "#9a3412",
-              fontSize: 12,
-              fontWeight: 700,
-            }}
-          >
-            This older approved holiday has no hours recorded yet, so it is not
-            currently being deducted from the balance.
-          </div>
-        ) : null}
-      </div>
-    );
-  })
-)}
-</div>
-
+/>
 <div
   style={{
     marginTop: 18,
@@ -2249,3 +3032,4 @@ const unavailableLabel = approvedHoliday ? "Holiday" : absenceLabel;
     </div>
   );
 }
+
