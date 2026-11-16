@@ -1,0 +1,37 @@
+.production { max-width: 1180px; margin: 0 auto; color: #0f172a; font-family: 'Inter', system-ui, sans-serif; padding: 8px; }
+.production * { box-sizing: border-box; }
+.production-header, .production-summary, .production-toolbar, .production-title { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.production h1 { font-size: clamp(24px, 4vw, 32px); margin: 12px 0 6px; }
+.production h2 { font-size: 19px; margin: 0; }
+.production h3 { font-size: 17px; margin: 0; overflow-wrap: anywhere; }
+.production p { color: #64748b; font-size: 14px; line-height: 1.5; margin: 7px 0; }
+.production label { display: grid; gap: 7px; font-size: 13px; font-weight: 700; }
+.production input, .production textarea { width: 100%; min-width: 0; padding: 11px 12px; border: 1px solid #cbd5e1; border-radius: 10px; background: white; color: #0f172a; font: inherit; font-weight: 400; }
+.production button { padding: 10px 14px; border: 1px solid #cbd5e1; border-radius: 10px; background: white; color: #0f172a; font: inherit; font-size: 13px; font-weight: 700; cursor: pointer; min-height: 42px; }
+.production button:disabled { opacity: .5; cursor: default; }
+.production button:focus-visible, .production input:focus-visible, .production textarea:focus-visible { outline: 3px solid #0284c7; outline-offset: 3px; }
+.production button.production-primary, .production-filters button[aria-pressed="true"] { background: #15803d; border-color: #15803d; color: white; }
+.production button.production-link { border: 0; padding-left: 0; color: #15803d; background: transparent; }
+.production button.production-danger { color: #b91c1c; }
+.production-summary, .production-planner { margin-top: 22px; border: 1px solid #e2e8f0; border-radius: 18px; padding: 22px; background: white; }
+.production-summary progress { accent-color: #15803d; width: 220px; max-width: 100%; height: 12px; }
+.production-toolbar > div, .production-actions, .production-filters { display: flex; gap: 8px; flex-wrap: wrap; }
+.production-form { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap: 14px; margin-top: 18px; }
+.production-wide { grid-column: 1 / -1; }
+.production-filters { margin: 24px 0 16px; }
+.production-jobs { display: grid; gap: 12px; }
+.production-job { display: grid; grid-template-columns: 74px minmax(0, 1fr) auto; align-items: start; gap: 18px; padding: 20px; border: 1px solid #e2e8f0; border-left: 5px solid #cbd5e1; border-radius: 14px; background: white; }
+.production-job.is-started { border-left-color: #0284c7; background: #f0f9ff; }
+.production-job.is-complete { border-left-color: #15803d; background: #f0fdf4; }
+.production-time { font-size: 20px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.production-title { justify-content: flex-start; gap: 10px; }
+.production-badge { border-radius: 99px; background: #e2e8f0; padding: 4px 9px; font-size: 11px; font-weight: 700; }
+.production-notes { white-space: pre-wrap; overflow-wrap: anywhere; }
+.production-details small { color: #166534; }
+.production-empty { padding: 32px; text-align: center; border: 1px dashed #cbd5e1; border-radius: 14px; color: #64748b; }
+.production p.production-error { padding: 14px; background: #fef2f2; color: #b91c1c; border-radius: 10px; }
+.production p.production-message { color: #166534; }
+.production-footnote { margin-top: 20px !important; font-size: 12px !important; }
+@media (max-width: 850px) { .production-form { grid-template-columns: 1fr 1fr; } .production-job { grid-template-columns: 65px minmax(0, 1fr); } .production-job > .production-actions { grid-column: 2; } }
+@media (max-width: 480px) { .production { padding: 0; } .production-form { grid-template-columns: 1fr; } .production-planner, .production-summary { padding: 16px; } .production-job { padding: 14px; gap: 10px; } .production-header > label { width: 100%; } .production-job > .production-actions { grid-column: 1 / -1; } }
+@media print { .production-header button, .production-planner, .production-filters, .production-actions, .production-footnote { display: none; } .production-job { break-inside: avoid; } }

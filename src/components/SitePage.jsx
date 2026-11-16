@@ -78,6 +78,7 @@ import MyRota from "./MyRota";
 import GoodsInSection from "./GoodsInSection";
 import AdminSection from "./AdminSection";
 import PreOrdersSection from "./PreOrdersSection";
+import ProductionSection from "./ProductionSection";
 
 const sites = [
   { id: "thorganby", label: "Thorganby Site" },
@@ -483,7 +484,7 @@ const [openingBypassed, setOpeningBypassed] = useState(false);
   const openingLocked = Boolean(
     selectedSite && !openingComplete && !openingBypassed
   );
-  const allowedBeforeOpening = ["checklists", "myRota", "goodsIn"];
+  const allowedBeforeOpening = ["checklists", "myRota", "goodsIn", "production"];
 
   const isMobile = useIsMobile();
 
@@ -1039,6 +1040,7 @@ const failedTempAlerts = useMemo(() => {
 { label: "Goods In", key: "goodsIn", icon: <FaTruckLoading size={17} />, color: "#2563eb" },
 
 { label: "Pre Orders", key: "preOrders", icon: <FaClock size={17} />, color: "#15803d" },
+{ label: "Production Schedule", key: "production", icon: <FaClock size={17} />, color: "#15803d" },
 
 { label: "Stock", key: "stock", icon: <FaBoxes size={17} />, color: "#7c3aed" },
 
@@ -1135,7 +1137,13 @@ helper: `${report.period || "Custom"} · ${(report.metrics || []).length} metric
   }, [dashboardConfig, defaultDashboardSections]);
 
   const enabledDashboardKeys = useMemo(() => {
-    return dashboardConfig?.enabledKeys || defaultDashboardSections.map((s) => s.key);
+    const savedKeys = dashboardConfig?.enabledKeys;
+    if (!savedKeys) return defaultDashboardSections.map((s) => s.key);
+    // Show this new tile on older saved dashboards; later ON/OFF choices are respected.
+    if (!(dashboardConfig.order || []).includes("production")) {
+      return Array.from(new Set([...savedKeys, "production"]));
+    }
+    return savedKeys;
   }, [dashboardConfig, defaultDashboardSections]);
 
   const saveDashboardConfig = async (nextConfig) => {
@@ -1463,6 +1471,11 @@ const mergedConfig = {
         >
           View my rota
         </button>
+        <button
+          onClick={() => setActiveSection("production")}
+          style={{ width: "100%", marginTop: 10, padding: "12px 16px", borderRadius: 12,
+            border: "1px solid #e5e7eb", background: "#fff", color: "#0f172a", fontWeight: 800, cursor: "pointer" }}
+        >View production schedule</button>
 
         <button
 
@@ -1756,6 +1769,8 @@ const mergedConfig = {
 
   />
 
+) : activeSection === "production" ? (
+  <ProductionSection goBack={() => setActiveSection(null)} site={selectedSite} user={user} isManager={isManager} />
 ) : activeSection === "preOrders" ? (
 
   <PreOrdersSection goBack={() => setActiveSection(null)} site={selectedSite} user={user} />
