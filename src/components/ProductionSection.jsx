@@ -5,7 +5,7 @@ import "./ProductionSection.css";
 
 const ZONE = "Europe/London";
 const LIMIT = 150;
-const blank = () => ({ title: "", time: "", quantity: "", assignedTo: "", notes: "" });
+const blank = () => ({ title: "", time: "", endTime: "", quantity: "", assignedTo: "", notes: "" });
 const dateInLondon = () => new Intl.DateTimeFormat("en-CA", {
   timeZone: ZONE, year: "numeric", month: "2-digit", day: "2-digit",
 }).format(new Date());
@@ -18,7 +18,7 @@ const clockInLondon = () => new Intl.DateTimeFormat("en-GB", {
 }).format(new Date());
 const actor = (user) => ({ id: String(user?.uid || user?.id || ""), name: String(user?.name || user?.displayName || "Staff") });
 const planOnly = (task) => ({
-  title: task.title, time: task.time, quantity: task.quantity || "",
+  title: task.title, time: task.time, endTime: task.endTime || "", quantity: task.quantity || "",
   assignedTo: task.assignedTo || "", notes: task.notes || "",
 });
 const freshTask = (task) => ({ ...planOnly(task), id: crypto.randomUUID(), status: "pending" });
@@ -50,6 +50,8 @@ function DayBoard({ site, date, user, isManager }) {
   const [draft, setDraft] = useState(blank);
   const [editing, setEditing] = useState(null);
   const [filter, setFilter] = useState("all");
+  const [view, setView] = useState("timeline");
+  const [selectedTaskId, setSelectedTaskId] = useState(null);
   const [now, setNow] = useState(clockInLondon);
   const [today, setToday] = useState(dateInLondon);
   const ref = doc(db, "productionSchedules", `${site}_${date}`);
@@ -88,6 +90,9 @@ function DayBoard({ site, date, user, isManager }) {
     const fields = Object.fromEntries(Object.entries(draft).map(([key, value]) => [key, value.trim()]));
     if (!fields.title || !/^([01]\d|2[0-3]):[0-5]\d$/.test(fields.time)) {
       setError("Enter a job name and a valid start time."); return;
+    }
+    if (fields.endTime && (!/^([01]\d|2[0-3]):[0-5]\d$/.test(fields.endTime) || fields.endTime <= fields.time)) {
+      setError("Finish time must be later than start time on the same day."); return;
     }
     const id = editing?.id || crypto.randomUUID();
     act(async () => {
@@ -163,6 +168,7 @@ function DayBoard({ site, date, user, isManager }) {
           <form onSubmit={saveTask} className="production-form">
             <label>Job name<input required maxLength={120} value={draft.title} placeholder="e.g. Cookie dough" onChange={(e) => setDraft({ ...draft, title: e.target.value })} /></label>
             <label>Start time<input required type="time" value={draft.time} onChange={(e) => setDraft({ ...draft, time: e.target.value })} /></label>
+            <label>Finish time (optional)<input type="time" value={draft.endTime} onChange={(e) => setDraft({ ...draft, endTime: e.target.value })} /></label>
             <label>Quantity<input maxLength={80} value={draft.quantity} placeholder="e.g. 24 portions" onChange={(e) => setDraft({ ...draft, quantity: e.target.value })} /></label>
             <label>Assigned to<input maxLength={100} value={draft.assignedTo} placeholder="Name or team" onChange={(e) => setDraft({ ...draft, assignedTo: e.target.value })} /></label>
             <label className="production-wide">Preparation notes<textarea maxLength={1500} rows={2} value={draft.notes} onChange={(e) => setDraft({ ...draft, notes: e.target.value })} /></label>
@@ -170,18 +176,26 @@ function DayBoard({ site, date, user, isManager }) {
               {editing && <button type="button" disabled={busy} onClick={() => { setEditing(null); setDraft(blank()); }}>Cancel edit</button>}</div>
           </form>
         </section>}
+        <div className="production-view-switch" role="group" aria-label="Schedule view">
+          <button type="button" aria-pressed={view === "list"} onClick={() => setView("list")}>List</button>
+          <button type="button" aria-pressed={view === "timeline"} onClick={() => setView("timeline")}>Timeline grid</button>
+        </div>
         <nav className="production-filters" aria-label="Filter production jobs">
           {[["all", "Full day"], ["due", "Due / In progress"], ["upcoming", "Next"], ["completed", "Completed"]].map(([value, label]) =>
             <button key={value} type="button" aria-pressed={filter === value} onClick={() => setFilter(value)}>{label}</button>)}
         </nav>
+        {view === "timeline" && <ProductionTimeline tasks={visible} allTasks={tasks} now={now} isToday={date === today}
+          selectedTaskId={selectedTaskId} onSelect={setSelectedTaskId} />}
+        {view === "timeline" && visible.some((task) => task.id === selectedTaskId) &&
+          <h2 className="production-selected-heading">Selected job</h2>}
         <div className="production-jobs" aria-busy={busy}>
           {!visible.length && <div className="production-empty">{tasks.length ? "No jobs in this view." : isManager ? "No production jobs yet. Add a job or load your weekly plan." : "No production schedule has been added for this date yet."}</div>}
-          {visible.map((task) => {
+          {visible.filter((task) => view === "list" || task.id === selectedTaskId).map((task) => {
             const complete = task.status === "completed";
             const started = task.status === "in_progress";
             const due = !complete && (date < today || (date === today && task.time <= now));
             return <article key={task.id} className={`production-job ${complete ? "is-complete" : started ? "is-started" : ""}`}>
-              <div className="production-time">{task.time}</div>
+              <div className="production-time">{task.time}{task.endTime && <small className="production-finish">to {task.endTime}</small>}</div>
               <div className="production-details"><div className="production-title"><h3>{task.title}</h3>
                 <span className="production-badge">{complete ? "Completed" : started ? "In progress" : due ? "Due" : "Planned"}</span></div>
                 <p>{[task.quantity, task.assignedTo && `Assigned to ${task.assignedTo}`].filter(Boolean).join(" · ") || "Team task"}</p>
@@ -209,4 +223,77 @@ function DayBoard({ site, date, user, isManager }) {
       </>}
     </>
   );
+}
+
+
+// A start marker is used for legacy jobs with no finish time; no duration is invented.
+const timeMinutes = (value) => {
+  if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(value || "")) return null;
+  const [hours, minutes] = value.split(":").map(Number);
+  return hours * 60 + minutes;
+};
+const axisTime = (minutes) => `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
+const taskRange = (task) => {
+  const start = timeMinutes(task.time);
+  const end = timeMinutes(task.endTime);
+  return { start, end: start !== null && end !== null && end > start ? end : null };
+};
+const timelineBounds = (tasks) => {
+  const points = tasks.flatMap((task) => {
+    const { start, end } = taskRange(task);
+    return [start, end].filter((point) => point !== null);
+  });
+  if (!points.length) return { start: 240, end: 600 };
+  const start = Math.max(0, Math.floor(Math.min(...points) / 30) * 30 - 30);
+  const end = Math.min(1440, Math.max(start + 120, Math.ceil(Math.max(...points) / 30) * 30 + 30));
+  return { start, end };
+};
+
+function ProductionTimeline({ tasks, allTasks, now, isToday, selectedTaskId, onSelect }) {
+  const { start, end } = timelineBounds(allTasks);
+  const slotCount = Math.ceil((end - start) / 15);
+  const width = slotCount * 54;
+  const position = (minutes) => ((minutes - start) / (end - start)) * 100;
+  const nowMinutes = timeMinutes(now);
+  const showNow = isToday && nowMinutes !== null && nowMinutes >= start && nowMinutes <= end;
+  const ticks = Array.from({ length: Math.ceil((end - start) / 30) }, (_, i) => start + i * 30);
+  if (!tasks.length) return null;
+  return <section className="production-timeline" aria-label="Production timeline grid">
+    <div className="production-timeline-key">
+      <span><i className="planned" />Planned</span><span><i className="started" />In progress</span>
+      <span><i className="complete" />Completed</span><span>◆ Start only (no finish time)</span>
+    </div>
+    <p>Times run left to right in 15-minute columns. Select a job to see notes and update its status below. Scroll sideways for more times.</p>
+    <div className="production-timeline-scroll" tabIndex={0} role="region" aria-label="Scrollable task timeline">
+      <div className="production-timeline-canvas" style={{ width: width + 200 }}>
+        <div className="production-axis-row">
+          <div className="production-row-label production-axis-label">Task / staff</div>
+          <div className="production-axis" style={{ width }}>
+            {ticks.map((tick) => <span key={tick} style={{ left: `${position(tick)}%` }}>{axisTime(tick)}</span>)}
+            <span className="production-axis-end">{axisTime(end)}</span>
+          </div>
+        </div>
+        {tasks.map((task) => {
+          const { start: taskStart, end: taskEnd } = taskRange(task);
+          const status = task.status === "completed" ? "complete" : task.status === "in_progress" ? "started" : "planned";
+          const label = `${task.title}, ${task.time}${taskEnd !== null ? ` to ${task.endTime}` : ", start only"}, ${status === "started" ? "in progress" : status === "complete" ? "completed" : "planned"}`;
+          return <div key={task.id} className={`production-grid-row ${selectedTaskId === task.id ? "is-selected" : ""}`}>
+            <button type="button" className="production-row-label" aria-pressed={selectedTaskId === task.id} onClick={() => onSelect(task.id)}>
+              <strong>{task.title}</strong><small>{[task.assignedTo, task.quantity].filter(Boolean).join(" · ") || "Team task"}</small>
+            </button>
+            <div className="production-track" style={{ width, backgroundSize: `${100 / slotCount}% 100%` }}>
+              {showNow && <span className="production-now-line" style={{ left: `${position(nowMinutes)}%` }} aria-hidden="true" />}
+              {taskStart !== null && <button type="button" title={label} aria-label={label}
+                aria-pressed={selectedTaskId === task.id} onClick={() => onSelect(task.id)}
+                className={`production-bar ${status} ${taskEnd === null ? "is-marker" : ""}`}
+                style={{ left: `${position(taskStart)}%`, ...(taskEnd !== null ? { width: `${position(taskEnd) - position(taskStart)}%` } : {}) }}>
+                {taskEnd === null ? "◆" : <span>{task.time}–{task.endTime}</span>}
+              </button>}
+            </div>
+          </div>;
+        })}
+      </div>
+    </div>
+    <p className="production-timeline-caption">{isToday ? `UK time now: ${now}${showNow ? " · Red line marks now." : " · Current time is outside the displayed range."}` : "Viewing a different date; the current-time line is hidden."}</p>
+  </section>;
 }
